@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>BlinkOne — AI</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
+<script src="./_app.js"></script>
+</head>
+<body class="bg-slate-900 text-slate-200 p-5" x-data="panel()" x-init="init()">
+<div class="max-w-4xl mx-auto">
+  <h1 class="text-lg font-semibold mb-5">🤖 AI &amp; Quotas</h1>
+  <div x-show="err" x-text="err" class="mb-3 p-3 bg-red-900/50 border border-red-700 rounded text-sm text-red-300"></div>
+  <div class="grid grid-cols-3 gap-3 mb-6">
+    <div class="bg-slate-800 border border-slate-700 rounded-lg p-4"><div class="text-xs text-slate-400">Status</div><div class="font-semibold mt-1" :class="health?.status==='ok'?'text-green-400':'text-red-400'" x-text="health?.status||'—'"></div></div>
+    <div class="bg-slate-800 border border-slate-700 rounded-lg p-4"><div class="text-xs text-slate-400">Provider</div><div class="font-semibold text-blue-400 mt-1" x-text="health?.provider||'—'"></div></div>
+    <div class="bg-slate-800 border border-slate-700 rounded-lg p-4"><div class="text-xs text-slate-400">Uptime</div><div class="font-semibold mt-1" x-text="health?.uptime ? health.uptime+'s' : '—'"></div></div>
+  </div>
+  <h2 class="text-sm font-semibold text-slate-400 uppercase tracking-wide mb-3">Usage by Account</h2>
+  <div x-show="!Object.keys(usage).length" class="text-slate-500 text-sm">No usage recorded.</div>
+  <div class="space-y-2">
+    <template x-for="[aid, days] in Object.entries(usage)" :key="aid">
+      <div class="bg-slate-800 border border-slate-700 rounded-lg p-4">
+        <div class="font-medium mb-2" x-text="`Account #${aid}`"></div>
+        <div class="flex flex-wrap gap-2">
+          <template x-for="[day, count] in Object.entries(days)" :key="day">
+            <span class="text-xs bg-slate-700 rounded px-2 py-1"><span class="text-slate-400" x-text="day"></span><span class="text-white font-semibold ml-1" x-text="`${count} req`"></span></span>
+          </template>
+        </div>
+      </div>
+    </template>
+  </div>
+</div>
+<script>
+function panel() {
+  return { health:null, usage:{}, err:null,
+    async init() {
+      try { [this.health, this.usage] = await Promise.all([bo.get('/ai/health'), bo.get('/ai/v1/usage')]); }
+      catch(e) { this.err=e.message; }
+    }
+  };
+}
+</script>
+</body></html>

@@ -1,0 +1,97 @@
+# BlinkOne staging — same stack as production, isolated ports/volumes/DB.
+# Usage:
+#   cp .env.staging.example .env.staging
+#   docker compose -f docker-compose.yml -f docker-compose.staging.yml --env-file .env.staging -p blinkone-staging up -d
+#
+# Default URL: http://localhost:8080
+
+name: blinkone-staging
+
+services:
+  postgres:
+    environment:
+      POSTGRES_DB: chatwoot_staging
+    volumes:
+      - postgres_data_staging:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d chatwoot_staging"]
+
+  postgres_app:
+    environment:
+      POSTGRES_DB: blinkone_app_staging
+    volumes:
+      - postgres_app_data_staging:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d blinkone_app_staging"]
+
+  redis:
+    volumes:
+      - redis_data_staging:/data
+
+  chatwoot:
+    environment:
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/chatwoot_staging
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:8080}
+      ACTION_CABLE_ALLOWED_REQUEST_ORIGINS: ${FRONTEND_URL:-http://localhost:8080},http://127.0.0.1
+    volumes:
+      - chatwoot_storage_staging:/app/storage
+
+  sidekiq:
+    environment:
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/chatwoot_staging
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:8080}
+    volumes:
+      - chatwoot_storage_staging:/app/storage
+
+  platform:
+    volumes: [platform_data_staging:/data]
+
+  tickets:
+    volumes: [tickets_data_staging:/data]
+
+  calls:
+    volumes: [calls_data_staging:/data]
+
+  ai:
+    volumes: [ai_data_staging:/data]
+
+  billing:
+    volumes: [billing_data_staging:/data]
+
+  ivr:
+    volumes: [ivr_data_staging:/data]
+
+  sla:
+    volumes: [sla_data_staging:/data]
+
+  escalation:
+    volumes: [escalation_data_staging:/data]
+
+  routing:
+    volumes: [routing_data_staging:/data]
+
+  recording:
+    volumes: [recording_data_staging:/data]
+
+  integration:
+    volumes: [integration_data_staging:/data]
+
+  nginx:
+    ports: ["8080:80"]
+
+volumes:
+  postgres_data_staging:
+  postgres_app_data_staging:
+  redis_data_staging:
+  chatwoot_storage_staging:
+  platform_data_staging:
+  tickets_data_staging:
+  calls_data_staging:
+  ai_data_staging:
+  billing_data_staging:
+  ivr_data_staging:
+  sla_data_staging:
+  escalation_data_staging:
+  routing_data_staging:
+  recording_data_staging:
+  integration_data_staging:

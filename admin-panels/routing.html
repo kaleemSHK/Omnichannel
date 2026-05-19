@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>BlinkOne — Routing</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
+<script src="./_app.js"></script>
+</head>
+<body class="bg-slate-900 text-slate-200 p-5" x-data="panel()" x-init="init()">
+<div class="max-w-4xl mx-auto">
+  <h1 class="text-lg font-semibold mb-5">🔀 Call Routing (ACD)</h1>
+  <div x-show="err" x-text="err" class="mb-3 p-3 bg-red-900/50 border border-red-700 rounded text-sm text-red-300"></div>
+  <div class="grid grid-cols-3 gap-3 mb-5">
+    <div class="bg-slate-800 border border-slate-700 rounded-lg p-4 text-center"><div class="text-2xl font-bold text-green-400" x-text="agents.filter(a=>a.status==='available').length"></div><div class="text-sm text-slate-400">Available</div></div>
+    <div class="bg-slate-800 border border-slate-700 rounded-lg p-4 text-center"><div class="text-2xl font-bold text-blue-400" x-text="agents.filter(a=>a.status==='busy').length"></div><div class="text-sm text-slate-400">Busy</div></div>
+    <div class="bg-slate-800 border border-slate-700 rounded-lg p-4 text-center"><div class="text-2xl font-bold text-slate-400" x-text="agents.filter(a=>a.status==='away'||a.status==='offline').length"></div><div class="text-sm text-slate-400">Away/Offline</div></div>
+  </div>
+  <div class="space-y-2">
+    <template x-for="a in agents" :key="`${a.tenantId}:${a.agentId}`">
+      <div class="bg-slate-800 border border-slate-700 rounded-lg p-3 flex items-center justify-between">
+        <div>
+          <div class="font-medium" x-text="a.agentId"></div>
+          <div class="text-xs text-slate-400" x-text="`Skills: ${a.skills?.join(', ')||'—'} · Queue: ${a.queue||'—'}`"></div>
+        </div>
+        <span class="px-2 py-0.5 rounded text-xs" :class="{'bg-green-900 text-green-300':a.status==='available','bg-blue-900 text-blue-300':a.status==='busy','bg-slate-700 text-slate-400':a.status==='away'||a.status==='offline'}" x-text="a.status"></span>
+      </div>
+    </template>
+    <div x-show="!agents.length" class="text-slate-500 text-sm">No agents registered.</div>
+  </div>
+</div>
+<script>
+function panel() {
+  return { agents:[], err:null,
+    async init() {
+      try { this.agents = await bo.get('/routing/v1/agents'); }
+      catch(e) { this.err=e.message; }
+    }
+  };
+}
+</script>
+</body></html>

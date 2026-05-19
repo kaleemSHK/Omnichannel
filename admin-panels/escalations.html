@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>BlinkOne — Escalations</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
+<script src="./_app.js"></script>
+</head>
+<body class="bg-slate-900 text-slate-200 p-5" x-data="panel()" x-init="init()">
+<div class="max-w-4xl mx-auto">
+  <h1 class="text-lg font-semibold mb-5">🚨 Escalations</h1>
+  <div x-show="err" x-text="err" class="mb-3 p-3 bg-red-900/50 border border-red-700 rounded text-sm text-red-300"></div>
+  <div class="grid grid-cols-3 gap-3 mb-5">
+    <div class="bg-slate-800 border border-slate-700 rounded-lg p-4 text-center">
+      <div class="text-2xl font-bold text-red-400" x-text="incidents.filter(i=>i.status==='open').length"></div>
+      <div class="text-sm text-slate-400">Open</div>
+    </div>
+    <div class="bg-slate-800 border border-slate-700 rounded-lg p-4 text-center">
+      <div class="text-2xl font-bold text-yellow-400" x-text="incidents.filter(i=>i.status==='acknowledged').length"></div>
+      <div class="text-sm text-slate-400">Acknowledged</div>
+    </div>
+    <div class="bg-slate-800 border border-slate-700 rounded-lg p-4 text-center">
+      <div class="text-2xl font-bold text-green-400" x-text="incidents.filter(i=>i.status==='resolved').length"></div>
+      <div class="text-sm text-slate-400">Resolved</div>
+    </div>
+  </div>
+  <div class="space-y-2">
+    <template x-for="i in incidents" :key="i.id">
+      <div class="bg-slate-800 border rounded-lg p-4" :class="i.status==='open'?'border-red-700':i.status==='acknowledged'?'border-yellow-700':'border-slate-700'">
+        <div class="flex items-center justify-between">
+          <div>
+            <div class="font-mono text-sm text-slate-400" x-text="i.id"></div>
+            <div class="font-medium mt-0.5" x-text="i.title"></div>
+            <div class="text-xs text-slate-500 mt-1" x-text="bo.fmt(i.createdAt)"></div>
+          </div>
+          <div class="flex flex-col gap-1 items-end">
+            <span class="px-2 py-0.5 rounded text-xs font-medium" :class="{'bg-red-900 text-red-300':i.status==='open','bg-yellow-900 text-yellow-300':i.status==='acknowledged','bg-green-900 text-green-300':i.status==='resolved'}" x-text="i.status"></span>
+            <button x-show="i.status==='open'" @click="transition(i.id,'acknowledged')" class="text-xs text-blue-400 hover:underline">Acknowledge</button>
+            <button x-show="i.status==='acknowledged'" @click="transition(i.id,'resolved')" class="text-xs text-green-400 hover:underline">Resolve</button>
+          </div>
+        </div>
+      </div>
+    </template>
+    <div x-show="!incidents.length" class="text-slate-500 text-sm">No incidents.</div>
+  </div>
+</div>
+<script>
+function panel() {
+  return { incidents:[], err:null,
+    async init() {
+      try { this.incidents = await bo.get('/escalations/v1/incidents'); }
+      catch(e) { this.err=e.message; }
+    },
+    async transition(id, status) {
+      try { await bo.patch(`/escalations/v1/incidents/${id}`, { status }); await this.init(); }
+      catch(e) { this.err=e.message; }
+    }
+  };
+}
+</script>
+</body></html>

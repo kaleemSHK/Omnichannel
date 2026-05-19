@@ -1,0 +1,323 @@
+name: blinkone
+
+# ─── Shared proxy headers for all services ─────────────────────────────────
+x-proxy-headers: &proxy-headers
+  environment: &common-env
+    NODE_ENV: production
+
+services:
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # INFRASTRUCTURE
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       chatwoot
+      POSTGRES_USER:     postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks: [blinkone]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d chatwoot"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  postgres_app:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       blinkone_app
+      POSTGRES_USER:     app
+      POSTGRES_PASSWORD: ${APP_DB_PASSWORD}
+    volumes:
+      - postgres_app_data:/var/lib/postgresql/data
+    networks: [blinkone]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d blinkone_app"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    networks: [blinkone]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # CHATWOOT (official image — BlinkOne branded via env)
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  chatwoot:
+    image: ${CHATWOOT_IMAGE:-chatwoot/chatwoot:v4.13.0-ce}
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      RAILS_ENV:              production
+      INSTALLATION_ENV:       docker
+      INSTALLATION_NAME:      ${INSTALLATION_NAME:-BlinkOne}
+      INSTALLATION_EMAIL:     ${INSTALLATION_EMAIL:-admin@blinkone.ai}
+      MAILER_SENDER_EMAIL:    ${MAILER_SENDER_EMAIL:-noreply@blinkone.ai}
+      DATABASE_URL:           postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/chatwoot
+      REDIS_URL:              redis://redis:6379
+      SECRET_KEY_BASE:        ${SECRET_KEY_BASE}
+      FRONTEND_URL:           ${FRONTEND_URL:-http://localhost}
+      ENABLE_ACCOUNT_SIGNUP:  "false"
+      ACTION_CABLE_ALLOWED_REQUEST_ORIGINS: ${FRONTEND_URL:-http://localhost},http://127.0.0.1
+    entrypoint: docker/entrypoints/rails.sh
+    command: ["bundle", "exec", "rails", "s", "-p", "3000", "-b", "0.0.0.0"]
+    volumes:
+      - chatwoot_storage:/app/storage
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis:    { condition: service_healthy }
+    networks: [blinkone]
+    expose: ["3000"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/auth/sign_in || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+
+  sidekiq:
+    image: ${CHATWOOT_IMAGE:-chatwoot/chatwoot:v4.13.0-ce}
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      RAILS_ENV:        production
+      INSTALLATION_ENV: docker
+      DATABASE_URL:     postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/chatwoot
+      REDIS_URL:        redis://redis:6379
+      SECRET_KEY_BASE:  ${SECRET_KEY_BASE}
+      FRONTEND_URL:     ${FRONTEND_URL:-http://localhost}
+    entrypoint: docker/entrypoints/rails.sh
+    command: ["bundle", "exec", "sidekiq", "-C", "config/sidekiq.yml"]
+    volumes:
+      - chatwoot_storage:/app/storage
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis:    { condition: service_healthy }
+    networks: [blinkone]
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # BLINKONE ENTERPRISE SERVICES
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  gateway:
+    build: { context: ./gateway }
+    restart: unless-stopped
+    environment:
+      PORT:                 "8787"
+      JWT_SECRET:           ${JWT_SECRET}
+      CHATWOOT_UPSTREAM:    http://chatwoot:3000
+      PLATFORM_UPSTREAM:    http://platform:8790
+      TICKETS_UPSTREAM:     http://tickets:8791
+      CALLS_UPSTREAM:       http://calls:8792
+      AI_UPSTREAM:          http://ai:8793
+      BILLING_UPSTREAM:     http://billing:8794
+      IVR_UPSTREAM:         http://ivr:8795
+      SLA_UPSTREAM:         http://sla:8796
+      ESCALATION_UPSTREAM:  http://escalation:8797
+      ROUTING_UPSTREAM:     http://routing:8798
+      RECORDING_UPSTREAM:   http://recording:8799
+      INTEGRATION_UPSTREAM: http://integration:8800
+      AI_TOKEN:             ${AI_TOKEN}
+      CHATWOOT_WEBHOOK_SECRET: ${CHATWOOT_WEBHOOK_SECRET}
+      TICKET_TOKEN:         ${TICKET_TOKEN}
+      SLA_TOKEN:            ${SLA_TOKEN}
+      INTEGRATION_TOKEN:    ${INTEGRATION_TOKEN}
+    networks: [blinkone]
+    expose: ["8787"]
+
+  platform:
+    build: { context: ./services/platform }
+    restart: unless-stopped
+    environment:
+      PORT:     "8790"
+      DATA_DIR: /data
+      TOKEN:    ${PLATFORM_TOKEN}
+      JWT_SECRET: ${JWT_SECRET}
+    volumes: [platform_data:/data]
+    networks: [blinkone]
+    expose: ["8790"]
+
+  tickets:
+    build: { context: ./services/tickets }
+    restart: unless-stopped
+    environment:
+      PORT:     "8791"
+      DATA_DIR: /data
+      TOKEN:    ${TICKET_TOKEN}
+      SLA_URL:  http://sla:8796
+      SLA_TOKEN: ${SLA_TOKEN}
+    volumes: [tickets_data:/data]
+    networks: [blinkone]
+    expose: ["8791"]
+
+  calls:
+    build: { context: ./services/calls }
+    restart: unless-stopped
+    environment:
+      PORT:     "8792"
+      DATA_DIR: /data
+      TOKEN:    ${CALLS_TOKEN}
+      RECORDING_URL:   http://recording:8799
+      RECORDING_TOKEN: ${RECORDING_TOKEN}
+    volumes: [calls_data:/data]
+    networks: [blinkone]
+    expose: ["8792"]
+
+  ai:
+    build: { context: ./services/ai }
+    restart: unless-stopped
+    environment:
+      PORT:             "8793"
+      DATA_DIR:         /data
+      TOKEN:            ${AI_TOKEN}
+      OPENAI_API_KEY:   ${OPENAI_API_KEY}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      CHATWOOT_URL:     http://chatwoot:3000
+    volumes: [ai_data:/data]
+    networks: [blinkone]
+    expose: ["8793"]
+
+  billing:
+    build: { context: ./services/billing }
+    restart: unless-stopped
+    environment:
+      PORT:     "8794"
+      DATA_DIR: /data
+      TOKEN:    ${BILLING_TOKEN}
+    volumes: [billing_data:/data]
+    networks: [blinkone]
+    expose: ["8794"]
+
+  ivr:
+    build: { context: ./services/ivr }
+    restart: unless-stopped
+    environment:
+      PORT:     "8795"
+      DATA_DIR: /data
+      TOKEN:    ${IVR_TOKEN}
+    volumes: [ivr_data:/data]
+    networks: [blinkone]
+    expose: ["8795"]
+
+  sla:
+    build: { context: ./services/sla }
+    restart: unless-stopped
+    environment:
+      PORT:              "8796"
+      DATA_DIR:          /data
+      TOKEN:             ${SLA_TOKEN}
+      ESCALATION_URL:    http://escalation:8797
+      ESCALATION_TOKEN:  ${ESCALATION_TOKEN}
+    volumes: [sla_data:/data]
+    networks: [blinkone]
+    expose: ["8796"]
+
+  escalation:
+    build: { context: ./services/escalation }
+    restart: unless-stopped
+    environment:
+      PORT:     "8797"
+      DATA_DIR: /data
+      TOKEN:    ${ESCALATION_TOKEN}
+    volumes: [escalation_data:/data]
+    networks: [blinkone]
+    expose: ["8797"]
+
+  routing:
+    build: { context: ./services/routing }
+    restart: unless-stopped
+    environment:
+      PORT:     "8798"
+      DATA_DIR: /data
+      TOKEN:    ${ROUTING_TOKEN}
+    volumes: [routing_data:/data]
+    networks: [blinkone]
+    expose: ["8798"]
+
+  recording:
+    build: { context: ./services/recording }
+    restart: unless-stopped
+    environment:
+      PORT:     "8799"
+      DATA_DIR: /data
+      TOKEN:    ${RECORDING_TOKEN}
+    volumes: [recording_data:/data]
+    networks: [blinkone]
+    expose: ["8799"]
+
+  integration:
+    build: { context: ./services/integration }
+    restart: unless-stopped
+    environment:
+      PORT:     "8800"
+      DATA_DIR: /data
+      TOKEN:    ${INTEGRATION_TOKEN}
+    volumes: [integration_data:/data]
+    networks: [blinkone]
+    expose: ["8800"]
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # ADMIN PANELS (static HTML served by nginx)
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  admin-panels:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    volumes:
+      - ./admin-panels:/usr/share/nginx/html:ro
+    networks: [blinkone]
+    expose: ["80"]
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # PUBLIC ENTRY POINT
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports: ["80:80"]
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - chatwoot
+      - gateway
+      - admin-panels
+    networks: [blinkone]
+
+networks:
+  blinkone:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  postgres_app_data:
+  redis_data:
+  chatwoot_storage:
+  platform_data:
+  tickets_data:
+  calls_data:
+  ai_data:
+  billing_data:
+  ivr_data:
+  sla_data:
+  escalation_data:
+  routing_data:
+  recording_data:
+  integration_data:

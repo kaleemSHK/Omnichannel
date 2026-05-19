@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>BlinkOne — SLA</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
+<script src="./_app.js"></script>
+</head>
+<body class="bg-slate-900 text-slate-200 p-5" x-data="panel()" x-init="init()">
+<div class="max-w-4xl mx-auto">
+  <div class="flex items-center justify-between mb-5">
+    <h1 class="text-lg font-semibold">⏱️ SLA Management</h1>
+    <div class="flex gap-2">
+      <input x-model="accountId" type="number" placeholder="Account ID" class="bg-slate-800 border border-slate-600 rounded px-3 py-1.5 text-sm w-32">
+      <button @click="load()" class="bg-blue-600 hover:bg-blue-700 px-4 py-1.5 rounded text-sm">Load</button>
+    </div>
+  </div>
+  <div x-show="err" x-text="err" class="mb-3 p-3 bg-red-900/50 border border-red-700 rounded text-sm text-red-300"></div>
+  <section class="mb-6">
+    <h2 class="text-sm font-semibold text-slate-400 uppercase tracking-wide mb-3">Policies</h2>
+    <div class="space-y-2">
+      <template x-for="p in policies" :key="p.id">
+        <div class="bg-slate-800 border border-slate-700 rounded-lg p-4 flex items-center justify-between">
+          <div>
+            <div class="font-medium" x-text="p.name"></div>
+            <div class="text-sm text-slate-400" x-text="`First response: ${p.firstResponseMinutes}m · Resolve: ${p.resolveMinutes}m`"></div>
+          </div>
+          <span class="text-xs text-slate-500" x-text="`ID: ${p.id}`"></span>
+        </div>
+      </template>
+    </div>
+  </section>
+  <section>
+    <h2 class="text-sm font-semibold text-slate-400 uppercase tracking-wide mb-3">SLA Instances</h2>
+    <div class="space-y-2">
+      <template x-for="i in instances" :key="i.id">
+        <div class="rounded-lg border p-4" :class="i.isBreached?'bg-red-950 border-red-700':'bg-slate-800 border-slate-700'">
+          <div class="flex items-center justify-between">
+            <div>
+              <div class="font-medium" x-text="`#${i.id} · ${i.policyName}`"></div>
+              <div class="text-xs text-slate-400 mt-1" x-text="`FR due: ${bo.fmt(i.firstResponseDueAt)} · Resolve: ${bo.fmt(i.resolveDueAt)}`"></div>
+            </div>
+            <span class="px-2 py-0.5 rounded text-xs font-medium" :class="i.isBreached?'bg-red-800 text-red-200':i.resolvedAt?'bg-green-900 text-green-300':'bg-yellow-900 text-yellow-300'" x-text="i.isBreached?'BREACHED':i.resolvedAt?'Resolved':'Active'"></span>
+          </div>
+        </div>
+      </template>
+      <div x-show="instances.length===0&&loaded" class="text-slate-500 text-sm">No instances.</div>
+    </div>
+  </section>
+</div>
+<script>
+function panel() {
+  return { accountId:'', policies:[], instances:[], err:null, loaded:false,
+    init() { this.accountId=new URLSearchParams(location.search).get('account_id')||''; if(this.accountId) this.load(); },
+    async load() {
+      if(!this.accountId) return;
+      try {
+        [this.policies,this.instances] = await Promise.all([bo.get(`/sla/v1/policies?chatwoot_account_id=${this.accountId}`), bo.get(`/sla/v1/instances?chatwoot_account_id=${this.accountId}`)]);
+        this.loaded=true;
+      } catch(e) { this.err=e.message; }
+    }
+  };
+}
+</script>
+</body></html>

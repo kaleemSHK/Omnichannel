@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>BlinkOne Admin</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-900 min-h-screen p-8">
+  <div class="max-w-3xl mx-auto">
+    <div class="flex items-center gap-3 mb-8">
+      <div class="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold text-xl">B</div>
+      <div>
+        <h1 class="text-white text-xl font-semibold">BlinkOne Enterprise Admin</h1>
+        <p class="text-slate-400 text-sm">Platform management panels</p>
+      </div>
+    </div>
+    <div class="grid grid-cols-2 gap-3">
+      <a href="./tenants.html"     class="panel">🏢 Tenants &amp; Platform</a>
+      <a href="./tickets.html"     class="panel">🎫 Tickets / CRM</a>
+      <a href="./sla.html"         class="panel">⏱️ SLA Management</a>
+      <a href="./escalations.html" class="panel">🚨 Escalations</a>
+      <a href="./billing.html"     class="panel">💳 Billing &amp; Plans</a>
+      <a href="./ivr.html"         class="panel">📞 IVR Flows</a>
+      <a href="./routing.html"     class="panel">🔀 Call Routing</a>
+      <a href="./recordings.html"  class="panel">🎙️ Recordings</a>
+      <a href="./ai.html"          class="panel">🤖 AI &amp; Quotas</a>
+      <a href="./integrations.html" class="panel">🔗 Integrations</a>
+    </div>
+    <p class="text-slate-500 text-xs mt-6 text-center">Embed these panels in Chatwoot: Settings → Integrations → Add Integration → enter /admin URL</p>
+  </div>
+  <style>
+    .panel { display:block; background:#1e293b; border:1px solid #334155; border-radius:10px; padding:16px 20px; color:#e2e8f0; font-size:15px; text-decoration:none; transition:all .15s; }
+    .panel:hover { background:#1d4ed8; border-color:#3b82f6; }
+  </style>
+</body>
+</html>

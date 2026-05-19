@@ -1,0 +1,127 @@
+name: Upstream drift check
+
+on:
+  schedule:
+    # Weekly Monday 06:00 UTC
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout BlinkOne
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch upstream Chatwoot
+        run: |
+          git remote add upstream-chatwoot https://github.com/chatwoot/chatwoot.git 2>/dev/null || true
+          git fetch upstream-chatwoot --tags --depth=1 master 2>/dev/null || \
+            git fetch upstream-chatwoot --tags --depth=1 main 2>/dev/null || true
+
+      - name: Detect overlapping changes
+        id: overlap
+        run: |
+          set -euo pipefail
+          OUT="drift-report.md"
+          echo "# Upstream drift report" > "$OUT"
+          echo "" >> "$OUT"
+          echo "Generated: $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$OUT"
+          echo "" >> "$OUT"
+
+          UPSTREAM_REF=""
+          if git rev-parse --verify upstream-chatwoot/master >/dev/null 2>&1; then
+            UPSTREAM_REF="upstream-chatwoot/master"
+          elif git rev-parse --verify upstream-chatwoot/main >/dev/null 2>&1; then
+            UPSTREAM_REF="upstream-chatwoot/main"
+          else
+            echo "Could not resolve upstream default branch." >> "$OUT"
+            echo "has_drift=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Upstream ref: \`$UPSTREAM_REF\`" >> "$OUT"
+          echo "" >> "$OUT"
+
+          # Files we touched that also changed upstream (merge-base diff)
+          MERGE_BASE=$(git merge-base HEAD "$UPSTREAM_REF" 2>/dev/null || echo "")
+          if [ -z "$MERGE_BASE" ]; then
+            echo "No common history with upstream (image-only deploy repo). Skipping file overlap." >> "$OUT"
+            echo "" >> "$OUT"
+            echo "## Pinned image check" >> "$OUT"
+            PINNED=$(grep -E 'CHATWOOT_IMAGE|chatwoot/chatwoot:' docker-compose.yml .env.example 2>/dev/null | head -5 || true)
+            echo '```' >> "$OUT"
+            echo "$PINNED" >> "$OUT"
+            echo '```' >> "$OUT"
+            echo "" >> "$OUT"
+            echo "Review [Chatwoot releases](https://github.com/chatwoot/chatwoot/releases) and update \`CHATWOOT_IMAGE\` in \`.env\` per \`docs/blinkone/UPSTREAM_BASE.md\`." >> "$OUT"
+            echo "has_drift=true" >> "$GITHUB_OUTPUT"
+            cat "$OUT"
+            exit 0
+          fi
+
+          OUR_FILES=$(git diff --name-only "$MERGE_BASE"..HEAD 2>/dev/null || true)
+          UP_FILES=$(git diff --name-only "$MERGE_BASE".."$UPSTREAM_REF" 2>/dev/null || true)
+
+          OVERLAP=$(comm -12 <(echo "$OUR_FILES" | sort) <(echo "$UP_FILES" | sort) | grep -v '^$' || true)
+          BLINKONE_MARKED=$(git grep -l '# BLINKONE:' -- ':!doc/' 2>/dev/null | sort -u || true)
+
+          echo "## Files changed in both BlinkOne and upstream since merge-base" >> "$OUT"
+          if [ -z "$OVERLAP" ]; then
+            echo "_None detected._" >> "$OUT"
+            echo "has_drift=false" >> "$GITHUB_OUTPUT"
+          else
+            echo '```' >> "$OUT"
+            echo "$OVERLAP" >> "$OUT"
+            echo '```' >> "$OUT"
+            echo "has_drift=true" >> "$GITHUB_OUTPUT"
+          fi
+
+          echo "" >> "$OUT"
+          echo "## Files marked \`# BLINKONE:\` in this repo" >> "$OUT"
+          if [ -z "$BLINKONE_MARKED" ]; then
+            echo "_None yet (expected until fork/rebrand work)._ " >> "$OUT"
+          else
+            echo '```' >> "$OUT"
+            echo "$BLINKONE_MARKED" >> "$OUT"
+            echo '```' >> "$OUT"
+          fi
+
+          cat "$OUT"
+
+      - name: Open issue on drift
+        if: steps.overlap.outputs.has_drift == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const body = fs.readFileSync('drift-report.md', 'utf8');
+            const title = `Upstream drift check — ${new Date().toISOString().slice(0, 10)}`;
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'upstream-drift',
+            });
+            if (issues.data.length > 0) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issues.data[0].number,
+                body,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body,
+                labels: ['upstream-drift', 'maintenance'],
+              });
+            }

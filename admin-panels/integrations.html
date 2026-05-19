@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>BlinkOne — Integrations</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
+<script src="./_app.js"></script>
+</head>
+<body class="bg-slate-900 text-slate-200 p-5" x-data="panel()" x-init="init()">
+<div class="max-w-4xl mx-auto">
+  <h1 class="text-lg font-semibold mb-5">🔗 Integrations &amp; Webhooks</h1>
+  <div x-show="err" x-text="err" class="mb-3 p-3 bg-red-900/50 border border-red-700 rounded text-sm text-red-300"></div>
+  <section class="mb-6">
+    <h2 class="text-sm font-semibold text-slate-400 uppercase tracking-wide mb-3">Webhook Endpoints</h2>
+    <div x-show="!webhooks.length" class="text-slate-500 text-sm">No webhooks configured.</div>
+    <div class="space-y-2">
+      <template x-for="w in webhooks" :key="w.id">
+        <div class="bg-slate-800 border border-slate-700 rounded-lg p-4">
+          <div class="font-mono text-sm text-blue-300 break-all" x-text="w.url"></div>
+          <div class="text-xs text-slate-400 mt-1" x-text="`Events: ${w.events?.join(', ')} · Tenant #${w.tenantId}`"></div>
+          <div class="flex items-center gap-3 mt-1">
+            <span class="text-xs text-slate-500" x-text="bo.fmt(w.createdAt)"></span>
+            <span class="px-1.5 py-0.5 rounded text-xs" :class="w.active?'bg-green-900 text-green-300':'bg-slate-700 text-slate-400'" x-text="w.active?'Active':'Inactive'"></span>
+          </div>
+        </div>
+      </template>
+    </div>
+  </section>
+  <section>
+    <h2 class="text-sm font-semibold text-slate-400 uppercase tracking-wide mb-3">Dead Letters <span class="text-red-400" x-text="deadLetters.length?`(${deadLetters.length})`:''" ></span></h2>
+    <div x-show="!deadLetters.length" class="text-slate-500 text-sm">No dead letters.</div>
+    <div class="space-y-2">
+      <template x-for="d in deadLetters" :key="d.id">
+        <div class="bg-red-950 border border-red-800 rounded-lg p-3 text-sm">
+          <div class="font-medium text-red-300" x-text="`${d.event} → ${d.url}`"></div>
+          <div class="text-slate-400 text-xs mt-1" x-text="bo.fmt(d.failedAt)"></div>
+        </div>
+      </template>
+    </div>
+  </section>
+</div>
+<script>
+function panel() {
+  return { webhooks:[], deadLetters:[], err:null,
+    async init() {
+      try { [this.webhooks, this.deadLetters] = await Promise.all([bo.get('/integrations/v1/webhooks'), bo.get('/integrations/v1/dead-letters')]); }
+      catch(e) { this.err=e.message; }
+    }
+  };
+}
+</script>
+</body></html>

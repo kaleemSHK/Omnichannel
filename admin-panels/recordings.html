@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>BlinkOne — Recordings</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
+<script src="./_app.js"></script>
+</head>
+<body class="bg-slate-900 text-slate-200 p-5" x-data="panel()" x-init="init()">
+<div class="max-w-4xl mx-auto">
+  <div class="flex items-center justify-between mb-5">
+    <h1 class="text-lg font-semibold">🎙️ Call Recordings</h1>
+    <div class="flex gap-2">
+      <input x-model="accountId" type="number" placeholder="Account ID" class="bg-slate-800 border border-slate-600 rounded px-3 py-1.5 text-sm w-32">
+      <button @click="load()" class="bg-blue-600 hover:bg-blue-700 px-4 py-1.5 rounded text-sm">Load</button>
+    </div>
+  </div>
+  <div x-show="err" x-text="err" class="mb-3 p-3 bg-red-900/50 border border-red-700 rounded text-sm text-red-300"></div>
+  <div class="space-y-2">
+    <template x-for="r in recordings" :key="r.id">
+      <div class="bg-slate-800 border border-slate-700 rounded-lg p-4">
+        <div class="flex items-center justify-between">
+          <div>
+            <div class="font-mono text-sm" x-text="r.id"></div>
+            <div class="text-sm text-slate-400 mt-0.5" x-text="`${r.channel} · ${bo.dur(r.durationMs)} · ${r.storageBackend}`"></div>
+            <div class="text-xs text-slate-500 mt-1" x-text="`Created: ${bo.fmt(r.createdAt)}`"></div>
+          </div>
+          <button @click="getUrl(r.id)" class="text-blue-400 text-sm hover:underline">Playback URL</button>
+        </div>
+        <div x-show="urls[r.id]" class="mt-2 text-xs font-mono bg-slate-900 border border-slate-700 rounded p-2 break-all text-green-400" x-text="urls[r.id]"></div>
+      </div>
+    </template>
+    <div x-show="!recordings.length&&loaded" class="text-slate-500 text-sm">No recordings.</div>
+  </div>
+</div>
+<script>
+function panel() {
+  return { accountId:'', recordings:[], urls:{}, err:null, loaded:false,
+    init() { this.accountId=new URLSearchParams(location.search).get('account_id')||''; if(this.accountId) this.load(); },
+    async load() {
+      if(!this.accountId) return;
+      try { this.recordings = await bo.get(`/recordings/v1/recordings?chatwoot_account_id=${this.accountId}`); this.loaded=true; }
+      catch(e) { this.err=e.message; }
+    },
+    async getUrl(id) {
+      try { const d = await bo.get(`/recordings/v1/recordings/${id}/playback-url`); this.urls = { ...this.urls, [id]: d.playbackUrl }; }
+      catch(e) { this.err=e.message; }
+    }
+  };
+}
+</script>
+</body></html>

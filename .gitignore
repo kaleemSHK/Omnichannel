@@ -1,0 +1,25 @@
+.env
+.env.production
+.env.staging
+.env.local
+*.pem
+*.key
+age-recipient.txt
+
+# Backups (never commit)
+backups/
+*.sql.gz
+*.tar.gz
+*.age
+
+# Runtime / OS
+node_modules/
+.DS_Store
+Thumbs.db
+*.log
+startup.log
+
+# IDE
+.idea/
+.vscode/
+*.swp

@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>BlinkOne — Tickets</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
+<script src="./_app.js"></script>
+</head>
+<body class="bg-slate-900 text-slate-200 p-5" x-data="panel()" x-init="init()">
+<div class="max-w-4xl mx-auto">
+  <div class="flex items-center justify-between mb-5">
+    <h1 class="text-lg font-semibold">🎫 Tickets / CRM</h1>
+    <div class="flex gap-2">
+      <input x-model="accountId" type="number" placeholder="Account ID" class="bg-slate-800 border border-slate-600 rounded px-3 py-1.5 text-sm w-32">
+      <button @click="load()" class="bg-blue-600 hover:bg-blue-700 px-4 py-1.5 rounded text-sm">Load</button>
+    </div>
+  </div>
+  <div x-show="err" x-text="err" class="mb-3 p-3 bg-red-900/50 border border-red-700 rounded text-sm text-red-300"></div>
+  <div x-show="loading" class="text-slate-400 text-sm">Loading...</div>
+  <div class="space-y-2" x-show="!loading">
+    <template x-for="t in tickets" :key="t.id">
+      <div class="bg-slate-800 rounded-lg border border-slate-700 p-4">
+        <div class="flex items-start justify-between">
+          <div>
+            <div class="font-medium" x-text="`#${t.id} — ${t.title}`"></div>
+            <div class="text-sm text-slate-400 mt-0.5" x-text="`${t.customerName} · ${t.channel} · ${t.department}`"></div>
+          </div>
+          <div class="flex gap-2">
+            <span class="px-2 py-0.5 rounded text-xs font-medium"
+              :class="{'bg-green-900 text-green-300':t.status==='resolved','bg-yellow-900 text-yellow-300':t.status==='pending','bg-blue-900 text-blue-300':t.status==='open','bg-purple-900 text-purple-300':t.status==='in-progress'}"
+              x-text="t.status"></span>
+            <span class="px-2 py-0.5 rounded text-xs font-medium"
+              :class="{'bg-red-900 text-red-300':t.priority==='urgent','bg-orange-900 text-orange-300':t.priority==='high','bg-slate-700 text-slate-300':t.priority==='medium'||t.priority==='low'}"
+              x-text="t.priority"></span>
+          </div>
+        </div>
+        <div class="text-xs text-slate-500 mt-2" x-text="`Created: ${bo.fmt(t.createdAt)}`"></div>
+      </div>
+    </template>
+    <div x-show="!loading && tickets.length===0 && loaded" class="text-slate-500 text-sm">No tickets found.</div>
+  </div>
+</div>
+<script>
+function panel() {
+  return { accountId: new URLSearchParams(location.search).get('account_id')||'', tickets:[], loading:false, err:null, loaded:false,
+    init() { if(this.accountId) this.load(); },
+    async load() {
+      if (!this.accountId) return;
+      this.loading=true; this.err=null;
+      try { this.tickets = await bo.get(`/tickets/v1/tickets?chatwoot_account_id=${this.accountId}`); this.loaded=true; }
+      catch(e) { this.err=e.message; }
+      finally { this.loading=false; }
+    }
+  };
+}
+</script>
+</body></html>

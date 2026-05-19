@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>BlinkOne — Tenants</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
+<script src="./_app.js"></script>
+</head>
+<body class="bg-slate-900 text-slate-200 p-5" x-data="panel()" x-init="init()">
+<div class="max-w-4xl mx-auto">
+  <h1 class="text-lg font-semibold mb-5">🏢 Tenants &amp; Platform</h1>
+  <div x-show="err" x-text="err" class="mb-3 p-3 bg-red-900/50 border border-red-700 rounded text-sm text-red-300"></div>
+  <section class="mb-6">
+    <h2 class="text-sm font-semibold text-slate-400 uppercase tracking-wide mb-3">Tenants</h2>
+    <div class="space-y-2">
+      <template x-for="t in tenants" :key="t.id">
+        <div class="bg-slate-800 border border-slate-700 rounded-lg p-4">
+          <div class="flex items-start justify-between">
+            <div>
+              <div class="font-medium" x-text="`#${t.id} — ${t.name}`"></div>
+              <div class="text-sm text-slate-400" x-text="`slug: ${t.slug} · plan: ${t.plan}`"></div>
+              <div class="text-xs text-slate-500 mt-1" x-text="`Chatwoot accounts: ${t.chatwootAccountIds?.join(', ') || '—'}`"></div>
+            </div>
+            <span class="px-2 py-0.5 rounded text-xs" :class="t.status==='active'?'bg-green-900 text-green-300':'bg-slate-700 text-slate-400'" x-text="t.status"></span>
+          </div>
+        </div>
+      </template>
+    </div>
+  </section>
+  <section>
+    <h2 class="text-sm font-semibold text-slate-400 uppercase tracking-wide mb-3">Recent Audit Log</h2>
+    <div class="bg-slate-800 border border-slate-700 rounded-lg divide-y divide-slate-700">
+      <template x-for="e in audit" :key="e.id">
+        <div class="p-3 text-sm flex items-center justify-between">
+          <div>
+            <span class="font-medium text-slate-200" x-text="e.action"></span>
+            <span class="text-slate-400 ml-2" x-text="`· ${e.resourceType}`"></span>
+            <span x-show="e.actorEmail" class="text-slate-500 ml-2" x-text="`by ${e.actorEmail}`"></span>
+          </div>
+          <span class="text-slate-500 text-xs" x-text="bo.fmt(e.ts)"></span>
+        </div>
+      </template>
+      <div x-show="!audit.length" class="p-3 text-sm text-slate-500">No audit events.</div>
+    </div>
+  </section>
+</div>
+<script>
+function panel() {
+  return { tenants:[], audit:[], err:null,
+    async init() {
+      try { [this.tenants, this.audit] = await Promise.all([bo.get('/platform/v1/tenants'), bo.get('/platform/v1/audit')]); }
+      catch(e) { this.err=e.message; }
+    }
+  };
+}
+</script>
+</body></html>
