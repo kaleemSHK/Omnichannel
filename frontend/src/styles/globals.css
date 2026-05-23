@@ -1,0 +1,82 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --radius: 0.5rem;
+    --background: 0 0% 100%;
+    --muted: 0 0% 96%;
+    --muted-foreground: 0 0% 45%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 98%;
+    --surface: 0 0% 100%;
+    --surface-secondary: 0 0% 97%;
+    --surface-tertiary: 0 0% 94%;
+    --brand-primary: #0B5FFF;
+    --brand-ink: #0A0F1C;
+  }
+
+  html[dir='rtl'] body {
+    font-family: var(--font-arabic), sans-serif;
+  }
+
+  html[dir='ltr'] body {
+    font-family: var(--font-inter), sans-serif;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    @apply bg-surface-tertiary text-brand-ink;
+    font-feature-settings: 'rlig' 1, 'calt' 1;
+  }
+
+  /* Scrollbar styling */
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 2px; }
+  ::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
+}
+
+@layer components {
+  /* Chatwoot-style left sidebar icon button */
+  .sidebar-icon {
+    @apply w-9 h-9 flex items-center justify-center rounded-lg text-gray-500
+           hover:bg-gray-100 hover:text-gray-900 transition-colors cursor-pointer;
+  }
+  .sidebar-icon.active {
+    @apply bg-blue-50 text-blue-600;
+  }
+
+  /* Status badge pills */
+  .status-available { @apply bg-green-100 text-green-800 text-xs px-2 py-0.5 rounded-full; }
+  .status-busy      { @apply bg-red-100 text-red-800 text-xs px-2 py-0.5 rounded-full; }
+  .status-break     { @apply bg-amber-100 text-amber-800 text-xs px-2 py-0.5 rounded-full; }
+  .status-offline   { @apply bg-gray-100 text-gray-600 text-xs px-2 py-0.5 rounded-full; }
+
+  /* Card base */
+  .bn-card {
+    @apply bg-white border border-gray-100 rounded-lg;
+  }
+
+  /* KPI metric card */
+  .kpi-card {
+    @apply bn-card p-3 flex flex-col gap-1;
+  }
+  .kpi-label { @apply text-xs text-gray-500; }
+  .kpi-value { @apply text-2xl font-medium text-gray-900; }
+
+  .call-bar-btn {
+    @apply size-[30px] rounded-full border border-[#c0dd97] bg-white flex items-center justify-center text-[#3b6d11];
+  }
+  .call-bar-btn.hangup {
+    @apply border-[#f7c1c1] bg-[#fcebeb] text-[#a32d2d];
+  }
+
+  .call-ctrl {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-gray-200 text-xs text-gray-700 bg-white hover:bg-gray-50;
+  }
+}

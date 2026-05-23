@@ -1,0 +1,204 @@
+'use client';
+
+import { useEffect, useRef } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { ChevronLeft, ChevronRight, MessageSquare } from 'lucide-react';
+import { MessageBubble } from '@/components/conversations/MessageBubble';
+import { ReplyBox } from '@/components/conversations/ReplyBox';
+import { LabelPicker } from '@/components/conversations/LabelPicker';
+import { SnoozeButton } from '@/components/conversations/SnoozeButton';
+import { Button } from '@/components/ui/button';
+import { Select } from '@/components/ui/select';
+import { Skeleton } from '@/components/ui/skeleton';
+import {
+  assignConversation,
+  updateConversationStatus,
+} from '@/lib/api/conversations';
+import { useMessages } from '@/lib/hooks/useConversations';
+import { useAssignTeam, useTeams } from '@/lib/hooks/useChatwootExtras';
+import { listAgents } from '@/lib/api/routing';
+import { subscribeToConversation } from '@/lib/api/websocket';
+import {
+  conversationContactName,
+  inboxLabel,
+  initials,
+} from '@/lib/utils/conversations';
+import { useAuthStore } from '@/lib/store/auth';
+import { can } from '@/lib/rbac';
+import { useQuery } from '@tanstack/react-query';
+import { DEMO_AGENTS } from '@/lib/demo/callingFixture';
+import { shouldSkipGatewayFetch } from '@/lib/demo/config';
+import type { CWConversation } from '@/types';
+
+interface Props {
+  conversation: CWConversation | null;
+  onToggleAssist: () => void;
+  assistOpen: boolean;
+}
+
+export function MessageThread({ conversation, onToggleAssist, assistOpen }: Props) {
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const user = useAuthStore(s => s.user);
+  const role = user?.role;
+  const qc = useQueryClient();
+  const { data: messages = [], isLoading } = useMessages(conversation?.id ?? null);
+
+  const { data: agents = [] } = useQuery({
+    queryKey: ['routing-agents'],
+    queryFn: async () => {
+      if (shouldSkipGatewayFetch()) return DEMO_AGENTS;
+      try {
+        const data = await listAgents();
+        return data.length ? data : DEMO_AGENTS;
+      } catch {
+        return DEMO_AGENTS;
+      }
+    },
+    staleTime: 60_000,
+  });
+
+  const { data: teams = [] } = useTeams();
+  const teamMutation = useAssignTeam(conversation?.id ?? 0);
+
+  const statusMutation = useMutation({
+    mutationFn: (status: 'open' | 'resolved' | 'pending') =>
+      updateConversationStatus(conversation!.id, status),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['conversations'] });
+    },
+  });
+
+  const assignMutation = useMutation({
+    mutationFn: (assigneeId: string) =>
+      assignConversation(conversation!.id, assigneeId ? Number(assigneeId) : null),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['conversations'] }),
+  });
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, conversation?.id]);
+
+  useEffect(() => {
+    if (!conversation || !user?.chatwootAccountId) return;
+    return subscribeToConversation(user.chatwootAccountId, conversation.id, {
+      onMessage: () => {
+        qc.invalidateQueries({ queryKey: ['messages', conversation.id] });
+        qc.invalidateQueries({ queryKey: ['conversations'] });
+      },
+      onStatusChange: () => {
+        qc.invalidateQueries({ queryKey: ['conversations'] });
+      },
+    });
+  }, [conversation, user?.chatwootAccountId, qc]);
+
+  if (!conversation) {
+    return (
+      <div className="flex flex-col flex-1 h-full items-center justify-center text-muted-foreground gap-2 bg-white">
+        <MessageSquare className="w-10 h-10 opacity-40" />
+        <p className="text-sm">Select a conversation</p>
+      </div>
+    );
+  }
+
+  const contactName = conversationContactName(conversation);
+  const channel = inboxLabel(conversation.channel);
+  const assigneeValue = conversation.meta?.assignee?.id
+    ? String(conversation.meta.assignee.id)
+    : '';
+  const teamValue = conversation.meta?.team?.id ? String(conversation.meta.team.id) : '';
+
+  return (
+    <div className="flex flex-col flex-1 h-full overflow-hidden bg-white min-w-0">
+      <div className="h-12 border-b flex items-center gap-2 px-4 shrink-0 flex-wrap">
+        <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-700 text-xs font-medium flex items-center justify-center shrink-0">
+          {initials(contactName)}
+        </div>
+        <span className="font-medium text-sm truncate">{contactName}</span>
+        <span className="text-xs bg-muted px-1.5 py-0.5 rounded shrink-0">{channel}</span>
+
+        <LabelPicker conversationId={conversation.id} currentLabels={conversation.labels ?? []} />
+
+        {can(role, 'assignConversation') && (
+          <>
+            <Select
+              value={assigneeValue}
+              onChange={e => assignMutation.mutate(e.target.value)}
+              className="max-w-[120px] text-xs"
+              disabled={assignMutation.isPending}
+            >
+              <option value="">Assign agent…</option>
+              {agents.map(a => (
+                <option key={a.id} value={a.agentId}>
+                  {a.name}
+                </option>
+              ))}
+            </Select>
+            <Select
+              value={teamValue}
+              onChange={e => teamMutation.mutate(e.target.value)}
+              className="max-w-[120px] text-xs"
+              disabled={teamMutation.isPending}
+            >
+              <option value="">No team</option>
+              {teams.map(t => (
+                <option key={t.id} value={String(t.id)}>
+                  {t.name}
+                </option>
+              ))}
+            </Select>
+          </>
+        )}
+
+        <SnoozeButton conversationId={conversation.id} />
+
+        {can(role, 'resolveConversation') &&
+          (conversation.status === 'open' || conversation.status === 'pending' ? (
+            <Button
+              type="button"
+              variant="outline"
+              className="h-8 text-xs ms-auto"
+              disabled={statusMutation.isPending}
+              onClick={() => statusMutation.mutate('resolved')}
+            >
+              Resolve
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              variant="outline"
+              className="h-8 text-xs border-green-200 text-green-700 hover:bg-green-50 ms-auto"
+              disabled={statusMutation.isPending}
+              onClick={() => statusMutation.mutate('open')}
+            >
+              Reopen
+            </Button>
+          ))}
+
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          onClick={onToggleAssist}
+          aria-label={assistOpen ? 'Hide assist panel' : 'Show assist panel'}
+          className={can(role, 'resolveConversation') ? '' : 'ms-auto'}
+        >
+          {assistOpen ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
+        </Button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto flex flex-col gap-2 px-4 py-4 min-h-0">
+        {isLoading &&
+          Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-12 w-2/3 rounded-lg" />
+          ))}
+        {!isLoading && messages.length === 0 && (
+          <p className="text-center text-sm text-muted-foreground py-8">No messages yet</p>
+        )}
+        {!isLoading && messages.map(m => <MessageBubble key={m.id} message={m} />)}
+        <div ref={bottomRef} />
+      </div>
+
+      <ReplyBox conversationId={conversation.id} />
+    </div>
+  );
+}

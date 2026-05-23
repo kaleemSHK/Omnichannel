@@ -132,13 +132,13 @@ services:
       resources:
         limits: { cpus: '2', memory: 2G }
 
-  # NestJS gateway (Prompt 4) — port 8080; legacy Express gateway stays on 8787 for nginx
+  # NestJS gateway — host :8788 (host :8080 is reserved for nginx API proxy)
   blinkone-gateway:
     build:
       context: .
       dockerfile: services/gateway/Dockerfile
     restart: unless-stopped
-    ports: ['8080:8080']
+    ports: ['127.0.0.1:8788:8080']
     environment:
       PORT: '8080'
       JWT_SECRET: ${JWT_SECRET}

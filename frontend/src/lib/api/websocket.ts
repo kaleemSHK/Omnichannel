@@ -1,0 +1,124 @@
+/**
+ * Action Cable WebSocket client — Chatwoot realtime push.
+ *
+ * Chatwoot channels:
+ *   - RoomChannel          → conversation events (new message, status change, assignment)
+ *   - NotificationsChannel → agent notifications
+ *   - BlinkoneCallChannel  → call events (ringing, connected, ended) — custom BlinkOne channel
+ *
+ * Auth: Chatwoot Action Cable accepts `user_access_token` as a query param
+ * on the WS URL: wss://host/cable?access_token=<token>
+ *
+ * NOTE: actioncable package is used. If running SSR, guard with typeof window !== 'undefined'.
+ */
+
+import { useAuthStore } from '@/lib/store/auth';
+
+const WS_URL =
+  process.env.NEXT_PUBLIC_WS_URL ??
+  `${(process.env.NEXT_PUBLIC_CHATWOOT_URL ?? 'http://127.0.0.1:3000').replace(/^http/, 'ws')}/cable`;
+
+let cable: ActionCable.Cable | null = null;
+let subscriptions: Map<string, ActionCable.Subscription> = new Map();
+
+function getCable(): ActionCable.Cable {
+  if (cable) return cable;
+  if (typeof window === 'undefined') throw new Error('ActionCable requires browser environment');
+
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const ActionCable = require('actioncable');
+  const { tokens } = useAuthStore.getState();
+  const url = tokens?.accessToken
+    ? `${WS_URL}?access_token=${encodeURIComponent(tokens.accessToken)}`
+    : WS_URL;
+
+  cable = ActionCable.createConsumer(url);
+  return cable!;
+}
+
+export function disconnectCable() {
+  subscriptions.forEach((sub) => sub.unsubscribe());
+  subscriptions.clear();
+  cable?.disconnect();
+  cable = null;
+}
+
+// ─── Conversation channel ──────────────────────────────────────────────────────
+export function subscribeToConversation(
+  accountId: number,
+  conversationId: number,
+  callbacks: {
+    onMessage?: (data: unknown) => void;
+    onStatusChange?: (data: unknown) => void;
+    onTyping?: (data: unknown) => void;
+  },
+): () => void {
+  const key = `conversation_${conversationId}`;
+  if (subscriptions.has(key)) subscriptions.get(key)?.unsubscribe();
+
+  const sub = getCable().subscriptions.create(
+    { channel: 'RoomChannel', id: accountId, conversation_id: conversationId },
+    {
+      received(data: { event?: string; [k: string]: unknown }) {
+        if (!data?.event) return;
+        if (data.event === 'message.created' || data.event === 'message.updated') {
+          callbacks.onMessage?.(data);
+        } else if (data.event === 'conversation.status_changed') {
+          callbacks.onStatusChange?.(data);
+        } else if (data.event === 'conversation.typing_on') {
+          callbacks.onTyping?.(data);
+        }
+      },
+    },
+  );
+
+  subscriptions.set(key, sub);
+  return () => {
+    sub.unsubscribe();
+    subscriptions.delete(key);
+  };
+}
+
+// ─── Agent notifications channel ──────────────────────────────────────────────
+export function subscribeToNotifications(
+  accountId: number,
+  userId: number,
+  onNotification: (data: unknown) => void,
+): () => void {
+  const key = `notifications_${userId}`;
+  if (subscriptions.has(key)) subscriptions.get(key)?.unsubscribe();
+
+  const sub = getCable().subscriptions.create(
+    { channel: 'NotificationsChannel', id: accountId },
+    { received: onNotification },
+  );
+
+  subscriptions.set(key, sub);
+  return () => {
+    sub.unsubscribe();
+    subscriptions.delete(key);
+  };
+}
+
+// ─── BlinkOne Call channel (custom Ruby channel) ───────────────────────────────
+export function subscribeToCallEvents(
+  accountId: number,
+  onCallEvent: (event: {
+    eventType: 'call.ringing' | 'call.connected' | 'call.ended' | 'call.missed';
+    callSession: unknown;
+  }) => void,
+): () => void {
+  const key = `blinkone_calls_${accountId}`;
+  if (subscriptions.has(key)) subscriptions.get(key)?.unsubscribe();
+
+  const sub = getCable().subscriptions.create(
+    { channel: 'BlinkoneCallChannel', account_id: accountId },
+    { received: onCallEvent },
+  );
+
+  subscriptions.set(key, sub);
+  return () => {
+    sub.unsubscribe();
+    subscriptions.delete(key);
+  };
+}

@@ -2,6 +2,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import { randomUUID } from 'node:crypto';
 import express from 'express';
 import { createProxyMiddleware } from 'http-proxy-middleware';
+import jwt from 'jsonwebtoken';
 import pino from 'pino';
 import { tenantHasFeature } from './tenant-features.js';
 
@@ -130,7 +131,71 @@ app.use(usageLimitGuard);
 const route = (path, target, token) =>
   app.use(path, target ? proxy(target, path, token) : notImpl(path));
 
-// Chatwoot pass-through
+// Exchange Chatwoot user token → BlinkOne gateway JWT (Next.js frontend login step 2)
+app.post('/api/auth/token', express.json(), async (req, res) => {
+  const auth = String(req.headers.authorization || '');
+  const bearer = auth.startsWith('Bearer ') ? auth.slice(7).trim() : '';
+  const cwToken = String(
+    req.headers['api_access_token'] ||
+      req.headers['api-access-token'] ||
+      req.headers['x-api-access-token'] ||
+      bearer ||
+      '',
+  ).trim();
+  if (!cwToken) {
+    return res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'api_access_token header required' } });
+  }
+  const secret = (process.env.JWT_SECRET || '').trim();
+  if (!secret) {
+    return res.status(500).json({ error: { code: 'CONFIG_ERROR', message: 'JWT_SECRET not configured' } });
+  }
+
+  try {
+    const profileRes = await fetch(`${U.chatwoot}/api/v1/profile`, {
+      headers: { api_access_token: cwToken, Accept: 'application/json' },
+    });
+    if (!profileRes.ok) {
+      log.warn({ status: profileRes.status }, 'chatwoot profile validation failed');
+      return res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Invalid Chatwoot token' } });
+    }
+    const body = await profileRes.json();
+    const user = body?.data ?? body;
+    const userId = user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Invalid profile payload' } });
+    }
+
+    const accountId = user.account_id ?? user.active_account_id ?? userId;
+    const tenantId = String(accountId);
+    const roles = mapChatwootRoles(user.role);
+    const expiresIn = 12 * 60 * 60;
+
+    const token = jwt.sign(
+      {
+        sub: String(userId),
+        tenant_id: tenantId,
+        roles,
+        account_id: accountId,
+      },
+      secret,
+      { expiresIn, issuer: 'blinkone-gateway' },
+    );
+
+    return res.json({ token, expiresIn });
+  } catch (e) {
+    log.error({ err: e.message }, 'auth token exchange failed');
+    return res.status(502).json({ error: { code: 'BAD_GATEWAY', message: 'Token exchange failed' } });
+  }
+});
+
+function mapChatwootRoles(role) {
+  if (role === 'administrator') return ['admin'];
+  if (role === 'supervisor') return ['supervisor'];
+  if (role === 'agent') return ['agent'];
+  return ['viewer'];
+}
+
+// Chatwoot pass-through (must be after /api/auth/token)
 app.use('/api/chatwoot', proxy(U.chatwoot, '/api/chatwoot'));
 app.use('/api/auth',     proxy(U.chatwoot, '/api/auth'));
 

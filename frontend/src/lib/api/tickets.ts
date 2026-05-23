@@ -1,0 +1,130 @@
+/**
+ * BlinkOne Tickets sidecar — /api/tickets
+ */
+
+import { bnFetch } from './client';
+import type { Ticket, ApiResponse } from '@/types';
+
+const SVC = 'tickets';
+
+export async function listTickets(filters: {
+  status?: string;
+  priority?: string;
+  assigneeId?: string;
+  assigned_to?: string;
+  contact_id?: string | number;
+  contactId?: string | number;
+  team?: string;
+  page?: number;
+} = {}): Promise<ApiResponse<Ticket[]>> {
+  const params = new URLSearchParams();
+  if (filters.status) params.set('status', filters.status);
+  if (filters.priority) params.set('priority', filters.priority);
+  const assignee = filters.assigneeId ?? filters.assigned_to;
+  if (assignee) params.set('assignee_id', assignee);
+  const contact = filters.contact_id ?? filters.contactId;
+  if (contact != null) params.set('contact_id', String(contact));
+  if (filters.team) params.set('team', filters.team);
+  if (filters.page) params.set('page', String(filters.page));
+  return bnFetch<ApiResponse<Ticket[]>>(SVC, `/v1/tickets?${params}`);
+}
+
+export async function getTicket(id: string): Promise<Ticket> {
+  const res = await bnFetch<{ data: Ticket }>(SVC, `/v1/tickets/${id}`);
+  return res.data;
+}
+
+export async function createTicket(data: {
+  subject: string;
+  title?: string;
+  description?: string;
+  priority: Ticket['priority'] | string;
+  assigneeId?: string;
+  contactId?: string;
+  conversationId?: string;
+  team?: string;
+  department?: string;
+}): Promise<Ticket> {
+  const res = await bnFetch<{ data: Ticket }>(SVC, '/v1/tickets', {
+    method: 'POST',
+    body: JSON.stringify({
+      title: data.title ?? data.subject,
+      subject: data.subject,
+      priority: data.priority,
+      assigneeId: data.assigneeId,
+      contactId: data.contactId,
+      conversationId: data.conversationId,
+      department: data.department ?? data.team,
+      customFields: data.description ? { description: data.description } : undefined,
+    }),
+  });
+  return res.data;
+}
+
+export async function getTicketMessages(ticketId: string): Promise<
+  {
+    id: string;
+    authorName: string;
+    direction: 'inbound' | 'outbound';
+    content: string;
+    createdAt: string;
+  }[]
+> {
+  try {
+    const res = await bnFetch<{
+      data: {
+        id: string;
+        at: string;
+        type: string;
+        message: string;
+        actor: string;
+      }[];
+    }>(SVC, `/v1/tickets/${encodeURIComponent(ticketId)}/messages`);
+    return (res.data ?? []).map((row, i) => ({
+      id: row.id ?? `msg-${i}`,
+      authorName: row.actor ?? 'Agent',
+      direction: row.actor === 'customer' || row.type === 'inbound' ? 'inbound' : 'outbound',
+      content: row.message,
+      createdAt: row.at,
+    }));
+  } catch {
+    const ticket = await getTicket(ticketId);
+    const timeline = (ticket as Ticket & { timeline?: { at: string; message: string; actor: string; type: string }[] })
+      .timeline;
+    return (timeline ?? []).map((row, i) => ({
+      id: `tl-${i}`,
+      authorName: row.actor ?? 'Agent',
+      direction:
+        row.actor === 'customer' || row.type === 'inbound' ? ('inbound' as const) : ('outbound' as const),
+      content: row.message,
+      createdAt: row.at,
+    }));
+  }
+}
+
+export async function createTicketMessage(
+  ticketId: string,
+  payload: { content: string },
+): Promise<void> {
+  await bnFetch(SVC, `/v1/tickets/${encodeURIComponent(ticketId)}/timeline`, {
+    method: 'POST',
+    body: JSON.stringify({
+      type: 'comment',
+      message: payload.content,
+      actor: 'agent',
+    }),
+  });
+}
+
+export async function updateTicket(id: string, data: Partial<Ticket>): Promise<Ticket> {
+  const res = await bnFetch<{ data: Ticket }>(SVC, `/v1/tickets/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+  return res.data;
+}
+
+export async function getTicketTimeline(id: string): Promise<unknown[]> {
+  const res = await bnFetch<{ data: unknown[] }>(SVC, `/v1/tickets/${id}/timeline`);
+  return res.data;
+}
