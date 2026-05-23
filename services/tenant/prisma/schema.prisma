@@ -1,0 +1,87 @@
+// Reference schema — runtime migrations in db/*.sql
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("BLINKONE_DATABASE_URL")
+}
+
+model Tenant {
+  id                  String   @id
+  name                String
+  slug                String   @unique
+  status              String   @default("trial")
+  ownerEmail          String   @map("owner_email")
+  primaryContactPhone String?  @map("primary_contact_phone")
+  billingPlanId       String?  @map("billing_plan_id")
+  chatwootAccountId   Int      @map("chatwoot_account_id")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  features  TenantFeature[]
+  branding  TenantBranding?
+  domains   TenantDomain[]
+  apiKeys   TenantApiKey[]
+  admins    TenantAdmin[]
+
+  @@map("tenants")
+}
+
+model TenantFeature {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id")
+  featureKey String  @map("feature_key")
+  enabled   Boolean  @default(true)
+  config    Json     @default("{}")
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, featureKey])
+  @@map("tenant_features")
+}
+
+model TenantBranding {
+  tenantId  String   @id @map("tenant_id")
+  brand     Json     @default("{}")
+  subdomain String?
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("tenant_branding")
+}
+
+model TenantDomain {
+  id                String   @id @default(uuid()) @db.Uuid
+  tenantId          String   @map("tenant_id")
+  domain            String   @unique
+  isPrimary         Boolean  @default(false) @map("is_primary")
+  sslStatus         String   @default("pending") @map("ssl_status")
+  verificationToken String?  @map("verification_token")
+  tenant            Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("tenant_domains")
+}
+
+model TenantApiKey {
+  id         String    @id @default(uuid()) @db.Uuid
+  tenantId   String    @map("tenant_id")
+  keyHash    String    @map("key_hash")
+  scopes     Json      @default("[]")
+  createdBy  String?   @map("created_by")
+  lastUsedAt DateTime? @map("last_used_at")
+  expiresAt  DateTime? @map("expires_at")
+  tenant     Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("tenant_api_keys")
+}
+
+model TenantAdmin {
+  id             String @id @default(uuid()) @db.Uuid
+  tenantId       String @map("tenant_id")
+  chatwootUserId BigInt @map("chatwoot_user_id")
+  role           String
+  tenant         Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, chatwootUserId])
+  @@map("tenant_admins")
+}

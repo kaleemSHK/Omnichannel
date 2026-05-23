@@ -1,0 +1,9 @@
+{
+  "name": "blinkone-acceptance",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "run": "node runner.mjs",
+    "run:full": "node runner.mjs --all-tr"
+  }
+}

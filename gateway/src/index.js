@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import express from 'express';
 import { createProxyMiddleware } from 'http-proxy-middleware';
 import pino from 'pino';
+import { tenantHasFeature } from './tenant-features.js';
 
 const log  = pino({ name: 'gateway', level: process.env.LOG_LEVEL || 'info', base: { service: 'gateway' } });
 const PORT = parseInt(process.env.PORT || '8787', 10);
@@ -26,14 +27,19 @@ const U = {
   routing:     u('ROUTING_UPSTREAM',    'http://routing:8798'),
   recording:   u('RECORDING_UPSTREAM',  'http://recording:8799'),
   integration: u('INTEGRATION_UPSTREAM','http://integration:8800'),
+  tenant:      u('TENANT_UPSTREAM',      'http://tenant:8802'),
 };
 
 const TOKENS = {
   ai:          (process.env.AI_TOKEN || '').trim(),
   ticket:      (process.env.TICKET_TOKEN || '').trim(),
   sla:         (process.env.SLA_TOKEN || '').trim(),
+  escalation:  (process.env.ESCALATION_TOKEN || '').trim(),
   integration: (process.env.INTEGRATION_TOKEN || '').trim(),
+  billing:     (process.env.BILLING_TOKEN || '').trim(),
 };
+
+const LIMIT_CHECK_PREFIXES = ['/api/ai', '/api/calls', '/api/routing', '/api/sla', '/api/escalations'];
 
 const WEBHOOK_SECRET = (process.env.CHATWOOT_WEBHOOK_SECRET || '').trim();
 
@@ -94,6 +100,32 @@ function notImpl(name) {
   return (_req, res) => res.status(501).json({ error: { code: 'NOT_CONFIGURED', message: `${name} upstream not configured` } });
 }
 
+async function usageLimitGuard(req, res, next) {
+  const path = req.originalUrl || req.url;
+  if (!LIMIT_CHECK_PREFIXES.some((p) => path.startsWith(p))) return next();
+  const tenantId = req.headers['x-blinkone-tenant-id'];
+  if (!tenantId || !U.billing || !TOKENS.billing) return next();
+  try {
+    const r = await fetch(`${U.billing}/v1/tenants/${encodeURIComponent(tenantId)}/usage/limits`, {
+      headers: { Authorization: `Bearer ${TOKENS.billing}`, Accept: 'application/json' },
+    });
+    if (r.ok) {
+      const json = await r.json();
+      const data = json.data ?? json;
+      if (data.blocked) {
+        return res.status(402).json({
+          error: { code: 'LIMIT_EXCEEDED', message: data.reason || 'Usage limit exceeded' },
+        });
+      }
+    }
+  } catch (e) {
+    log.warn({ err: e.message }, 'usage limit check skipped');
+  }
+  next();
+}
+
+app.use(usageLimitGuard);
+
 // ─── Routes ───────────────────────────────────────────────────────────────────
 const route = (path, target, token) =>
   app.use(path, target ? proxy(target, path, token) : notImpl(path));
@@ -119,6 +151,14 @@ route('/api/escalations', U.escalation);
 route('/api/routing',     U.routing);
 route('/api/recordings',  U.recording);
 route('/api/integrations',U.integration);
+route('/api/tenant',       U.tenant);
+
+// BlinkOne API (platform: branding, tenants, …)
+if (U.platform) {
+  app.use('/blinkone/api/v1', passthroughProxy(U.platform, '/v1'));
+} else {
+  app.use('/blinkone/api/v1', notImpl('/blinkone/api/v1'));
+}
 
 // ─── Chatwoot Webhook Fan-out ─────────────────────────────────────────────────
 app.use('/api/webhooks/chatwoot', express.json({ limit: '1mb' }));
@@ -134,6 +174,14 @@ app.post('/api/webhooks/chatwoot', (req, res) => {
 
   res.status(200).json({ ok: true });
 
+  // Prompt 10 — normalize + bus republish via integration sidecar
+  if (U.integration) {
+    const headers = { 'Content-Type': 'application/json', 'X-Request-Id': req.requestId || '' };
+    if (WEBHOOK_SECRET) headers['X-Chatwoot-Signature'] = req.headers['x-chatwoot-signature'] || '';
+    fetch(`${U.integration}/webhooks/chatwoot`, { method: 'POST', headers, body: JSON.stringify(req.body) })
+      .catch(e => log.error({ err: e.message }, 'integration inbound failed'));
+  }
+
   const body      = req.body ?? {};
   const event     = body.event;
   const rid       = req.requestId;
@@ -141,13 +189,31 @@ app.post('/api/webhooks/chatwoot', (req, res) => {
   const convId    = Number(body.conversation?.id);
   const isId      = (n) => Number.isFinite(n) && n > 0;
 
-  function fanout(url, payload, token) {
+  async function fanout(url, payload, token, { feature } = {}) {
     const headers = { 'Content-Type': 'application/json', 'X-Request-Id': rid };
     if (token) headers.Authorization = `Bearer ${token}`;
+    const tid = payload.chatwootAccountId ?? payload.tenant_id ?? payload.tenantId ?? accountId;
+    if (tid != null) headers['X-Blinkone-Tenant-Id'] = String(tid);
+    if (feature && !(await tenantHasFeature(tid, feature))) return;
     fetch(url, { method: 'POST', headers, body: JSON.stringify(payload) })
       .then(r => { if (!r.ok) log.warn({ url, status: r.status }, 'fanout non-2xx'); })
       .catch(e => log.error({ url, err: e.message }, 'fanout failed'));
   }
+
+  const slaPayload = (extra = {}) => ({
+    event: extra.event ?? event,
+    chatwootAccountId: isId(accountId) ? accountId : 0,
+    tenant_id: isId(accountId) ? accountId : 0,
+    conversationId: isId(convId) ? convId : null,
+    conversation_id: isId(convId) ? convId : null,
+    priority: body.conversation?.priority,
+    status: body.status ?? body.conversation?.status,
+    inbox_id: body.conversation?.inbox_id,
+    message_type: body.message?.message_type,
+    sender_type: body.message?.sender_type,
+    channel: body.conversation?.channel,
+    ...extra,
+  });
 
   if (event === 'conversation_created') {
     const contact = body.meta?.sender ?? body.contact ?? {};
@@ -160,17 +226,34 @@ app.post('/api/webhooks/chatwoot', (req, res) => {
       channel: inbox, customerName: contact.name || 'Unknown',
       customerEmail: contact.email || '', status: 'open', priority: 'medium',
     }, TOKENS.ticket);
-    // Start SLA timer
-    fanout(`${U.sla}/v1/events`, { event: 'conversation_created', chatwootAccountId: isId(accountId) ? accountId : 0, conversationId: isId(convId) ? convId : null }, TOKENS.sla);
+    fanout(`${U.sla}/v1/events`, slaPayload({ event: 'conversation_created' }), TOKENS.sla, { feature: 'sla' });
   }
 
-  if (event === 'message_created' && body.message_type === 'outgoing') {
-    fanout(`${U.sla}/v1/events`, { event: 'agent_responded', chatwootAccountId: isId(accountId) ? accountId : 0, conversationId: isId(convId) ? convId : null }, TOKENS.sla);
+  if (event === 'message_created') {
+    fanout(`${U.sla}/v1/events`, slaPayload({ event: 'message_created' }), TOKENS.sla, { feature: 'sla' });
   }
 
-  if (event === 'conversation_status_changed' && body.status === 'resolved') {
-    fanout(`${U.sla}/v1/events`, { event: 'conversation_resolved', chatwootAccountId: isId(accountId) ? accountId : 0, conversationId: isId(convId) ? convId : null }, TOKENS.sla);
-    fanout(`${U.integration}/v1/webhooks/dispatch`, { event: 'conversation.resolved', tenantId: 0, payload: { conversationId: convId, accountId } }, TOKENS.integration);
+  if (event === 'conversation_status_changed') {
+    const slaExtra = body.status === 'resolved'
+      ? { event: 'conversation_resolved', status: 'resolved' }
+      : {};
+    fanout(`${U.sla}/v1/events`, slaPayload({ event: 'conversation_status_changed', ...slaExtra }), TOKENS.sla, { feature: 'sla' });
+    if (body.status === 'resolved') {
+      fanout(`${U.sla}/v1/events`, slaPayload({ event: 'conversation_resolved', status: 'resolved' }), TOKENS.sla, { feature: 'sla' });
+      fanout(`${U.integration}/v1/webhooks/dispatch`, {
+        event: 'conversation.resolved',
+        tenantId: isId(accountId) ? accountId : 0,
+        payload: { conversationId: convId, accountId },
+      }, TOKENS.integration);
+    }
+  }
+
+  if (event === 'conversation_updated') {
+    fanout(`${U.sla}/v1/events`, slaPayload({ event: 'conversation_updated' }), TOKENS.sla, { feature: 'sla' });
+  }
+
+  if (event === 'conversation_reopened') {
+    fanout(`${U.sla}/v1/events`, slaPayload({ event: 'conversation_reopened', status: 'open' }), TOKENS.sla, { feature: 'sla' });
   }
 });
 

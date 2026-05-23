@@ -1,0 +1,32 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("BLINKONE_DATABASE_URL")
+}
+
+model IntegrationWebhookEndpoint {
+  id                String   @id @default(uuid())
+  tenant_id         String
+  name              String
+  url               String
+  secret_hash       String?
+  secret_enc        String?
+  events_subscribed String[]
+  enabled           Boolean  @default(true)
+  extra_headers     Json     @default("{}")
+  @@map("integration_webhook_endpoints")
+}
+
+model BlinkoneAuditEvent {
+  id          String   @id @default(uuid())
+  tenant_id   String
+  actor_id    String
+  action      String
+  target_type String
+  target_id   String
+  occurred_at DateTime @default(now())
+  @@map("blinkone_audit_events")
+}

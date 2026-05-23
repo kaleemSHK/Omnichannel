@@ -1,0 +1,13 @@
+{
+  "name": "BlinkOne",
+  "short_name": "BlinkOne",
+  "icons": [{
+    "src": "/blinkone-brand/favicon-32.png",
+    "sizes": "32x32",
+    "type": "image/png"
+  }],
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0B5FFF",
+  "theme_color": "#0B5FFF"
+}

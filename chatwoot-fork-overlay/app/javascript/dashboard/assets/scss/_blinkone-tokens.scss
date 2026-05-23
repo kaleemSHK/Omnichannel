@@ -1,0 +1,15 @@
+// BLINKONE: Design tokens — import first in application.scss
+:root {
+  --blinkone-primary: #0b5fff;
+  --blinkone-ink: #0a0f1c;
+  --blinkone-secondary: var(--blinkone-ink);
+  --blinkone-on-primary: #ffffff;
+  --blinkone-surface: #ffffff;
+  --blinkone-muted: #64748b;
+}
+
+[data-theme='dark'],
+.dark {
+  --blinkone-surface: #0f172a;
+  --blinkone-on-primary: #ffffff;
+}

@@ -1,0 +1,43 @@
+openapi: 3.1.0
+info:
+  title: BlinkOne Billing
+  version: 1.0.0
+  description: Subscriptions, usage metering, invoicing (Prompt 9 TR-42–45). Currency OMR, VAT configurable per tenant.
+
+paths:
+  /v1/health:
+    get: { summary: Health }
+  /readyz:
+    get: { summary: Readiness (Postgres) }
+  /v1/plans:
+    get: { summary: List plans with overage rates }
+    post: { summary: Create plan (platform admin) }
+  /v1/tenants/{tenantId}/subscription:
+    get: { summary: Active subscription }
+    post: { summary: Assign plan / start subscription }
+  /v1/tenants/{tenantId}/subscription/cancel:
+    post: { summary: Cancel (immediate or end-of-period) }
+  /v1/tenants/{tenantId}/usage:
+    get: { summary: Current period usage vs allowance }
+  /v1/usage/events:
+    post: { summary: Ingest usage event (idempotent on source_event_id) }
+  /v1/invoices/generate:
+    post: { summary: Generate invoice for period (idempotent) }
+  /v1/tenants/{tenantId}/invoices:
+    get: { summary: List tenant invoices }
+  /v1/invoices/{id}/send:
+    post: { summary: Mark invoice sent }
+  /v1/invoices/{id}/mark-paid:
+    post: { summary: Mark paid (manual / audited) }
+  /v1/payment-methods:
+    post: { summary: Add payment method (PSP stub) }
+  /v1/webhooks/psp:
+    post: { summary: PSP webhook (Thawani/Tap stub) }
+  /v1/platform/overview:
+    get: { summary: MRR, ARR, overdue, plan distribution }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer

@@ -1,0 +1,38 @@
+openapi: 3.1.0
+info:
+  title: BlinkOne Integration
+  version: 1.0.0
+  description: SSO, outbound webhooks, connectors, inbound Chatwoot/PSP, audit (Prompt 10)
+
+paths:
+  /webhooks/chatwoot:
+    post: { summary: Inbound Chatwoot webhook (HMAC) }
+  /webhooks/psp/{provider}:
+    post: { summary: Inbound PSP webhook }
+  /v1/webhooks:
+    get: { summary: List outbound webhook endpoints }
+    post: { summary: Create endpoint (returns secret once) }
+  /v1/webhooks/dispatch:
+    post: { summary: Bus dispatch from gateway }
+  /v1/webhooks/deliveries:
+    get: { summary: Delivery log }
+  /v1/sso/config:
+    get: { summary: Tenant SSO config }
+    put: { summary: Upsert SSO + provision Keycloak realm }
+  /v1/sso/login:
+    get: { summary: Login URL for tenant slug }
+  /v1/sso/callback:
+    post: { summary: OIDC code exchange, JIT user, gateway JWT }
+  /v1/sso/jit-provision:
+    post: { summary: JIT provision Chatwoot user (admin) }
+  /v1/connectors:
+    get: { summary: List connectors }
+    post: { summary: Upsert connector }
+  /v1/connectors/{type}/test:
+    post: { summary: Healthcheck connector }
+  /v1/audit:
+    get: { summary: Search audit timeline }
+  /v1/audit/export.csv:
+    get: { summary: CSV export }
+  /blinkone/api/docs:
+    get: { summary: Swagger UI portal }

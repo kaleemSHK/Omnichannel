@@ -4,5 +4,6 @@ COPY package.json .
 RUN npm install --production
 COPY lib/ ./lib/
 COPY src/ ./src/
+COPY db/ ./db/
 ENV NODE_ENV=production
 CMD ["node", "src/server.js"]

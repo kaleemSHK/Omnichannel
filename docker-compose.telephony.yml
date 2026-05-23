@@ -1,0 +1,110 @@
+# BlinkOne telephony stack (Prompt 5 — steps 1–2)
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.blinkone.yml -f docker-compose.telephony.yml --profile telephony up -d
+
+name: blinkone
+
+services:
+  blinkone-rtpengine:
+    build:
+      context: ./infra/rtpengine
+    image: blinkone/rtpengine:bookworm-b1
+    profiles: [telephony]
+    restart: unless-stopped
+    environment:
+      RTPENGINE_EXTERNAL_IP: ${TELEPHONY_EXTERNAL_IP:-127.0.0.1}
+    ports:
+      - '22222:22222/udp'
+      - '30000-30100:30000-30100/udp'
+    networks: [blinkone]
+    deploy:
+      resources:
+        limits: { cpus: '2', memory: 1G }
+
+  blinkone-asterisk:
+    build:
+      context: ./infra/asterisk
+    image: blinkone/asterisk:20-b1
+    profiles: [telephony]
+    restart: unless-stopped
+    hostname: blinkone-asterisk
+    environment:
+      AST_EXTERNAL_IP: ${TELEPHONY_EXTERNAL_IP:-127.0.0.1}
+      AST_LOCAL_NET: ${TELEPHONY_LOCAL_NET:-172.16.0.0/12}
+      AST_ARI_USER: ${AST_ARI_USER:-blinkone}
+      AST_ARI_PASS: ${AST_ARI_PASS:-blinkone-ari-secret}
+      AST_AGENT_SIP_PASS: ${AST_AGENT_SIP_PASS:-blinkone-agent-dev}
+      AST_TRUNK_SIP_PASS: ${AST_TRUNK_SIP_PASS:-blinkone-trunk-dev}
+      AST_WSS_DOMAIN: ${AST_WSS_DOMAIN:-localhost}
+    volumes:
+      - asterisk_recordings:/var/spool/asterisk/recordings
+      - asterisk_certs:/var/lib/asterisk/certs
+      - ./infra/asterisk/tenants.yaml.example:/etc/asterisk/tenants.yaml:ro
+    ports:
+      - '5062:5060/udp'
+      - '5062:5060/tcp'
+      - '8088:8088'
+      - '8089:8089'
+      - '10000-10050:10000-10050/udp'
+    depends_on:
+      - blinkone-rtpengine
+    networks:
+      blinkone:
+        aliases:
+          - blinkone-asterisk
+    healthcheck:
+      test: ['CMD-SHELL', 'asterisk -rx "core show version" | grep -q Asterisk']
+      interval: 15s
+      timeout: 10s
+      retries: 8
+      start_period: 40s
+    deploy:
+      resources:
+        limits: { cpus: '4', memory: 2G }
+
+  blinkone-kamailio:
+    build:
+      context: ./infra/kamailio
+    image: blinkone/kamailio:5.8-b1
+    profiles: [telephony]
+    restart: unless-stopped
+    hostname: blinkone-kamailio
+    environment:
+      KAM_AST_HOST: blinkone-asterisk
+      KAM_AST_PORT: '5060'
+      KAM_RTPENGINE_SOCK: 'udp:blinkone-rtpengine:22222'
+      KAM_SIP_DOMAIN: ${TELEPHONY_SIP_DOMAIN:-blinkone.local}
+      KAM_EXTERNAL_IP: ${TELEPHONY_EXTERNAL_IP:-127.0.0.1}
+    ports:
+      - '5060:5060/udp'
+      - '5060:5060/tcp'
+    depends_on:
+      blinkone-asterisk: { condition: service_healthy }
+      blinkone-rtpengine: { condition: service_started }
+    networks:
+      blinkone:
+        aliases:
+          - blinkone-kamailio
+    deploy:
+      resources:
+        limits: { cpus: '2', memory: 1G }
+
+  # IVR ARI app (step 2) — merges env into main `ivr` service
+  ivr:
+    environment:
+      ROUTING_URL: http://routing:8798
+      ROUTING_TOKEN: ${ROUTING_TOKEN}
+      ASTERISK_ARI_ENABLED: '1'
+      ASTERISK_ARI_URL: http://blinkone-asterisk:8088
+      ASTERISK_ARI_USER: ${AST_ARI_USER:-blinkone}
+      ASTERISK_ARI_PASSWORD: ${AST_ARI_PASS:-blinkone-ari-secret}
+      ASTERISK_ARI_APP: blinkone-ivr
+      IVR_WELCOME_MEDIA: ${IVR_WELCOME_MEDIA:-sound:hello-world}
+      ASTERISK_ARI_BRIDGE: ${ASTERISK_ARI_BRIDGE:-0}
+    depends_on:
+      routing: { condition: service_started }
+      blinkone-asterisk: { condition: service_healthy }
+
+volumes:
+  asterisk_recordings:
+  asterisk_certs:

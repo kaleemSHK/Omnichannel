@@ -1,0 +1,175 @@
+# BlinkOne sidecar chassis (Prompt 4) — extends docker-compose.yml
+# Usage: docker compose -f docker-compose.yml -f docker-compose.blinkone.yml up -d
+
+name: blinkone
+
+services:
+  # Aliases for Prompt 4 naming (same network as main compose `blinkone`)
+  postgres_app:
+    networks:
+      blinkone:
+        aliases:
+          - blinkone-postgres
+
+  redis:
+    networks:
+      blinkone:
+        aliases:
+          - blinkone-redis
+
+  blinkone-redis:
+    image: redis:7-alpine
+    profiles: [blinkone-extra]
+    command: redis-server --appendonly yes
+    volumes: [blinkone_redis_data:/data]
+    networks: [blinkone]
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    deploy:
+      resources:
+        limits: { cpus: '1', memory: 512M }
+
+  blinkone-minio:
+    image: minio/minio:RELEASE.2025-01-20T14-49-07Z
+    profiles: [blinkone-extra]
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-blinkone}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-blinkone-minio-secret}
+    volumes: [minio_data:/data]
+    networks: [blinkone]
+    ports: ['9000:9000', '9001:9001']
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://localhost:9000/minio/health/live || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits: { cpus: '2', memory: 2G }
+
+  blinkone-minio-init:
+    image: minio/mc:RELEASE.2025-01-20T14-49-07Z
+    profiles: [blinkone-extra]
+    depends_on:
+      blinkone-minio: { condition: service_healthy }
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://blinkone-minio:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD;
+      mc mb -p local/recordings || true;
+      mc mb -p local/transcripts || true;
+      mc mb -p local/exports || true;
+      mc mb -p local/uploads || true;
+      exit 0"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-blinkone}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-blinkone-minio-secret}
+    networks: [blinkone]
+
+  blinkone-jaeger:
+    image: jaegertracing/all-in-one:1.64.0
+    profiles: [blinkone-extra]
+    environment:
+      COLLECTOR_OTLP_ENABLED: 'true'
+    ports: ['16686:16686', '4318:4318']
+    networks: [blinkone]
+    deploy:
+      resources:
+        limits: { cpus: '1', memory: 1G }
+
+  blinkone-prometheus:
+    image: prom/prometheus:v3.1.0
+    profiles: [blinkone-extra]
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports: ['9090:9090']
+    networks: [blinkone]
+
+  blinkone-grafana:
+    image: grafana/grafana:11.4.0
+    profiles: [blinkone-extra]
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-blinkone}
+    volumes:
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+    ports: ['3001:3000']
+    networks: [blinkone]
+    depends_on: [blinkone-prometheus]
+
+  blinkone-piper:
+    image: rhasspy/wyoming-piper:latest
+    restart: unless-stopped
+    command: >
+      --voice ar_JO-kareem-medium
+      --voice en_US-lessac-medium
+      --update-voices
+    volumes:
+      - piper_voices:/data
+    networks: [blinkone]
+    expose: ['5000']
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:5000/health || exit 1']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits: { cpus: '2', memory: 2G }
+
+  blinkone-keycloak:
+    image: quay.io/keycloak/keycloak:26.1.0
+    profiles: [blinkone-extra]
+    command: start-dev
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+    ports: ['8081:8080']
+    networks: [blinkone]
+    deploy:
+      resources:
+        limits: { cpus: '2', memory: 2G }
+
+  # NestJS gateway (Prompt 4) — port 8080; legacy Express gateway stays on 8787 for nginx
+  blinkone-gateway:
+    build:
+      context: .
+      dockerfile: services/gateway/Dockerfile
+    restart: unless-stopped
+    ports: ['8080:8080']
+    environment:
+      PORT: '8080'
+      JWT_SECRET: ${JWT_SECRET}
+      CHATWOOT_BASE_URL: http://chatwoot:3000
+      BLINKONE_REDIS_URL: redis://redis:6379
+      CORS_ORIGINS: ${FRONTEND_URL:-http://localhost},http://127.0.0.1
+      ROUTING_UPSTREAM: http://routing:8798
+      SLA_UPSTREAM: http://sla:8796
+      IVR_UPSTREAM: http://ivr:8795
+      BILLING_UPSTREAM: http://billing:8794
+      AI_UPSTREAM: http://ai:8793
+      INTEGRATION_UPSTREAM: http://integration:8800
+      PLATFORM_UPSTREAM: http://platform:8790
+      TENANT_UPSTREAM: http://tenant:8802
+      TENANT_TOKEN: ${TENANT_TOKEN:-${PLATFORM_TOKEN}}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://blinkone-jaeger:4318/v1/traces
+    depends_on:
+      chatwoot: { condition: service_started }
+      redis: { condition: service_healthy }
+    networks: [blinkone]
+    healthcheck:
+      test: ['CMD-SHELL', "node -e \"fetch('http://127.0.0.1:8080/blinkone/api/v1/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    deploy:
+      resources:
+        limits: { cpus: '2', memory: 2G }
+
+volumes:
+  blinkone_redis_data:
+  minio_data:
+  piper_voices:

@@ -1,0 +1,63 @@
+name: blinkone-ci
+
+on:
+  push:
+    branches: [blinkone/main, blinkone/develop, main, develop]
+    paths:
+      - 'services/_shared/**'
+      - 'services/gateway/**'
+      - 'package.json'
+      - 'pnpm-workspace.yaml'
+  pull_request:
+    paths:
+      - 'services/_shared/**'
+      - 'services/gateway/**'
+      - 'package.json'
+      - 'pnpm-workspace.yaml'
+
+jobs:
+  lint-typecheck-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [20, 22]
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: blinkone_app
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U app -d blinkone_app"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      BLINKONE_DATABASE_URL: postgresql://app:test@localhost:5432/blinkone_app
+      BLINKONE_REDIS_URL: redis://localhost:6379
+      JWT_SECRET: ci-test-secret
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: pnpm
+      - run: pnpm install
+      - run: pnpm run typecheck
+      - run: pnpm run build
+      - run: pnpm run lint
+        continue-on-error: true

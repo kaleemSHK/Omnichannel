@@ -1,0 +1,37 @@
+openapi: 3.1.0
+info:
+  title: BlinkOne Tenant Control Plane
+  version: 1.0.0
+  description: Multi-tenant provisioning, branding, domains (Prompt 8 steps 1–3)
+
+paths:
+  /v1/health:
+    get:
+      summary: Service health
+  /v1/tenants:
+    get:
+      summary: List tenants (platform-admin)
+    post:
+      summary: Provision tenant (Chatwoot account + seeds)
+  /v1/tenants/{id}:
+    get:
+      summary: Get tenant
+    patch:
+      summary: Update tenant
+  /v1/tenants/{id}/suspend:
+    post:
+      summary: Suspend tenant
+  /v1/tenants/{id}/domains:
+    post:
+      summary: Add custom domain
+    get:
+      summary: List domains
+  /v1/tenants/{id}/usage:
+    get:
+      summary: Aggregated usage snapshot
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer

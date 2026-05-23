@@ -1,0 +1,8 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: blinkone-gateway
+    static_configs:
+      - targets: ['blinkone-gateway:8080']
+    metrics_path: /blinkone/api/v1/metrics

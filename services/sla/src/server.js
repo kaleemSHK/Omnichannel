@@ -2,103 +2,150 @@ import express from 'express';
 import { createLogger } from '../lib/logger.js';
 import { createStore } from '../lib/store.js';
 import { ok, fail, bearerAuth, requestId, errorHandler, healthRouter, gracefulShutdown } from '../lib/http.js';
+import { dbEnabled, runMigrations, closePool, getPool } from '../lib/db.js';
+import { resolveTenantId } from '../lib/tenant.js';
+import { tenantSuspendedMiddleware } from '../lib/tenant-guard.js';
+import { requireFeature } from '../_shared/lib/features.js';
+import * as repo from '../lib/sla-repo.js';
+import { handleChatwootEvent } from '../lib/event-handler.js';
+import { startSlaWorker } from '../lib/worker.js';
 
-const log   = createLogger('sla');
-const PORT  = parseInt(process.env.PORT || '8796', 10);
+const log = createLogger('sla');
+const PORT = parseInt(process.env.PORT || '8796', 10);
 const TOKEN = (process.env.TOKEN || '').trim();
-const ESC_URL   = (process.env.ESCALATION_URL   || 'http://escalation:8797').replace(/\/$/, '');
-const ESC_TOKEN = (process.env.ESCALATION_TOKEN || '').trim();
 
-const store = createStore(process.env.DATA_DIR || './data', () => ({
-  policies: [{ id: 1, name: 'Default', firstResponseMinutes: 60, resolveMinutes: 480, createdAt: new Date().toISOString() }],
+const legacyStore = createStore(process.env.DATA_DIR || './data', () => ({
+  policies: [{ id: 1, name: 'Default', firstResponseMinutes: 60, resolveMinutes: 480 }],
   instances: [],
   seq: { nextPolicy: 2, nextInstance: 1 },
 }));
 
 const auth = bearerAuth(TOKEN);
-const app  = express();
+const slaFeature = requireFeature('sla', resolveTenantId, fail);
+const app = express();
 app.disable('x-powered-by');
-app.use(express.json({ limit: '256kb' }));
+app.use(express.json({ limit: '512kb' }));
 app.use(requestId);
+app.use(tenantSuspendedMiddleware(resolveTenantId, fail));
 healthRouter(app, 'sla');
 
-function addMin(iso, min) {
-  const d = new Date(iso); d.setMinutes(d.getMinutes() + min); return d.toISOString();
-}
-
-function calcBreach(inst) {
-  const now = Date.now();
-  const frDue = inst.firstResponseDueAt ? new Date(inst.firstResponseDueAt).getTime() : 0;
-  const rDue  = inst.resolveDueAt ? new Date(inst.resolveDueAt).getTime() : 0;
-  if (!inst.firstResponseMetAt && frDue && now > frDue) return 'first_response';
-  if (!inst.resolvedAt && rDue && now > rDue) return 'resolve';
-  return 'none';
-}
-
-// Policies
-app.get('/v1/policies', (req, res) => {
-  let policies = store.load().policies;
-  if (req.query.chatwoot_account_id) policies = policies.filter(p => !p.chatwootAccountId || String(p.chatwootAccountId) === String(req.query.chatwoot_account_id));
-  ok(res, policies);
+app.get('/readyz', async (_req, res) => {
+  if (!dbEnabled()) return res.json({ status: 'ready', db: false });
+  try {
+    await getPool().query('SELECT 1');
+    return res.json({ status: 'ready', db: true });
+  } catch (e) {
+    return res.status(503).json({ status: 'not_ready', error: e.message });
+  }
 });
 
-app.post('/v1/policies', auth, async (req, res) => {
-  const { name, firstResponseMinutes, resolveMinutes, chatwootAccountId } = req.body ?? {};
+// ─── Postgres API (Prompt 6) ─────────────────────────────────────────────────
+app.get('/v1/calendars', auth, slaFeature, async (req, res) => {
+  if (!dbEnabled()) return fail(res, 'NOT_CONFIGURED', 'Postgres required', 501);
+  return ok(res, await repo.listCalendars(resolveTenantId(req)));
+});
+
+app.post('/v1/calendars', auth, slaFeature, async (req, res) => {
+  if (!dbEnabled()) return fail(res, 'NOT_CONFIGURED', 'Postgres required', 501);
+  const { name } = req.body ?? {};
   if (!name?.trim()) return fail(res, 'VALIDATION_ERROR', 'name required');
-  if (!Number.isFinite(Number(firstResponseMinutes)) || !Number.isFinite(Number(resolveMinutes))) return fail(res, 'VALIDATION_ERROR', 'firstResponseMinutes and resolveMinutes required');
-  ok(res, await store.withStore(s => {
-    const p = { id: s.seq.nextPolicy++, name: name.trim(), firstResponseMinutes: Number(firstResponseMinutes), resolveMinutes: Number(resolveMinutes), chatwootAccountId: chatwootAccountId ?? null, createdAt: new Date().toISOString() };
-    s.policies.push(p); return p;
-  }), 201);
+  try {
+    return ok(res, await repo.createCalendar(resolveTenantId(req), req.body), 201);
+  } catch (e) {
+    if (e.code === '23505') return fail(res, 'CONFLICT', 'Calendar name exists', 409);
+    throw e;
+  }
 });
 
-// Instances
-app.get('/v1/instances', (req, res) => {
-  let list = store.load().instances;
-  if (req.query.chatwoot_account_id) list = list.filter(i => String(i.chatwootAccountId) === String(req.query.chatwoot_account_id));
-  const mapped = list.map(i => {
-    const breach = calcBreach(i);
-    if (breach !== 'none' && !i.breachNotifiedAt) {
-      i.breach = breach;
-      fetch(`${ESC_URL}/v1/incidents`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...(ESC_TOKEN ? { Authorization: `Bearer ${ESC_TOKEN}` } : {}) },
-        body: JSON.stringify({ triggerType: 'sla_breach', title: `SLA breach: ${breach}`, metadata: { instanceId: i.id, breach } }),
-      }).then(() => store.withStore(s => { const inst = s.instances.find(x => x.id === i.id); if (inst) inst.breachNotifiedAt = new Date().toISOString(); }))
-        .catch(e => log.warn({ err: e.message }, 'escalation notify failed'));
-    }
-    return { ...i, breach: calcBreach(i), isBreached: calcBreach(i) !== 'none' };
-  });
-  ok(res, mapped);
+app.get('/v1/policies', auth, slaFeature, async (req, res) => {
+  if (!dbEnabled()) return legacyPolicies(req, res);
+  return ok(res, await repo.listPolicies(resolveTenantId(req)));
 });
 
-app.post('/v1/instances', async (req, res) => {
-  const { policyId = 1, chatwootAccountId, chatwootConversationId, ticketId } = req.body ?? {};
-  if (!Number.isFinite(Number(chatwootAccountId))) return fail(res, 'VALIDATION_ERROR', 'chatwootAccountId required');
-  const s = store.load();
-  const policy = s.policies.find(p => p.id === Number(policyId));
-  if (!policy) return fail(res, 'NOT_FOUND', 'Policy not found', 404);
-  const now = new Date().toISOString();
-  ok(res, await store.withStore(ss => {
-    const inst = { id: ss.seq.nextInstance++, policyId: policy.id, policyName: policy.name, chatwootAccountId: Number(chatwootAccountId), chatwootConversationId: chatwootConversationId ?? null, ticketId: ticketId ?? null, firstResponseDueAt: addMin(now, policy.firstResponseMinutes), resolveDueAt: addMin(now, policy.resolveMinutes), firstResponseMetAt: null, resolvedAt: null, createdAt: now };
-    ss.instances.push(inst); return inst;
-  }), 201);
+app.post('/v1/policies', auth, slaFeature, async (req, res) => {
+  if (!dbEnabled()) return legacyCreatePolicy(req, res);
+  const { name, targets } = req.body ?? {};
+  if (!name?.trim()) return fail(res, 'VALIDATION_ERROR', 'name required');
+  if (!targets?.length) return fail(res, 'VALIDATION_ERROR', 'targets required');
+  try {
+    return ok(res, await repo.createPolicy(resolveTenantId(req), req.body), 201);
+  } catch (e) {
+    if (e.code === '23505') return fail(res, 'CONFLICT', 'Policy name exists', 409);
+    log.error(e);
+    return fail(res, 'INTERNAL_ERROR', e.message, 500);
+  }
 });
 
-// SLA events (from gateway fan-out)
-app.post('/v1/events', async (req, res) => {
-  res.status(200).json({ ok: true });
-  const { event, conversationId, chatwootAccountId } = req.body ?? {};
-  if (!event || !conversationId) return;
-  await store.withStore(s => {
-    const inst = s.instances.find(i => i.chatwootConversationId === Number(conversationId) && i.chatwootAccountId === Number(chatwootAccountId));
-    if (!inst) return;
-    const now = new Date().toISOString();
-    if (event === 'agent_responded' && !inst.firstResponseMetAt) inst.firstResponseMetAt = now;
-    if (event === 'conversation_resolved' && !inst.resolvedAt) inst.resolvedAt = now;
-  });
+app.get('/v1/conversations/:id/sla', auth, slaFeature, async (req, res) => {
+  if (!dbEnabled()) return fail(res, 'NOT_CONFIGURED', 'Postgres required', 501);
+  const tenantId = resolveTenantId(req);
+  return ok(res, await repo.listInstancesForConversation(tenantId, Number(req.params.id)));
 });
+
+app.get('/v1/dashboard', auth, slaFeature, async (req, res) => {
+  if (!dbEnabled()) return fail(res, 'NOT_CONFIGURED', 'Postgres required', 501);
+  return ok(res, await repo.getDashboard(resolveTenantId(req)));
+});
+
+app.post('/v1/events', slaFeature, async (req, res) => {
+  const tenantId = resolveTenantId(req);
+  if (dbEnabled()) {
+    const result = await handleChatwootEvent(tenantId, req.body ?? {});
+    return ok(res, result);
+  }
+  return ok(res, { handled: false, legacy: true });
+});
+
+app.post('/v1/sla/recalculate', auth, slaFeature, async (req, res) => {
+  if (!dbEnabled()) return fail(res, 'NOT_CONFIGURED', 'Postgres required', 501);
+  return ok(res, { status: 'accepted', message: 'Recalculate queued (stub)' });
+});
+
+// Legacy file-store compatibility
+function legacyPolicies(req, res) {
+  let policies = legacyStore.load().policies;
+  if (req.query.chatwoot_account_id) {
+    policies = policies.filter((p) => !p.chatwootAccountId || String(p.chatwootAccountId) === String(req.query.chatwoot_account_id));
+  }
+  ok(res, policies);
+}
+
+async function legacyCreatePolicy(req, res) {
+  const { name, firstResponseMinutes, resolveMinutes } = req.body ?? {};
+  if (!name?.trim()) return fail(res, 'VALIDATION_ERROR', 'name required');
+  ok(
+    res,
+    await legacyStore.withStore((s) => {
+      const p = {
+        id: s.seq.nextPolicy++,
+        name: name.trim(),
+        firstResponseMinutes: Number(firstResponseMinutes),
+        resolveMinutes: Number(resolveMinutes),
+        createdAt: new Date().toISOString(),
+      };
+      s.policies.push(p);
+      return p;
+    }),
+    201,
+  );
+}
 
 app.use(errorHandler(log));
-const server = app.listen(PORT, '0.0.0.0', () => log.info({ port: PORT }, 'sla started'));
-gracefulShutdown(server, log);
+
+async function boot() {
+  if (dbEnabled()) {
+    await runMigrations(log);
+    log.info('SLA Postgres ready');
+    startSlaWorker();
+  } else {
+    log.warn('BLINKONE_DATABASE_URL not set — legacy file store only');
+  }
+  const server = app.listen(PORT, '0.0.0.0', () => log.info({ port: PORT, db: dbEnabled() }, 'sla started'));
+  process.on('SIGTERM', () => closePool());
+  gracefulShutdown(server, log);
+}
+
+boot().catch((e) => {
+  log.error(e);
+  process.exit(1);
+});

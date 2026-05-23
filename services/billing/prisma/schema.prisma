@@ -1,0 +1,89 @@
+// Reference schema for billing (runtime uses SQL migrations in db/)
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("BLINKONE_DATABASE_URL")
+}
+
+model BillingPlan {
+  id                String   @id
+  name              String
+  tier              String
+  basePriceOmr      Decimal  @map("base_price_omr")
+  includedAgents    Int      @map("included_agents")
+  includedMinutes   Int      @map("included_minutes")
+  includedMessages  Int      @map("included_messages")
+  includedAiCredits Int      @map("included_ai_credits")
+  billingPeriod     String   @map("billing_period")
+  overageRates      BillingPlanOverageRate[]
+  subscriptions     BillingSubscription[]
+  @@map("billing_plans")
+}
+
+model BillingPlanOverageRate {
+  id              String      @id @default(uuid())
+  planId          String      @map("plan_id")
+  dimension       String
+  rateOmrPerUnit  Decimal     @map("rate_omr_per_unit")
+  plan            BillingPlan @relation(fields: [planId], references: [id])
+  @@unique([planId, dimension])
+  @@map("billing_plan_overage_rates")
+}
+
+model BillingSubscription {
+  id                 String   @id @default(uuid())
+  tenantId           String   @map("tenant_id")
+  planId             String   @map("plan_id")
+  status             String
+  currentPeriodStart DateTime @map("current_period_start")
+  currentPeriodEnd   DateTime @map("current_period_end")
+  trialEndsAt        DateTime? @map("trial_ends_at")
+  cancelAtPeriodEnd  Boolean  @map("cancel_at_period_end")
+  paymentMethodId    String?  @map("payment_method_id")
+  vatRate            Decimal  @map("vat_rate")
+  currency           String
+  plan               BillingPlan @relation(fields: [planId], references: [id])
+  @@map("billing_subscriptions")
+}
+
+model BillingUsageEvent {
+  id            String   @id @default(uuid())
+  tenantId      String   @map("tenant_id")
+  dimension     String
+  quantity      Decimal
+  occurredAt    DateTime @map("occurred_at")
+  sourceService String   @map("source_service")
+  sourceEventId String   @map("source_event_id")
+  @@unique([tenantId, sourceEventId])
+  @@map("billing_usage_events")
+}
+
+model BillingInvoice {
+  id             String   @id @default(uuid())
+  tenantId       String   @map("tenant_id")
+  periodStart    DateTime @map("period_start")
+  periodEnd      DateTime @map("period_end")
+  subtotalOmr    Decimal  @map("subtotal_omr")
+  vatOmr         Decimal  @map("vat_omr")
+  totalOmr       Decimal  @map("total_omr")
+  status         String
+  pdfMinioKey    String?  @map("pdf_minio_key")
+  idempotencyKey String?  @unique @map("idempotency_key")
+  lines          BillingInvoiceLine[]
+  @@map("billing_invoices")
+}
+
+model BillingInvoiceLine {
+  id            String         @id @default(uuid())
+  invoiceId     String         @map("invoice_id")
+  description   String
+  descriptionAr String?        @map("description_ar")
+  quantity      Decimal
+  unitPriceOmr  Decimal        @map("unit_price_omr")
+  amountOmr     Decimal        @map("amount_omr")
+  invoice       BillingInvoice @relation(fields: [invoiceId], references: [id])
+  @@map("billing_invoice_lines")
+}

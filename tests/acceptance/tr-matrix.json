@@ -1,0 +1,20 @@
+[
+  { "trId": "TR-29", "title": "Arabic voice bot", "module": "./tests/tr-29-arabic-voice-bot.mjs", "priority": "featured" },
+  { "trId": "TR-37", "title": "Multi-tenant SaaS model", "module": "./tests/tr-37-41-multi-tenant.mjs", "priority": "featured" },
+  { "trId": "TR-38", "title": "Tenant data isolation", "module": "./tests/tr-37-41-multi-tenant.mjs", "priority": "featured" },
+  { "trId": "TR-39", "title": "White-label branding", "module": "./tests/tr-smoke.mjs", "priority": "smoke" },
+  { "trId": "TR-41", "title": "Tenant RBAC", "module": "./tests/tr-smoke.mjs", "priority": "smoke" },
+  { "trId": "TR-49", "title": "SSO / SAML / AD", "module": "./tests/tr-49-sso.mjs", "priority": "featured" },
+  { "trId": "TR-55", "title": "Encryption at rest", "module": "./tests/tr-55-encryption.mjs", "priority": "featured" },
+  { "trId": "TR-58", "title": "MFA", "module": "./tests/tr-58-mfa.mjs", "priority": "featured" },
+  { "trId": "TR-67", "title": "KPI dashboards", "module": "./tests/tr-67-kpis.mjs", "priority": "featured" },
+  { "trId": "TR-61", "title": "Routing latency", "module": "./tests/tr-smoke.mjs", "priority": "smoke" },
+  { "trId": "TR-62", "title": "Concurrent calls", "module": "./tests/tr-smoke.mjs", "priority": "smoke" },
+  { "trId": "TR-06", "title": "Calling agent view", "module": "./tests/tr-calling-agent.mjs", "priority": "featured" },
+  { "trId": "TR-23", "title": "SLA policies and breach worker", "module": "./tests/tr-23-sla-escalation.mjs", "priority": "featured" },
+  { "trId": "TR-24", "title": "Escalation rules and Chatwoot actions", "module": "./tests/tr-23-sla-escalation.mjs", "priority": "featured" },
+  { "trId": "TR-57", "title": "Immutable audit logs", "module": "./tests/tr-57-audit.mjs", "priority": "featured" },
+  { "trId": "TR-47", "title": "Outbound webhooks", "module": "./tests/tr-smoke.mjs", "priority": "smoke" },
+  { "trId": "TR-68", "title": "Acceptance criteria", "module": "./tests/tr-smoke.mjs", "priority": "smoke" },
+  { "trId": "TR-70", "title": "Handover package", "module": "./tests/tr-handover.mjs", "priority": "featured" }
+]

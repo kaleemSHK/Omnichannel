@@ -1,0 +1,32 @@
+# Prompt 7 — Arabic voice bot CI scenarios (mock STT/LLM)
+scenarios:
+  - id: omani_internet_complaint
+    language: ar-OM
+    turns:
+      - caller: "مرحبا، الانترنت عندي واقف من الصبح"
+        expected_intent: technical_support
+        expected_state: listening
+      - caller: "ايه، الرقم اشتراك؟"
+        expected_intent: billing_inquiry
+  - id: plan_change_request
+    language: ar
+    turns:
+      - caller: "أبي أغير باقتي"
+        expected_intent: plan_change
+  - id: mixed_arabic_english
+    turns:
+      - caller: "I want to upgrade my plan, أبي الفايبر"
+        expected_intent: plan_change
+  - id: repeated_misunderstanding
+    turns:
+      - caller: "[noise]"
+        expected_intent: unrecognized
+      - caller: "[noise]"
+        expected_intent: unrecognized
+      - caller: "[noise]"
+        expected_state: transferring
+  - id: complaint_direct_escalation
+    turns:
+      - caller: "هذي الشركة ما تفهم، أبي مدير"
+        expected_intent: complaint
+        expected_state: transferring

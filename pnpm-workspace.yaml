@@ -1,0 +1,3 @@
+packages:
+  - 'services/_shared/packages/*'
+  - 'services/gateway'

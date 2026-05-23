@@ -1,0 +1,9 @@
+// BLINKONE: Patch Chatwoot _variables.scss — map existing vars to BlinkOne tokens
+// Merge these assignments into the fork's _variables.scss (do not replace the whole file).
+
+$color-woot: var(--blinkone-primary) !default;
+$primary-color: var(--blinkone-primary) !default;
+$secondary-color: var(--blinkone-ink) !default;
+
+// Example: sidebar / header accents
+$woot-logo-text: var(--blinkone-ink) !default;

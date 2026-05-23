@@ -1,1 +1,1 @@
-﻿{ "name": "blinkone-tickets", "version": "1.0.0", "type": "module", "scripts": { "start": "node src/server.js" }, "dependencies": { "express": "^4.21.2", "pino": "^9.0.0" } }
+{ "name": "blinkone-tickets", "version": "1.0.0", "type": "module", "scripts": { "start": "node src/server.js" }, "dependencies": { "express": "^4.21.2", "pg": "^8.13.1", "pino": "^9.0.0" } }

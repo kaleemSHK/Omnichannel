@@ -11,13 +11,13 @@ Fill **Implementation** and **Status** as each prompt lands. Source TRD document
 | TR-03 | High availability architecture | `docs/blinkone/deploy/ha.md` (Prompt 11) | PENDING DESIGN |
 | TR-04 | Disaster recovery | `docs/blinkone/deploy/dr.md` (Prompt 11) | PENDING DESIGN |
 | TR-05 | Capacity / sizing | PENDING DESIGN | PENDING DESIGN |
-| TR-06 | Voice / telephony platform | `services/calls`, `services/ivr`, `infra/asterisk` (Prompt 5) | PENDING DESIGN |
+| TR-06 | Voice / telephony platform | `services/calls`, `services/ivr`, `infra/asterisk` (Prompt 5) | STEPS 5–9 — ACD, CDR, supervise, dashboards, phone UI |
 | TR-07 | Omnichannel inbox (baseline) | `core-chatwoot` | PENDING DESIGN |
 | TR-08 | Email channel | `core-chatwoot` | PENDING DESIGN |
-| TR-09 | Web widget | `core-chatwoot` + rebrand (Prompt 3) | PENDING DESIGN |
+| TR-09 | Web widget | `core-chatwoot` + rebrand (Waves A–D) | IN PROGRESS |
 | TR-10 | Social / messaging channels | `core-chatwoot` | PENDING DESIGN |
 | TR-11 | SMS channel | `core-chatwoot` / integration | PENDING DESIGN |
-| TR-12 | Inbound PSTN / SIP trunks | `infra/kamailio`, `infra/asterisk` (Prompt 5) | PENDING DESIGN |
+| TR-12 | Inbound PSTN / SIP trunks | `infra/kamailio`, `infra/asterisk` (Prompt 5) | STEP 1 DONE — review |
 | TR-13 | ACD / queue routing | `services/routing` (Prompt 5) | PENDING DESIGN |
 | TR-14 | Agent selection algorithm | `services/routing` (Prompt 5) | PENDING DESIGN |
 | TR-15 | Queue overflow rules | `services/routing` (Prompt 5) | PENDING DESIGN |
@@ -35,7 +35,7 @@ Fill **Implementation** and **Status** as each prompt lands. Source TRD document
 | TR-27 | Reporting (baseline) | `core-chatwoot` | PENDING DESIGN |
 | TR-28 | Custom reports / exports | sidecar / integration | PENDING DESIGN |
 | TR-29 | Arabic voice bot | `services/ai` (Prompt 7) | PENDING DESIGN |
-| TR-30 | IVR self-service flows | `services/ivr` (Prompt 5) | PENDING DESIGN |
+| TR-30 | IVR self-service flows | `services/ivr` (Prompt 5) | STEP 3 — Postgres + admin UI |
 | TR-31 | Agent assist (suggestions) | `services/ai` + Vue (Prompt 7) | PENDING DESIGN |
 | TR-32 | Sentiment analysis | `services/ai` (Prompt 7) | PENDING DESIGN |
 | TR-33 | Auto ticket classification | `services/ai` (Prompt 7) | PENDING DESIGN |
@@ -44,7 +44,7 @@ Fill **Implementation** and **Status** as each prompt lands. Source TRD document
 | TR-36 | RAG knowledge base | `services/ai` (Prompt 7) | PENDING DESIGN |
 | TR-37 | Multi-tenant SaaS model | `services/platform` / `services/tenant` (Prompt 8) | PENDING DESIGN |
 | TR-38 | Tenant data isolation | gateway + RLS + Redis prefix (Prompt 8) | PENDING DESIGN |
-| TR-39 | White-label / per-tenant branding | Brand tokens (Prompt 2) + tenant service | PENDING DESIGN |
+| TR-39 | White-label / per-tenant branding | `config/blinkone/branding.yml`, `/blinkone/api/v1/branding`, `public/blinkone-brand/` | IN PROGRESS |
 | TR-40 | Per-tenant workflows | sidecars (tenant-scoped) | PENDING DESIGN |
 | TR-41 | Tenant RBAC | gateway `@blinkone/rbac` (Prompt 4) | PENDING DESIGN |
 | TR-42 | Subscription plans | `services/billing` (Prompt 9) | PENDING DESIGN |
@@ -66,19 +66,19 @@ Fill **Implementation** and **Status** as each prompt lands. Source TRD document
 | TR-58 | MFA | Keycloak / Chatwoot config | PENDING DESIGN |
 | TR-59 | Session security | gateway JWT (Prompt 4) | PENDING DESIGN |
 | TR-60 | Network security / mTLS | sidecar hooks (Prompt 4) | PENDING DESIGN |
-| TR-61 | Performance — routing latency | `tests/load/` (Prompt 11) | PENDING DESIGN |
-| TR-62 | Performance — concurrent calls | `tests/load/` (Prompt 11) | PENDING DESIGN |
+| TR-61 | Performance — routing latency | `tests/load/` (Prompt 11) | IN PROGRESS |
+| TR-62 | Performance — concurrent calls | `tests/load/` (Prompt 11) | IN PROGRESS |
 | TR-63 | Scalability — horizontal sidecars | compose / k8s (Prompt 11) | PENDING DESIGN |
-| TR-64 | Arabic / English UI | rebrand + i18n (Prompt 3) | PENDING DESIGN |
+| TR-64 | Arabic / English UI | rebrand + i18n (Waves A–D) | IN PROGRESS |
 | TR-65 | RTL layout | rebrand QA (Prompt 3) | PENDING DESIGN |
 | TR-66 | Admin training / UX | admin-panels / Vue (ongoing) | PENDING DESIGN |
 | TR-67 | KPI dashboards | telephony + Chatwoot reports | PENDING DESIGN |
-| TR-68 | Acceptance criteria | `tests/acceptance/` (Prompt 11) | PENDING DESIGN |
-| TR-69 | Documentation deliverables | `docs/blinkone/` (Prompt 11) | PENDING DESIGN |
-| TR-70 | Handover package | Prompt 11 | PENDING DESIGN |
-| TR-71 | Source code delivery | git release bundle | PENDING DESIGN |
-| TR-72 | Knowledge transfer plan | `docs/blinkone/KT_PLAN.md` (Prompt 11) | PENDING DESIGN |
-| TR-73 | Training schedule | Prompt 11 | PENDING DESIGN |
+| TR-68 | Acceptance criteria | `tests/acceptance/` (Prompt 11) | IN PROGRESS |
+| TR-69 | Documentation deliverables | `docs/blinkone/` + `mkdocs.yml` (Prompt 11) | IN PROGRESS |
+| TR-70 | Handover package | `BlinkOne-Deliverables-v1.0/` (Prompt 11) | IN PROGRESS |
+| TR-71 | Source code delivery | git release bundle | IN PROGRESS |
+| TR-72 | Knowledge transfer plan | `docs/blinkone/KT_PLAN.md` (Prompt 11) | DONE |
+| TR-73 | Training schedule | `docs/blinkone/training/` (Prompt 11) | IN PROGRESS |
 
 ## Enterprise feature mapping (build fresh — never port `enterprise/`)
 

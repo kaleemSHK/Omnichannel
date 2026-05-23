@@ -1,0 +1,5 @@
+# DID → tenant routing (loaded by Kamailio in step 2+)
+dids:
+  "+96824123456":
+    tenant_id: default
+    asterisk_context: from-trunk

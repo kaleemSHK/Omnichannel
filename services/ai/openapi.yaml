@@ -1,0 +1,47 @@
+openapi: 3.1.0
+info:
+  title: BlinkOne AI Service
+  version: 1.0.0
+  description: LLM gateway, STT, TTS, RAG, agent assist, Arabic voice bot (Prompt 7)
+
+paths:
+  /v1/chat/completions:
+    post:
+      operationId: chatCompletions
+      summary: Internal LLM gateway (tenant-routed, PII-redacted, metered)
+  /v1/stt/jobs:
+    post:
+      operationId: createSttJob
+  /v1/stt/jobs/{jobId}:
+    get:
+      operationId: getSttJob
+  /v1/tts:
+    post:
+      operationId: synthesizeSpeech
+  /v1/rag/collections:
+    post:
+      operationId: createRagCollection
+  /v1/rag/index:
+    post:
+      operationId: indexDocument
+  /v1/rag/query:
+    post:
+      operationId: ragQuery
+  /v1/classify/ticket:
+    post:
+      operationId: classifyTicket
+  /v1/sentiment:
+    post:
+      operationId: analyzeSentiment
+  /v1/summarize/conversation:
+    post:
+      operationId: summarizeConversation
+  /v1/suggest/reply:
+    post:
+      operationId: suggestReply
+  /v1/voice/sessions:
+    post:
+      operationId: createVoiceSession
+  /v1/voice/sessions/{sessionId}/turn:
+    post:
+      operationId: processVoiceTurn

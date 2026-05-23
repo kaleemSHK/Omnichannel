@@ -1,0 +1,30 @@
+# BlinkOne brand tokens — single source of truth (Prompt 2)
+# Confirmed defaults 2026-05-20 (override per tenant under tenants:)
+
+default:
+  product_name: BlinkOne
+  company_name: LABBIK Telecom S.P.C
+  primary_color: "#0B5FFF"
+  secondary_color: "#0A0F1C"
+  tagline: Customer engagement, reimagined.
+  email_from_name: BlinkOne
+  email_from_address: noreply@blinkone.ai
+  support_url: https://blinkone.ai/support
+  marketing_url: https://blinkone.ai
+  terms_url: https://blinkone.ai/terms
+  privacy_url: https://blinkone.ai/privacy
+  # Public URL path prefix for static assets (served by nginx)
+  assets_base_url: /blinkone-brand
+  logos:
+    full: logo-full.svg
+    full_dark: logo-full-dark.svg
+    mark: logo-mark.svg
+    mark_dark: logo-mark-dark.svg
+    email: logo-email.png
+  favicon: favicon.ico
+  apple_touch_icon: apple-touch-icon.png
+  og_image: og-image.png
+  splash: splash.svg
+
+# Per Chatwoot account_id (string keys)
+tenants: {}

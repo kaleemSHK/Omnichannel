@@ -1,0 +1,22 @@
+# Per-tenant SIP trunk + DID mapping (rendered into PJSIP — Prompt 5 step 2+)
+# Copy to tenants.yaml and mount in compose.
+
+tenants:
+  default:
+    tenant_id: default
+    chatwoot_account_id: 1
+    trunks:
+      - name: lab-carrier
+        host: carrier.example.com
+        port: 5060
+        transport: tls
+        username: blinkone_lab
+        # password via env BLINKONE_TRUNK_<name>_PASS
+    dids:
+      - "+96824123456"
+      - "+96824123457"
+    outbound:
+      default_trunk: lab-carrier
+      caller_id: "+96824123456"
+    recording:
+      prefix: "recordings/default"

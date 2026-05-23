@@ -2,93 +2,125 @@ import express from 'express';
 import { createLogger } from '../lib/logger.js';
 import { createStore } from '../lib/store.js';
 import { ok, fail, bearerAuth, requestId, errorHandler, healthRouter, gracefulShutdown } from '../lib/http.js';
+import { dbEnabled, runMigrations, closePool, getPool } from '../lib/db.js';
+import { requireFeature } from '../_shared/lib/features.js';
+import * as repo from '../lib/escalation-repo.js';
+import { simulateRule } from '../lib/json-logic-safe.js';
+import { processEvent } from '../lib/engine.js';
 
-const log   = createLogger('escalation');
-const PORT  = parseInt(process.env.PORT || '8797', 10);
+const log = createLogger('escalation');
+const PORT = parseInt(process.env.PORT || '8797', 10);
 const TOKEN = (process.env.TOKEN || '').trim();
-const INCIDENT_TTL_DAYS = parseInt(process.env.INCIDENT_TTL_DAYS || '90', 10);
-const TRANSITIONS = { open: ['acknowledged'], acknowledged: ['resolved'], resolved: [] };
 
-const store = createStore(process.env.DATA_DIR || './data', () => ({
-  rules: [{ id: 1, name: 'SLA breach → supervisor', triggerType: 'sla_breach', tenantId: 0, createdAt: new Date().toISOString() }],
+const legacyStore = createStore(process.env.DATA_DIR || './data', () => ({
+  rules: [{ id: 1, name: 'SLA breach', triggerType: 'sla_breach', tenantId: 0 }],
   incidents: [],
   seq: { nextRule: 2 },
 }));
 
 const auth = bearerAuth(TOKEN);
-const app  = express();
+const escFeature = requireFeature('escalation', repo.resolveTenantId, fail);
+const app = express();
 app.disable('x-powered-by');
-app.use(express.json({ limit: '256kb' }));
+app.use(express.json({ limit: '512kb' }));
 app.use(requestId);
 healthRouter(app, 'escalation');
 
-const makeId = () => `ESC-${Date.now()}-${Math.random().toString(36).slice(2,6).toUpperCase()}`;
-
-// Prune old incidents daily
-function prune() {
-  store.withStore(s => {
-    const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - INCIDENT_TTL_DAYS);
-    const before = s.incidents.length;
-    s.incidents = s.incidents.filter(i => new Date(i.createdAt) > cutoff);
-    if (s.incidents.length < before) log.info({ pruned: before - s.incidents.length }, 'old incidents pruned');
-  }).catch(() => {});
-}
-prune();
-setInterval(prune, 24 * 60 * 60 * 1000);
-
-// Rules
-app.get('/v1/rules', auth, (_req, res) => ok(res, store.load().rules));
-
-app.post('/v1/rules', auth, async (req, res) => {
-  const { name, triggerType, tenantId = 0 } = req.body ?? {};
-  if (!name?.trim() || !triggerType?.trim()) return fail(res, 'VALIDATION_ERROR', 'name and triggerType required');
-  ok(res, await store.withStore(s => {
-    const r = { id: s.seq.nextRule++, name: name.trim(), triggerType: triggerType.trim(), tenantId: Number(tenantId), thresholdMinutes: req.body.thresholdMinutes ?? null, createdAt: new Date().toISOString() };
-    s.rules.push(r); return r;
-  }), 201);
-});
-
-// Incidents
-app.get('/v1/incidents', auth, (req, res) => {
-  let list = store.load().incidents.slice().reverse();
-  if (req.query.status) list = list.filter(i => i.status === req.query.status);
-  ok(res, list);
-});
-
-app.post('/v1/incidents', async (req, res) => {
-  const { triggerType, title, tenantId = 0, metadata } = req.body ?? {};
-  if (!triggerType?.trim()) return fail(res, 'VALIDATION_ERROR', 'triggerType required');
+app.get('/readyz', async (_req, res) => {
+  if (!dbEnabled()) return res.json({ status: 'ready', db: false });
   try {
-    ok(res, await store.withStore(s => {
-      const incident = { id: makeId(), triggerType: triggerType.trim(), title: (title || triggerType).trim().slice(0,200), tenantId: Number(tenantId), status: 'open', metadata: metadata ?? {}, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
-      s.incidents.push(incident);
-      log.info({ incidentId: incident.id, triggerType }, 'incident created');
-      return incident;
-    }), 201);
-  } catch (e) { log.error(e); fail(res, 'INTERNAL_ERROR', 'Failed', 500); }
-});
-
-app.patch('/v1/incidents/:id', auth, async (req, res) => {
-  const newStatus = (req.body?.status || '').trim();
-  try {
-    ok(res, await store.withStore(s => {
-      const inc = s.incidents.find(i => i.id === req.params.id);
-      if (!inc) throw Object.assign(new Error(), { code: 404 });
-      if (newStatus) {
-        if (!TRANSITIONS[inc.status]?.includes(newStatus)) throw Object.assign(new Error(), { code: 422, msg: `Cannot go from ${inc.status} to ${newStatus}` });
-        inc.status = newStatus;
-      }
-      if (req.body.notes) inc.notes = String(req.body.notes).slice(0, 2000);
-      inc.updatedAt = new Date().toISOString();
-      return inc;
-    }));
+    await getPool().query('SELECT 1');
+    return res.json({ status: 'ready', db: true });
   } catch (e) {
-    if (e.code === 404) return fail(res, 'NOT_FOUND', 'Incident not found', 404);
-    if (e.code === 422) return fail(res, 'BAD_STATE', e.msg, 422);
-    log.error(e); fail(res, 'INTERNAL_ERROR', 'Failed', 500);
+    return res.status(503).json({ status: 'not_ready', error: e.message });
   }
 });
 
+app.get('/v1/rulesets', auth, escFeature, async (req, res) => {
+  if (!dbEnabled()) return ok(res, legacyStore.load().rules);
+  return ok(res, await repo.listRulesets(repo.resolveTenantId(req)));
+});
+
+app.post('/v1/rulesets', auth, escFeature, async (req, res) => {
+  if (!dbEnabled()) return fail(res, 'NOT_CONFIGURED', 'Postgres required', 501);
+  const { name } = req.body ?? {};
+  if (!name?.trim()) return fail(res, 'VALIDATION_ERROR', 'name required');
+  try {
+    return ok(res, await repo.createRuleset(repo.resolveTenantId(req), req.body), 201);
+  } catch (e) {
+    if (e.code === '23505') return fail(res, 'CONFLICT', 'Ruleset exists', 409);
+    return fail(res, 'INTERNAL_ERROR', e.message, 500);
+  }
+});
+
+app.get('/v1/rulesets/:id/rules', auth, escFeature, async (req, res) => {
+  if (!dbEnabled()) return fail(res, 'NOT_CONFIGURED', 'Postgres required', 501);
+  return ok(res, await repo.listRules(repo.resolveTenantId(req), req.params.id));
+});
+
+app.post('/v1/rulesets/:id/rules', auth, escFeature, async (req, res) => {
+  if (!dbEnabled()) return fail(res, 'NOT_CONFIGURED', 'Postgres required', 501);
+  try {
+    return ok(res, await repo.createRule(repo.resolveTenantId(req), req.params.id, req.body), 201);
+  } catch (e) {
+    if (e.code === 'VALIDATION_ERROR') return fail(res, 'VALIDATION_ERROR', e.message, 400);
+    if (e.code === 'NOT_FOUND') return fail(res, 'NOT_FOUND', e.message, 404);
+    return fail(res, 'INTERNAL_ERROR', e.message, 500);
+  }
+});
+
+app.post('/v1/rules/simulate', auth, escFeature, async (req, res) => {
+  const { rule, event } = req.body ?? {};
+  if (!rule) return fail(res, 'VALIDATION_ERROR', 'rule required');
+  try {
+    return ok(res, simulateRule(rule, event ?? {}));
+  } catch (e) {
+    return fail(res, 'VALIDATION_ERROR', e.message, 400);
+  }
+});
+
+app.post('/v1/events', escFeature, async (req, res) => {
+  const tenantId = repo.resolveTenantId(req);
+  if (dbEnabled()) {
+    const results = await processEvent(tenantId, req.body ?? {});
+    return ok(res, { processed: results.length, results });
+  }
+  return ok(res, { processed: 0, legacy: true });
+});
+
+// Legacy incidents API
+app.post('/v1/incidents', async (req, res) => {
+  const { triggerType, title, tenantId = 0, metadata } = req.body ?? {};
+  if (!triggerType?.trim()) return fail(res, 'VALIDATION_ERROR', 'triggerType required');
+  if (dbEnabled()) {
+    await processEvent(String(tenantId), { event_type: triggerType, title, metadata });
+  }
+  ok(
+    res,
+    {
+      id: `ESC-${Date.now()}`,
+      triggerType,
+      title: title || triggerType,
+      status: 'open',
+      metadata: metadata ?? {},
+    },
+    201,
+  );
+});
+
 app.use(errorHandler(log));
-const server = app.listen(PORT, '0.0.0.0', () => log.info({ port: PORT }, 'escalation started'));
-gracefulShutdown(server, log);
+
+async function boot() {
+  if (dbEnabled()) {
+    await runMigrations(log);
+    log.info('Escalation Postgres ready');
+  }
+  const server = app.listen(PORT, '0.0.0.0', () => log.info({ port: PORT, db: dbEnabled() }, 'escalation started'));
+  process.on('SIGTERM', () => closePool());
+  gracefulShutdown(server, log);
+}
+
+boot().catch((e) => {
+  log.error(e);
+  process.exit(1);
+});

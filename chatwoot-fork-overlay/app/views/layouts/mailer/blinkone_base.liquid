@@ -1,0 +1,35 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<!-- BLINKONE: Branded mailer layout -->
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta name="viewport" content="width=device-width" />
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+    <title>{{ global_config['BRAND_NAME'] | default: 'BlinkOne' }}</title>
+    <style type="text/css">
+      body { background-color: #F8FAFC; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; margin: 0; }
+      .main { border-top: 3px solid #0B5FFF !important; }
+    </style>
+  </head>
+  <body bgcolor="#F8FAFC">
+    <table width="100%" bgcolor="#F8FAFC" cellpadding="0" cellspacing="0">
+      <tr>
+        <td align="center" style="padding: 20px;">
+          <h1 style="color: #0B5FFF; font-size: 22px; margin: 0 0 16px;">{{ global_config['BRAND_NAME'] | default: 'BlinkOne' }}</h1>
+          <table class="main" width="600" cellpadding="0" cellspacing="0" style="background: #fff; border: 1px solid #e9e9e9; border-top: 3px solid #0B5FFF; border-radius: 6px;">
+            <tr>
+              <td style="padding: 20px; text-align: left;">
+                {{ content_for_layout }}
+              </td>
+            </tr>
+          </table>
+          <p style="color: #93AFC8; font-size: 12px; margin-top: 20px;">
+            {% if global_config['BRAND_NAME'] != '' %}
+              Powered by <a href="{{ global_config['BRAND_URL'] }}" style="color: #0B5FFF;">{{ global_config['BRAND_NAME'] }}</a>
+            {% endif %}
+          </p>
+          <p style="color: #93AFC8; font-size: 11px;">LABBIK Telecom S.P.C</p>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

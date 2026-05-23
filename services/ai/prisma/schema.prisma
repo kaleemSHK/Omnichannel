@@ -1,0 +1,46 @@
+// Reference schema (Prompt 7) — runtime uses SQL migrations in db/
+// Datasource: BLINKONE_DATABASE_URL on postgres_app (pgvector image)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("BLINKONE_DATABASE_URL")
+}
+
+model AiProviderConfig {
+  id               String   @id @default(uuid())
+  tenantId         String   @map("tenant_id")
+  provider         String   @default("openai")
+  modelDefault     String   @map("model_default")
+  modelFast        String   @map("model_fast")
+  baseUrl          String   @map("base_url")
+  encryptedApiKey  String?  @map("encrypted_api_key")
+  isActive         Boolean  @default(true) @map("is_active")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  @@unique([tenantId, provider])
+  @@map("ai_provider_configs")
+}
+
+model AiUsageEvent {
+  id            String   @id @default(uuid())
+  tenantId      String   @map("tenant_id")
+  sourceService String   @map("source_service")
+  sourceEventId String   @unique @map("source_event_id")
+  dimension     String
+  quantity      Int
+  costCents     Int      @map("cost_cents")
+  modelOrVoice  String?  @map("model_or_voice")
+  latencyMs     Int?     @map("latency_ms")
+  success       Boolean
+  occurredAt    DateTime @default(now()) @map("occurred_at")
+
+  @@index([tenantId, occurredAt])
+  @@map("ai_usage_events")
+}
+
+// See db/001_ai.sql for full model list (SttJob, RagCollection, VoiceSession, etc.)

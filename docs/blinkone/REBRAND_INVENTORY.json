@@ -1,0 +1,757 @@
+{
+  "upstream_tag": "v4.13.0",
+  "total_matches": 4221,
+  "by_category_counts": {
+    "1_dashboard_i18n": 1961,
+    "2_widget_i18n": 54,
+    "4_email": 15,
+    "5_html_metadata": 23,
+    "8_installation_config": 31,
+    "99_other": 2124,
+    "9_onboarding": 13
+  },
+  "dashboard_i18n_locale_counts": {
+    "dashboard/sh": 40,
+    "dashboard/et": 37,
+    "dashboard/am": 36,
+    "dashboard/az": 36,
+    "dashboard/bg": 36,
+    "dashboard/bn": 36,
+    "dashboard/ca": 36,
+    "dashboard/cs": 36,
+    "dashboard/da": 36,
+    "dashboard/de": 36,
+    "dashboard/el": 36,
+    "dashboard/en": 36,
+    "dashboard/es": 36,
+    "dashboard/fr": 36,
+    "dashboard/hi": 36,
+    "dashboard/hr": 36,
+    "dashboard/hu": 36,
+    "dashboard/hy": 36,
+    "dashboard/id": 36,
+    "dashboard/is": 36,
+    "dashboard/ka": 36,
+    "dashboard/lv": 36,
+    "dashboard/ms": 36,
+    "dashboard/ne": 36,
+    "dashboard/no": 36,
+    "dashboard/pt": 36,
+    "dashboard/ro": 36,
+    "dashboard/sk": 36,
+    "dashboard/sq": 36,
+    "dashboard/sr": 36,
+    "dashboard/sv": 36,
+    "dashboard/tl": 36,
+    "dashboard/uk": 36,
+    "dashboard/ur": 36,
+    "dashboard/ur_IN": 36,
+    "dashboard/zh_TW": 36,
+    "dashboard/ar": 35,
+    "dashboard/ja": 35,
+    "dashboard/ko": 35,
+    "dashboard/lt": 35,
+    "dashboard/pl": 35,
+    "dashboard/pt_BR": 35,
+    "dashboard/th": 35,
+    "dashboard/tr": 35,
+    "dashboard/vi": 35,
+    "dashboard/it": 34,
+    "dashboard/nl": 34,
+    "dashboard/ru": 34,
+    "dashboard/sl": 34,
+    "dashboard/zh_CN": 34,
+    "dashboard/he": 33,
+    "dashboard/fi": 32,
+    "dashboard/ml": 29,
+    "dashboard/ta": 29,
+    "dashboard/fa": 27,
+    "dashboard/zh": 25
+  },
+  "en_dashboard_samples": [
+    {
+      "file": "app/javascript/dashboard/i18n/locale/en/auditLogs.json",
+      "line": 9,
+      "text": "\"SIDEBAR_TXT\": \"<p><b>Audit Logs</b> </p><p> Audit Logs are trails for events and actions in a Chatwoot System. </p>\","
+    },
+    {
+      "file": "app/javascript/dashboard/i18n/locale/en/auditLogs.json",
+      "line": 13,
+      "text": "\"DESC\": \"Audit Logs are trails for events and actions in a Chatwoot System.\","
+    },
+    {
+      "file": "app/javascript/dashboard/i18n/locale/en/conversation.json",
+      "line": 264,
+      "text": "\"NATIVE_APP_ADVISORY\": \"This message was sent from the native app. Reply from Chatwoot to maintain the message window.\","
+    },
+    {
+      "file": "app/javascript/dashboard/i18n/locale/en/generalSettings.json",
+      "line": 126,
+      "text": "\"UPDATE_CHATWOOT\": \"An update {latestChatwootVersion} for Chatwoot is available. Please update your instance.\","
+    },
+    {
+      "file": "app/javascript/dashboard/i18n/locale/en/generalSettings.json",
+      "line": 128,
+      "text": "\"PAYMENT_PENDING\": \"Your payment is pending. Please update your payment information to continue using Chatwoot\","
+    },
+    {
+      "file": "app/javascript/dashboard/i18n/locale/en/generalSettings.json",
+      "line": 129,
+      "text": "\"UPGRADE\": \"Upgrade to continue using Chatwoot\","
+    },
+    {
+      "file": "app/javascript/dashboard/i18n/locale/en/generalSettings.json",
+      "line": 130,
+      "text": "\"LIMITS_UPGRADE\": \"Your account has exceeded the usage limits, please upgrade your plan to continue using Chatwoot\","
+    },
+    {
+      "file": "app/javascript/dashboard/i18n/locale/en/helpCenter.json",
+      "line": 422,
+      "text": "\"HELP_TEXT\": \"app.chatwoot.com/hc/my-portal/en-US/categories/my-slug\","
+    },
+    {
+      "file": "app/javascript/dashboard/i18n/locale/en/helpCenter.json",
+      "line": 453,
+      "text": "\"HELP_TEXT\": \"app.chatwoot.com/hc/my-portal/en-US/categories/my-slug\","
+    },
+    {
+      "file": "app/javascript/dashboard/i18n/locale/en/helpCenter.json",
+      "line": 637,
+      "text": "\"HELP_TEXT\": \"app.chatwoot.com/hc/{portalSlug}/{localeCode}/categories/{categorySlug}\""
+    },
+    {
+      "file": "app/javascript/dashboard/i18n/locale/en/helpCenter.json",
+      "line": 730,
+      "text": "\"PLACEHOLDER\": \"User Guide | Chatwoot\","
+    },
+    {
+      "file": "app/javascript/dashboard/i18n/locale/en/helpCenter.json",
+      "line": 810,
+      "text": "\"DESCRIPTION\": \"Log in to the account you have with your DNS provider, and add a CNAME record for subdomain pointing to chatwoot.help\","
+    },
+    {
+      "file": "app/javascript/dashboard/i18n/locale/en/inboxMgmt.json",
+      "line": 19,
+      "text": "\"BODY\": \"Choose the provider you want to integrate with Chatwoot.\""
+    },
+    {
+      "file": "app/javascript/dashboard/i18n/locale/en/inboxMgmt.json",
+      "line": 45,
+      "text": "\"HELP\": \"PS: By signing in, we only get access to your Page's messages. Your private messages can never be accessed by Chatwoot.\","
+    },
+    {
+      "file": "app/javascript/dashboard/i18n/locale/en/inboxMgmt.json",
+      "line": 452,
+      "text": "\"DESC\": \"Chatwoot supports live-chat widgets, Facebook Messenger, WhatsApp, Emails, etc., as channels. If you want to build a custom channel, you can create it using the API channel. To get started, c"
+    },
+    {
+      "file": "app/javascript/dashboard/i18n/locale/en/inboxMgmt.json",
+      "line": 510,
+      "text": "\"DESC\": \"From the dropdown below, select the Facebook Page you want to connect to Chatwoot. You can also give a custom name to your inbox for better identification.\""
+    },
+    {
+      "file": "app/javascript/dashboard/i18n/locale/en/inboxMgmt.json",
+      "line": 514,
+      "text": "\"DESC\": \"You have successfully finished integrating your Facebook Page with Chatwoot. Next time a customer messages your Page, the conversation will automatically appear on your inbox.<br>We are also "
+    },
+    {
+      "file": "app/javascript/dashboard/i18n/locale/en/inboxMgmt.json",
+      "line": 1126,
+      "text": "\"BRANDING_TEXT\": \"Powered by Chatwoot\","
+    },
+    {
+      "file": "app/javascript/dashboard/i18n/locale/en/inboxMgmt.json",
+      "line": 1127,
+      "text": "\"SCRIPT_SETTINGS\": \"\\n      window.chatwootSettings = {options};\""
+    },
+    {
+      "file": "app/javascript/dashboard/i18n/locale/en/integrations.json",
+      "line": 20,
+      "text": "\"DESCRIPTION\": \"Chatwoot integrates with multiple tools and services to improve your team's efficiency. Explore the list below to configure your favorite apps.\","
+    },
+    {
+      "file": "app/javascript/dashboard/i18n/locale/en/integrations.json",
+      "line": 47,
+      "text": "\"DESC\": \"Webhook events provide you the realtime information about what's happening in your Chatwoot account. Please enter a valid URL to configure a callback.\","
+    },
+    {
+      "file": "app/javascript/dashboard/i18n/locale/en/integrations.json",
+      "line": 81,
+      "text": "\"SIDEBAR_TXT\": \"<p><b>Webhooks</b> </p> <p>Webhooks are HTTP callbacks which can be defined for every account. They are triggered by events like message creation in Chatwoot. You can create more than "
+    },
+    {
+      "file": "app/javascript/dashboard/i18n/locale/en/integrations.json",
+      "line": 129,
+      "text": "\"BODY\": \"With this integration, all of your incoming conversations will be synced to the ***{selectedChannelName}*** channel in your Slack workspace. You can manage all your customer conversations rig"
+    },
+    {
+      "file": "app/javascript/dashboard/i18n/locale/en/integrations.json",
+      "line": 136,
+      "text": "\"DESCRIPTION\": \"Your Slack workspace is now linked with Chatwoot. However, the integration is currently inactive. To activate the integration and connect a channel to Chatwoot, please click the button"
+    },
+    {
+      "file": "app/javascript/dashboard/i18n/locale/en/integrations.json",
+      "line": 238,
+      "text": "\"SIDEBAR_TXT\": \"<p><b>Dashboard Apps</b></p><p>Dashboard Apps allow organizations to embed an application inside the Chatwoot dashboard to provide the context for customer support agents. This feature"
+    },
+    {
+      "file": "app/javascript/dashboard/i18n/locale/en/labelsMgmt.json",
+      "line": 53,
+      "text": "\"POWERED_BY\": \"Chatwoot AI\","
+    },
+    {
+      "file": "app/javascript/dashboard/i18n/locale/en/login.json",
+      "line": 3,
+      "text": "\"TITLE\": \"Login to Chatwoot\","
+    },
+    {
+      "file": "app/javascript/dashboard/i18n/locale/en/mfa.json",
+      "line": 101,
+      "text": "\"CONTACT_DESC_CLOUD\": \"If you've lost access to both your authenticator app and backup codes, please reach out to Chatwoot support for assistance.\","
+    },
+    {
+      "file": "app/javascript/dashboard/i18n/locale/en/resetPassword.json",
+      "line": 4,
+      "text": "\"DESCRIPTION\": \"Enter the email address you use to log in to Chatwoot to get the password reset instructions.\","
+    },
+    {
+      "file": "app/javascript/dashboard/i18n/locale/en/settings.json",
+      "line": 40,
+      "text": "\"NOTE\": \"Customize the look and feel of your Chatwoot dashboard.\","
+    },
+    {
+      "file": "app/javascript/dashboard/i18n/locale/en/settings.json",
+      "line": 519,
+      "text": "\"TOOLTIP\": \"Unique identifier for Chatwoot as the Service Provider - Configure this in your IdP settings\""
+    },
+    {
+      "file": "app/javascript/dashboard/i18n/locale/en/settings.json",
+      "line": 614,
+      "text": "\"NO_ACCOUNT_WARNING\": \"Uh oh! We could not find any Chatwoot accounts. Please create a new account to continue.\","
+    },
+    {
+      "file": "app/javascript/dashboard/i18n/locale/en/signup.json",
+      "line": 4,
+      "text": "\"GET_STARTED\": \"Get started with Chatwoot\","
+    },
+    {
+      "file": "app/javascript/dashboard/i18n/locale/en/signup.json",
+      "line": 8,
+      "text": "\"TERMS_ACCEPT\": \"By creating an account, you agree to our <a href=\\\"https://www.chatwoot.com/terms\\\">T & C</a> and <a href=\\\"https://www.chatwoot.com/privacy-policy\\\">Privacy policy</a>\","
+    },
+    {
+      "file": "app/javascript/dashboard/i18n/locale/en/yearInReview.json",
+      "line": 51,
+      "text": "\"SHARE_TEXT\": \"Check out my {year} Year in Review with Chatwoot!\","
+    },
+    {
+      "file": "app/javascript/dashboard/i18n/locale/en/yearInReview.json",
+      "line": 52,
+      "text": "\"BRANDING\": \"Made with Chatwoot\""
+    }
+  ],
+  "widget_i18n_files": 54,
+  "installation_config": [
+    {
+      "file": "config/installation_config.yml",
+      "line": 1,
+      "text": "# This file contains all the installation wide configuration which controls various settings in Chatwoot"
+    },
+    {
+      "file": "config/installation_config.yml",
+      "line": 3,
+      "text": "# Chatwoot might override and modify these values during the upgrade process"
+    },
+    {
+      "file": "config/installation_config.yml",
+      "line": 18,
+      "text": "value: 'Chatwoot'"
+    },
+    {
+      "file": "config/installation_config.yml",
+      "line": 34,
+      "text": "value: 'https://www.chatwoot.com'"
+    },
+    {
+      "file": "config/installation_config.yml",
+      "line": 38,
+      "text": "value: 'https://www.chatwoot.com'"
+    },
+    {
+      "file": "config/installation_config.yml",
+      "line": 42,
+      "text": "value: 'Chatwoot'"
+    },
+    {
+      "file": "config/installation_config.yml",
+      "line": 46,
+      "text": "value: 'https://www.chatwoot.com/terms-of-service'"
+    },
+    {
+      "file": "config/installation_config.yml",
+      "line": 50,
+      "text": "value: 'https://www.chatwoot.com/privacy-policy'"
+    },
+    {
+      "file": "config/installation_config.yml",
+      "line": 55,
+      "text": "display_title: 'Chatwoot Metadata'"
+    },
+    {
+      "file": "config/installation_config.yml",
+      "line": 56,
+      "text": "description: 'Display default Chatwoot metadata like favicons and upgrade warnings'"
+    },
+    {
+      "file": "config/installation_config.yml",
+      "line": 85,
+      "text": "description: 'Maximum time Chatwoot waits for a webhook response before failing the request'"
+    },
+    {
+      "file": "config/installation_config.yml",
+      "line": 221,
+      "text": "# ------- Chatwoot Internal Config for Cloud ----#"
+    },
+    {
+      "file": "config/installation_config.yml",
+      "line": 222,
+      "text": "- name: CHATWOOT_INBOX_TOKEN"
+    },
+    {
+      "file": "config/installation_config.yml",
+      "line": 225,
+      "text": "description: 'The Chatwoot Inbox Token for Contact Support in Cloud'"
+    },
+    {
+      "file": "config/installation_config.yml",
+      "line": 228,
+      "text": "- name: CHATWOOT_INBOX_HMAC_KEY"
+    },
+    {
+      "file": "config/installation_config.yml",
+      "line": 231,
+      "text": "description: 'The Chatwoot Inbox HMAC Key for Contact Support in Cloud'"
+    },
+    {
+      "file": "config/installation_config.yml",
+      "line": 234,
+      "text": "- name: CHATWOOT_CLOUD_PLANS"
+    },
+    {
+      "file": "config/installation_config.yml",
+      "line": 238,
+      "text": "- name: CHATWOOT_CLOUD_PLAN_FEATURES"
+    },
+    {
+      "file": "config/installation_config.yml",
+      "line": 244,
+      "text": "description: 'The deployment environment of the installation, to differentiate between Chatwoot cloud and self-hosted'"
+    },
+    {
+      "file": "config/installation_config.yml",
+      "line": 248,
+      "text": "description: 'The Amplitude analytics API key for Chatwoot cloud'"
+    },
+    {
+      "file": "config/installation_config.yml",
+      "line": 274,
+      "text": "# ------- End of Chatwoot Internal Config for Cloud ----#"
+    },
+    {
+      "file": "config/installation_config.yml",
+      "line": 276,
+      "text": "# ------- Chatwoot Internal Config for Self Hosted ----#"
+    },
+    {
+      "file": "config/installation_config.yml",
+      "line": 283,
+      "text": "- name: CHATWOOT_SUPPORT_WEBSITE_TOKEN"
+    },
+    {
+      "file": "config/installation_config.yml",
+      "line": 285,
+      "text": "description: 'The Chatwoot website token, used to identify the Chatwoot inbox and display the \"Contact Support\" option on the billing page'"
+    },
+    {
+      "file": "config/installation_config.yml",
+      "line": 287,
+      "text": "- name: CHATWOOT_SUPPORT_SCRIPT_URL"
+    },
+    {
+      "file": "config/installation_config.yml",
+      "line": 289,
+      "text": "description: 'The Chatwoot script base URL, to display the \"Contact Support\" option on the billing page'"
+    },
+    {
+      "file": "config/installation_config.yml",
+      "line": 290,
+      "text": "- name: CHATWOOT_SUPPORT_IDENTIFIER_HASH"
+    },
+    {
+      "file": "config/installation_config.yml",
+      "line": 292,
+      "text": "description: 'The Chatwoot identifier hash, to validate the contact in the live chat window.'"
+    },
+    {
+      "file": "config/installation_config.yml",
+      "line": 297,
+      "text": "description: Used to notify Chatwoot about account abuses, potential threads (Should be a Discord Webhook URL)"
+    },
+    {
+      "file": "config/installation_config.yml",
+      "line": 298,
+      "text": "# ------- End of Chatwoot Internal Config for Self Hosted ----#"
+    },
+    {
+      "file": "config/installation_config.yml",
+      "line": 301,
+      "text": "- name: CHATWOOT_INSTANCE_ADMIN_EMAIL"
+    }
+  ],
+  "email_samples": [
+    {
+      "file": "app/views/mailers/conversation_reply_mailer/conversation_transcript.html.erb",
+      "line": 33,
+      "text": "<%= ChatwootMarkdownRenderer.new(message.content).render_message %>"
+    },
+    {
+      "file": "app/views/mailers/conversation_reply_mailer/reply_without_summary.html.erb",
+      "line": 4,
+      "text": "<%= ChatwootMarkdownRenderer.new(message.content).render_message %>"
+    },
+    {
+      "file": "app/views/mailers/conversation_reply_mailer/reply_with_summary.html.erb",
+      "line": 16,
+      "text": "<%= ChatwootMarkdownRenderer.new(message.content).render_message %>"
+    },
+    {
+      "file": "app/views/mailers/administrator_notifications/account_compliance_mailer/account_deleted.liquid",
+      "line": 3,
+      "text": "<p>This is a notification to inform you that an account has been permanently deleted from your Chatwoot instance.</p>"
+    },
+    {
+      "file": "app/views/mailers/administrator_notifications/account_compliance_mailer/account_deleted.liquid",
+      "line": 6,
+      "text": "<strong>Chatwoot Installation:</strong> {{ meta.instance_url }}<br>"
+    },
+    {
+      "file": "app/views/mailers/administrator_notifications/account_compliance_mailer/account_deleted.liquid",
+      "line": 30,
+      "text": "Chatwoot System</p>"
+    },
+    {
+      "file": "app/views/mailers/administrator_notifications/account_notification_mailer/account_deletion_for_inactivity.liquid",
+      "line": 3,
+      "text": "<p>We've noticed that your Chatwoot account <strong>{{ meta.account_name }}</strong> has been inactive for some time. Because of this, it's scheduled for deletion on <strong>{{ meta.deletion_date }}</"
+    },
+    {
+      "file": "app/views/mailers/administrator_notifications/account_notification_mailer/account_deletion_for_inactivity.liquid",
+      "line": 7,
+      "text": "<p>Log in to your Chatwoot account before <strong>{{ meta.deletion_date }}</strong>. From your account settings, you can <a href=\"{{ action_url }}\">cancel the deletion</a> and continue using your acco"
+    },
+    {
+      "file": "app/views/mailers/administrator_notifications/account_notification_mailer/account_deletion_for_inactivity.liquid",
+      "line": 17,
+      "text": "<p>If you have any questions, feel free to reach us at <a href=\"mailto:hello@chatwoot.com\">hello@chatwoot.com</a>.</p>"
+    },
+    {
+      "file": "app/views/mailers/administrator_notifications/account_notification_mailer/account_deletion_for_inactivity.liquid",
+      "line": 19,
+      "text": "<p>\u2014 The Chatwoot Team</p>"
+    },
+    {
+      "file": "app/views/mailers/administrator_notifications/account_notification_mailer/account_deletion_user_initiated.liquid",
+      "line": 3,
+      "text": "<p>An account administrator has requested deletion of the Chatwoot account <strong>{{ meta.account_name }}</strong>. The account is scheduled for deletion on <strong>{{ meta.deletion_date }}</strong>."
+    },
+    {
+      "file": "app/views/mailers/administrator_notifications/account_notification_mailer/account_deletion_user_initiated.liquid",
+      "line": 14,
+      "text": "<p>\u2014 The Chatwoot Team</p>"
+    },
+    {
+      "file": "app/views/devise/mailer/confirmation_instructions.html.erb",
+      "line": 6,
+      "text": "<p><%= account_user.inviter.name %>, with <%= account_user.account.name %>, has invited you to try out <%= global_config['BRAND_NAME'] || 'Chatwoot' %>.</p>"
+    },
+    {
+      "file": "app/views/devise/mailer/confirmation_instructions.html.erb",
+      "line": 10,
+      "text": "<p>You can login to your <%= global_config['BRAND_NAME'] || 'Chatwoot' %> account through the link below:</p>"
+    },
+    {
+      "file": "app/views/devise/mailer/confirmation_instructions.html.erb",
+      "line": 14,
+      "text": "Welcome to <%= global_config['BRAND_NAME'] || 'Chatwoot' %>! We have a suite of powerful tools ready for you to explore. Before that we quickly need to verify your email address to know it's really yo"
+    }
+  ],
+  "metadata": [
+    {
+      "file": "public/manifest.json",
+      "line": 2,
+      "text": "\"name\": \"Chatwoot\","
+    },
+    {
+      "file": "public/manifest.json",
+      "line": 3,
+      "text": "\"short_name\": \"Chatwoot\","
+    },
+    {
+      "file": "app/views/widget_tests/index.html.erb",
+      "line": 16,
+      "text": "window.chatwootSettings = {"
+    },
+    {
+      "file": "app/views/widget_tests/index.html.erb",
+      "line": 36,
+      "text": "window.chatwootSDK.run({"
+    },
+    {
+      "file": "app/views/widget_tests/index.html.erb",
+      "line": 43,
+      "text": "window.addEventListener('chatwoot:ready', function() {"
+    },
+    {
+      "file": "app/views/widget_tests/index.html.erb",
+      "line": 44,
+      "text": "console.log('chatwoot:ready', window.$chatwoot);"
+    },
+    {
+      "file": "app/views/widget_tests/index.html.erb",
+      "line": 46,
+      "text": "window.$chatwoot.setUser('<%= user_id %>', {"
+    },
+    {
+      "file": "app/views/widget_tests/index.html.erb",
+      "line": 55,
+      "text": "window.addEventListener('chatwoot:error', function(e) {"
+    },
+    {
+      "file": "app/views/widget_tests/index.html.erb",
+      "line": 56,
+      "text": "console.log('chatwoot:error', e.detail)"
+    },
+    {
+      "file": "app/views/widget_tests/index.html.erb",
+      "line": 60,
+      "text": "window.addEventListener('chatwoot:on-message', function(e) {"
+    },
+    {
+      "file": "app/views/widget_tests/index.html.erb",
+      "line": 61,
+      "text": "console.log('chatwoot:on-message', e.detail)"
+    },
+    {
+      "file": "app/views/widget_tests/index.html.erb",
+      "line": 64,
+      "text": "window.addEventListener('chatwoot:postback', function(e) {"
+    },
+    {
+      "file": "app/views/widget_tests/index.html.erb",
+      "line": 65,
+      "text": "console.log('chatwoot:postback', e.detail)"
+    },
+    {
+      "file": "app/views/widget_tests/index.html.erb",
+      "line": 68,
+      "text": "window.addEventListener('chatwoot:opened', function() {"
+    },
+    {
+      "file": "app/views/widget_tests/index.html.erb",
+      "line": 69,
+      "text": "console.log('chatwoot:opened')"
+    },
+    {
+      "file": "app/views/widget_tests/index.html.erb",
+      "line": 72,
+      "text": "window.addEventListener('chatwoot:closed', function() {"
+    },
+    {
+      "file": "app/views/widget_tests/index.html.erb",
+      "line": 73,
+      "text": "console.log('chatwoot:closed')"
+    },
+    {
+      "file": "app/views/widget_tests/index.html.erb",
+      "line": 76,
+      "text": "window.addEventListener('chatwoot:on-start-conversation', function(e) {"
+    },
+    {
+      "file": "app/views/widget_tests/index.html.erb",
+      "line": 77,
+      "text": "console.log('chatwoot:on-start-conversation', e.detail)"
+    },
+    {
+      "file": "app/views/installation/onboarding/index.html.erb",
+      "line": 4,
+      "text": "<title>SuperAdmin | Chatwoot</title>"
+    },
+    {
+      "file": "app/views/installation/onboarding/index.html.erb",
+      "line": 12,
+      "text": "<img src=\"/brand-assets/logo.svg\" alt=\"Chatwoot\" class=\"mx-auto h-8 w-auto block dark:hidden\">"
+    },
+    {
+      "file": "app/views/installation/onboarding/index.html.erb",
+      "line": 13,
+      "text": "<img src=\"/brand-assets/logo_dark.svg\" alt=\"Chatwoot\" class=\"mx-auto h-8 w-auto hidden dark:block\">"
+    },
+    {
+      "file": "app/views/installation/onboarding/index.html.erb",
+      "line": 15,
+      "text": "Howdy, Welcome to Chatwoot \ud83d\udc4b"
+    }
+  ],
+  "marketing_samples": [
+    {
+      "file": "app.json",
+      "line": 4,
+      "text": "\"website\": \"https://www.chatwoot.com/\","
+    },
+    {
+      "file": "app.json",
+      "line": 6,
+      "text": "\"logo\": \"https://app.chatwoot.com/brand-assets/logo_thumbnail.svg\","
+    },
+    {
+      "file": "CODE_OF_CONDUCT.md",
+      "line": 63,
+      "text": "hello@chatwoot.com."
+    },
+    {
+      "file": "CONTRIBUTING.md",
+      "line": 5,
+      "text": "Please refer to our [Contributing Guide](https://www.chatwoot.com/docs/contributing-guide) for detailed instructions on how to contribute."
+    },
+    {
+      "file": "README.md",
+      "line": 17,
+      "text": "<a href=\"https://status.chatwoot.com\"><img src=\"https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fchatwoot%2Fstatus%2Fmaster%2Fapi%2Fchatwoot%2Fuptime.json\" alt=\"uptime\"></"
+    },
+    {
+      "file": "README.md",
+      "line": 18,
+      "text": "<a href=\"https://status.chatwoot.com\"><img src=\"https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fchatwoot%2Fstatus%2Fmaster%2Fapi%2Fchatwoot%2Fresponse-time.json\" alt=\"res"
+    },
+    {
+      "file": "README.md",
+      "line": 90,
+      "text": "Detailed documentation is available at [chatwoot.com/help-center](https://www.chatwoot.com/help-center)."
+    },
+    {
+      "file": "README.md",
+      "line": 94,
+      "text": "The translation process for Chatwoot web and mobile app is managed at [https://translate.chatwoot.com](https://translate.chatwoot.com) using Crowdin. Please read the [translation guide](https://www.ch"
+    },
+    {
+      "file": "README.md",
+      "line": 109,
+      "text": "Follow this [link](https://www.chatwoot.com/docs/environment-variables) to understand setting the correct environment variables for the app to work with all the features. There might be breakages if y"
+    },
+    {
+      "file": "README.md",
+      "line": 122,
+      "text": "For other supported options, checkout our [deployment page](https://chatwoot.com/deploy)."
+    },
+    {
+      "file": "README.md",
+      "line": 134,
+      "text": "Thanks goes to all these [wonderful people](https://www.chatwoot.com/docs/contributors):"
+    },
+    {
+      "file": "SECURITY.md",
+      "line": 7,
+      "text": "If you have any questions about the process, contact security@chatwoot.com."
+    },
+    {
+      "file": "SECURITY.md",
+      "line": 30,
+      "text": "You can learn more about our triaging process [here](https://www.chatwoot.com/docs/contributing-guide/security-reports)."
+    },
+    {
+      "file": "config/installation_config.yml",
+      "line": 34,
+      "text": "value: 'https://www.chatwoot.com'"
+    },
+    {
+      "file": "config/installation_config.yml",
+      "line": 38,
+      "text": "value: 'https://www.chatwoot.com'"
+    },
+    {
+      "file": "config/installation_config.yml",
+      "line": 46,
+      "text": "value: 'https://www.chatwoot.com/terms-of-service'"
+    },
+    {
+      "file": "config/installation_config.yml",
+      "line": 50,
+      "text": "value: 'https://www.chatwoot.com/privacy-policy'"
+    },
+    {
+      "file": "lib/chatwoot_hub.rb",
+      "line": 3,
+      "text": "DEFAULT_BASE_URL = 'https://hub.2.chatwoot.com'.freeze"
+    },
+    {
+      "file": "swagger/index.yml",
+      "line": 6,
+      "text": "termsOfService: https://www.chatwoot.com/terms-of-service/"
+    },
+    {
+      "file": "swagger/index.yml",
+      "line": 8,
+      "text": "email: hello@chatwoot.com"
+    },
+    {
+      "file": "swagger/index.yml",
+      "line": 13,
+      "text": "- url: https://app.chatwoot.com/"
+    },
+    {
+      "file": "swagger/swagger.json",
+      "line": 7,
+      "text": "\"termsOfService\": \"https://www.chatwoot.com/terms-of-service/\","
+    },
+    {
+      "file": "swagger/swagger.json",
+      "line": 9,
+      "text": "\"email\": \"hello@chatwoot.com\""
+    },
+    {
+      "file": "swagger/swagger.json",
+      "line": 18,
+      "text": "\"url\": \"https://app.chatwoot.com/\""
+    },
+    {
+      "file": "swagger/swagger.json",
+      "line": 3917,
+      "text": "\"homepage_link\": \"https://www.chatwoot.com\","
+    },
+    {
+      "file": "swagger/swagger.json",
+      "line": 3940,
+      "text": "\"website_url\": \"chatwoot.com\""
+    },
+    {
+      "file": "swagger/swagger.json",
+      "line": 4038,
+      "text": "\"homepage_link\": \"https://www.chatwoot.com\","
+    },
+    {
+      "file": "swagger/swagger.json",
+      "line": 4046,
+      "text": "\"website_url\": \"chatwoot.com\","
+    },
+    {
+      "file": "swagger/swagger.json",
+      "line": 4449,
+      "text": "\"description\": \"Creating a conversation in chatwoot requires a source id. \\n\\n Learn more about source_id: https://www.chatwoot.com/hc/user-guide/articles/1677839703-how-to-create-an-api-channel-inbox"
+    },
+    {
+      "file": "swagger/swagger.json",
+      "line": 12472,
+      "text": "\"example\": \"https://www.chatwoot.com/\""
+    }
+  ]
+}

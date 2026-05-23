@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"/><title>BlinkOne Acceptance Report</title>
+<style>
+body{font-family:Inter,system-ui,sans-serif;margin:2rem;color:#37352f}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{border:0.5px solid #d3d1cb;padding:8px;text-align:left}
+th{background:#f7f7f5}
+.PASS{color:#12b76a}.FAIL{color:#f04438}.SKIP{color:#7a7a72}
+summary{margin:1rem 0}
+</style></head><body>
+<h1>BlinkOne Acceptance Report</h1>
+<p>Generated: 2026-05-20T12:50:13.956Z · 2 pass · 0 fail · 13 skip</p>
+<table><thead><tr><th>TR</th><th>Requirement</th><th>Status</th><th>Detail</th><th>ms</th></tr></thead>
+<tbody><tr class="SKIP">
+      <td>TR-29</td><td>Arabic voice bot</td>
+      <td><strong>SKIP</strong></td>
+      <td>Set RUN_ACCEPTANCE=1 or start AI service</td>
+      <td></td>
+    </tr>
+<tr class="SKIP">
+      <td>TR-37</td><td>Multi-tenant SaaS model</td>
+      <td><strong>SKIP</strong></td>
+      <td>BLINKONE_DATABASE_URL required</td>
+      <td></td>
+    </tr>
+<tr class="SKIP">
+      <td>TR-38</td><td>Tenant data isolation</td>
+      <td><strong>SKIP</strong></td>
+      <td>BLINKONE_DATABASE_URL required</td>
+      <td></td>
+    </tr>
+<tr class="SKIP">
+      <td>TR-39</td><td>White-label branding</td>
+      <td><strong>SKIP</strong></td>
+      <td>Partial stack: down Gateway, AI, Tenant, Integration</td>
+      <td></td>
+    </tr>
+<tr class="SKIP">
+      <td>TR-41</td><td>Tenant RBAC</td>
+      <td><strong>SKIP</strong></td>
+      <td>Partial stack: down Gateway, AI, Tenant, Integration</td>
+      <td></td>
+    </tr>
+<tr class="SKIP">
+      <td>TR-49</td><td>SSO / SAML / AD</td>
+      <td><strong>SKIP</strong></td>
+      <td>Integration service not up</td>
+      <td></td>
+    </tr>
+<tr class="SKIP">
+      <td>TR-55</td><td>Encryption at rest</td>
+      <td><strong>SKIP</strong></td>
+      <td>Set RUN_ENCRYPTION_TEST=1 and RECORDING_MINIO_KEY to probe bucket</td>
+      <td></td>
+    </tr>
+<tr class="SKIP">
+      <td>TR-58</td><td>MFA</td>
+      <td><strong>SKIP</strong></td>
+      <td>Enable MFA in Keycloak realm + Chatwoot; set KEYCLOAK_URL for automated probe</td>
+      <td></td>
+    </tr>
+<tr class="PASS">
+      <td>TR-67</td><td>KPI dashboards</td>
+      <td><strong>PASS</strong></td>
+      <td>Dashboard API OK (seeded ~20 agents). Full 100-call load: tests/load/routing-load.js</td>
+      <td>479</td>
+    </tr>
+<tr class="SKIP">
+      <td>TR-61</td><td>Routing latency</td>
+      <td><strong>SKIP</strong></td>
+      <td>Partial stack: down Gateway, AI, Tenant, Integration</td>
+      <td></td>
+    </tr>
+<tr class="SKIP">
+      <td>TR-62</td><td>Concurrent calls</td>
+      <td><strong>SKIP</strong></td>
+      <td>Partial stack: down Gateway, AI, Tenant, Integration</td>
+      <td></td>
+    </tr>
+<tr class="SKIP">
+      <td>TR-57</td><td>Immutable audit logs</td>
+      <td><strong>SKIP</strong></td>
+      <td>Partial stack: down Gateway, AI, Tenant, Integration</td>
+      <td></td>
+    </tr>
+<tr class="SKIP">
+      <td>TR-47</td><td>Outbound webhooks</td>
+      <td><strong>SKIP</strong></td>
+      <td>Partial stack: down Gateway, AI, Tenant, Integration</td>
+      <td></td>
+    </tr>
+<tr class="SKIP">
+      <td>TR-68</td><td>Acceptance criteria</td>
+      <td><strong>SKIP</strong></td>
+      <td>Partial stack: down Gateway, AI, Tenant, Integration</td>
+      <td></td>
+    </tr>
+<tr class="PASS">
+      <td>TR-70</td><td>Handover package</td>
+      <td><strong>PASS</strong></td>
+      <td>Handover docs present</td>
+      <td>1</td>
+    </tr></tbody></table>
+</body></html>

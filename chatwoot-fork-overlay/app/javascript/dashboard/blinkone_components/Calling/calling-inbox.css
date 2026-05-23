@@ -1,0 +1,272 @@
+/* BlinkOne calling inbox — aligned with blinkone_calling_inbox.html mock */
+.b1-calling-inbox-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 0.5px solid var(--border-weak, #e5e7eb);
+}
+.b1-calling-inbox-tabs .b1-tab {
+  flex: 1;
+  padding: 7px 0;
+  font-size: 12px;
+  font-weight: 500;
+  text-align: center;
+  cursor: pointer;
+  color: var(--slate-11, #6b7280);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -0.5px;
+  background: none;
+  border-top: none;
+  border-left: none;
+  border-right: none;
+}
+.b1-calling-inbox-tabs .b1-tab.active {
+  color: #0b5fff;
+  border-bottom-color: #0b5fff;
+}
+.b1-calls-badge {
+  background: #e24b4a;
+  color: #fff;
+  border-radius: 8px;
+  padding: 0 5px;
+  font-size: 10px;
+  margin-left: 3px;
+  font-weight: 600;
+}
+.b1-call-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px 0;
+}
+.b1-call-row {
+  padding: 8px 14px;
+  cursor: pointer;
+  border-left: 3px solid transparent;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+.b1-call-row:hover {
+  background: var(--solid-2, #f3f4f6);
+}
+.b1-call-row.active {
+  background: color-mix(in srgb, #0b5fff 8%, transparent);
+  border-left-color: #0b5fff;
+}
+.b1-call-row.ringing {
+  border-left-color: #e24b4a;
+  animation: b1-ring-pulse 1.4s infinite;
+}
+@keyframes b1-ring-pulse {
+  0%,
+  100% {
+    border-left-color: #e24b4a;
+  }
+  50% {
+    border-left-color: #f09595;
+  }
+}
+.b1-av-wa {
+  background: #e1f5ee;
+  color: #0f6e56;
+}
+.b1-av-pstn {
+  background: #faeeda;
+  color: #854f0b;
+}
+.b1-av-phone {
+  background: #e6f1fb;
+  color: #185fa5;
+}
+.b1-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 500;
+}
+.b1-badge-ring {
+  background: #fcebeb;
+  color: #a32d2d;
+}
+.b1-badge-live {
+  background: #eaf3de;
+  color: #3b6d11;
+}
+.b1-badge-missed {
+  background: #faeeda;
+  color: #854f0b;
+}
+.b1-badge-wa {
+  background: #e1f5ee;
+  color: #0f6e56;
+}
+.b1-badge-ended {
+  background: #f1efe8;
+  color: #5f5e5a;
+}
+.b1-btn-sm {
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 500;
+  border: 0.5px solid var(--border-weak, #d1d5db);
+  background: var(--surface-1, #fff);
+  cursor: pointer;
+}
+.b1-btn-answer {
+  background: #eaf3de;
+  color: #3b6d11;
+  border-color: #c0dd97;
+}
+.b1-btn-decline {
+  background: #fcebeb;
+  color: #a32d2d;
+  border-color: #f7c1c1;
+}
+.b1-call-bar {
+  background: #eaf3de;
+  border-bottom: 0.5px solid #c0dd97;
+  padding: 8px 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.b1-call-bar-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #3b6d11;
+  animation: b1-blink 1s infinite;
+  flex-shrink: 0;
+}
+@keyframes b1-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+.b1-call-bar-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: #27500a;
+}
+.b1-call-bar-timer {
+  font-size: 11px;
+  color: #3b6d11;
+  font-variant-numeric: tabular-nums;
+}
+.b1-bar-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 0.5px solid #c0dd97;
+  background: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: #3b6d11;
+}
+.b1-bar-btn.hangup {
+  background: #fcebeb;
+  border-color: #f7c1c1;
+  color: #a32d2d;
+}
+.b1-panel-tabs {
+  display: flex;
+  border-bottom: 0.5px solid var(--border-weak, #e5e7eb);
+}
+.b1-panel-tab {
+  flex: 1;
+  padding: 8px 0;
+  font-size: 11px;
+  font-weight: 500;
+  text-align: center;
+  cursor: pointer;
+  color: var(--slate-11, #6b7280);
+  border-bottom: 2px solid transparent;
+  background: none;
+  border-top: none;
+  border-left: none;
+  border-right: none;
+}
+.b1-panel-tab.active {
+  color: #0b5fff;
+  border-bottom-color: #0b5fff;
+}
+.b1-tl-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-top: 4px;
+  flex-shrink: 0;
+}
+.b1-tl-ring {
+  background: #e24b4a;
+}
+.b1-tl-ans {
+  background: #3b6d11;
+}
+.b1-tl-transfer {
+  background: #185fa5;
+}
+.b1-tl-end {
+  background: #888780;
+}
+.b1-rec-card {
+  border: 0.5px solid var(--border-weak, #e5e7eb);
+  border-radius: 8px;
+  padding: 8px;
+  margin-top: 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.b1-rec-play {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: #e6f1fb;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #185fa5;
+  flex-shrink: 0;
+}
+.b1-rec-bar {
+  flex: 1;
+  height: 3px;
+  background: var(--border-weak, #e5e7eb);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.b1-rec-fill {
+  height: 3px;
+  background: #0b5fff;
+  border-radius: 2px;
+}
+.b1-channel-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 10px;
+  background: #e1f5ee;
+  color: #0f6e56;
+  font-weight: 500;
+}
+
+body.b1-calls-inbox-view .conversations-list-wrap {
+  display: none !important;
+}
+
+.b1-calls-inbox-shell.flex-1 .b1-call-list {
+  max-height: none;
+  flex: 1;
+}

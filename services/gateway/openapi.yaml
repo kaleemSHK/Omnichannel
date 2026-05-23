@@ -1,0 +1,23 @@
+openapi: 3.1.0
+info:
+  title: BlinkOne Gateway API
+  version: 0.1.0
+paths:
+  /healthz:
+    get:
+      operationId: healthz
+      responses:
+        '200':
+          description: OK
+  /readyz:
+    get:
+      operationId: readyz
+      responses:
+        '200':
+          description: Ready
+  /metrics:
+    get:
+      operationId: metrics
+      responses:
+        '200':
+          description: Prometheus metrics

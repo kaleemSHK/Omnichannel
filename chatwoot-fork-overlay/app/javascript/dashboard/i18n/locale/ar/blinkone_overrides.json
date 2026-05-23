@@ -1,0 +1,63 @@
+{
+  "LOGIN": {
+    "TITLE": "تسجيل الدخول إلى BlinkOne"
+  },
+  "REGISTER": {
+    "GET_STARTED": "ابدأ مع BlinkOne",
+    "TERMS_ACCEPT": "بإنشاء حساب، فإنك توافق على <a href=\"https://blinkone.ai/terms\">الشروط والأحكام</a> و<a href=\"https://blinkone.ai/privacy\">سياسة الخصوصية</a>"
+  },
+  "RESET_PASSWORD": {
+    "DESCRIPTION": "أدخل البريد الإلكتروني الذي تستخدمه لتسجيل الدخول إلى BlinkOne لاستلام تعليمات إعادة تعيين كلمة المرور."
+  },
+  "INBOX_MGMT": {
+    "BRANDING_TEXT": "مدعوم من BlinkOne"
+  },
+  "YEAR_IN_REVIEW": {
+    "SHARE": {
+      "SHARE_TEXT": "اطلع على ملخص عام {year} مع BlinkOne!",
+      "BRANDING": "صُنع بواسطة BlinkOne"
+    }
+  },
+  "CHAT_LIST": {
+    "CHAT_STATUS_FILTER_ITEMS": {
+      "open": { "TEXT": "مفتوح" },
+      "resolved": { "TEXT": "محلول" },
+      "pending": { "TEXT": "قيد الانتظار" },
+      "snoozed": { "TEXT": "مؤجل" },
+      "all": { "TEXT": "الكل" }
+    }
+  },
+  "CONVERSATION": {
+    "SELECT_A_CONVERSATION": "اختر محادثة للبدء"
+  },
+  "SIDEBAR": {
+    "BLINKONE_IVR": "تدفقات IVR",
+    "BLINKONE_ROUTING": "توجيه المكالمات"
+  },
+  "BLINKONE": {
+    "CALLING": {
+      "INCOMING_TITLE": "المكالمات الواردة",
+      "INCOMING_EMPTY": "لا توجد مكالمات واردة",
+      "INCOMING_EMPTY_HINT": "ستظهر المكالمات الجديدة هنا.",
+      "SCOPE_ALL": "الكل",
+      "SCOPE_MINE": "لي",
+      "SCOPE_UNASSIGNED": "غير مُسندة",
+      "CHATS_TAB": "المحادثات",
+      "CALLS_TAB": "المكالمات",
+      "ACCEPT": "قبول",
+      "DECLINE": "رفض",
+      "END": "إنهاء",
+      "ACTIVITIES_TAB": "سجل المكالمات",
+      "ACTIVITIES_EMPTY": "لا يوجد سجل مكالمات",
+      "ACTIVITIES_EMPTY_HINT": "المكالمات المرتبطة بهذه المحادثة تظهر هنا.",
+      "HISTORY_EMPTY": "لا توجد مكالمات",
+      "HISTORY_EMPTY_HINT": "المكالمات المنتهية والفائتة تظهر هنا.",
+      "STATUS_RINGING": "مكالمة واردة",
+      "CHANNEL_PSTN": "هاتف",
+      "CHANNEL_WHATSAPP": "واتساب",
+      "START_CALL": "اتصال",
+      "CONNECTED": "في مكالمة",
+      "PERMISSION_REQUEST": "طلب إذن المكالمة"
+    }
+  }
+}

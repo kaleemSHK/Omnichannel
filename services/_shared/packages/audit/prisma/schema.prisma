@@ -1,0 +1,25 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("BLINKONE_DATABASE_URL")
+}
+
+/// TR-57 append-only audit log (no DELETE policy at application layer)
+model BlinkoneAuditEvent {
+  id          String   @id @default(uuid())
+  tenant_id   String
+  actor_id    String
+  action      String
+  target_type String
+  target_id   String
+  before      Json?
+  after       Json?
+  metadata    Json?
+  occurred_at DateTime @default(now())
+
+  @@index([tenant_id, actor_id, occurred_at])
+  @@map("blinkone_audit_events")
+}

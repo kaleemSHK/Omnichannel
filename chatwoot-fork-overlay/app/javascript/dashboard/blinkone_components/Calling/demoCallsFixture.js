@@ -1,0 +1,43 @@
+/** Static preview rows when calls API is empty (matches blinkone_calling_inbox.html mock). */
+export const DEMO_CALLS = [
+  {
+    id: 'demo-ring-1',
+    status: 'ringing',
+    transport: 'whatsapp',
+    customerPhone: '+968 9211 4401',
+    metadata: { callerName: 'Mohammed Al-Rashidi' },
+    conversationId: null,
+    startedAt: new Date().toISOString(),
+  },
+  {
+    id: 'demo-live-1',
+    status: 'connected',
+    transport: 'whatsapp',
+    customerPhone: '+968 9244 5512',
+    metadata: { callerName: 'Fatima Al-Zahraa' },
+    conversationId: null,
+    connectedAt: new Date(Date.now() - 227000).toISOString(),
+    startedAt: new Date(Date.now() - 240000).toISOString(),
+  },
+  {
+    id: 'demo-missed-1',
+    status: 'missed',
+    transport: 'pstn',
+    customerPhone: '+968 9211 xxxx',
+    metadata: { callerName: 'Samir Al-Oman' },
+    conversationId: null,
+    endedAt: new Date(Date.now() - 120000).toISOString(),
+    startedAt: new Date(Date.now() - 180000).toISOString(),
+  },
+  {
+    id: 'demo-ended-1',
+    status: 'ended',
+    transport: 'pstn',
+    customerPhone: '+968 9900 2211',
+    metadata: { callerName: 'Khalid Hassan' },
+    conversationId: null,
+    durationMs: 151000,
+    endedAt: new Date(Date.now() - 720000).toISOString(),
+    startedAt: new Date(Date.now() - 900000).toISOString(),
+  },
+];

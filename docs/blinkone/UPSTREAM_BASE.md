@@ -5,7 +5,8 @@ BlinkOne tracks **Chatwoot Community Edition** via the official Docker image (no
 | Field | Value |
 |-------|--------|
 | **Product** | Chatwoot CE |
-| **Image** | `chatwoot/chatwoot:v4.13.0-ce` |
+| **Image (upstream)** | `chatwoot/chatwoot:v4.13.0-ce` |
+| **Image (BlinkOne)** | `blinkone/chatwoot:v4.13.0-ce-b1` (local build) |
 | **Upstream tag** | [v4.13.0](https://github.com/chatwoot/chatwoot/releases/tag/v4.13.0) |
 | **Recorded** | 2026-05-20 |
 | **Deploy model** | Docker Compose (`docker-compose.yml`) |
@@ -15,7 +16,7 @@ BlinkOne tracks **Chatwoot Community Edition** via the official Docker image (no
 
 | Service | Image |
 |---------|--------|
-| Chatwoot / Sidekiq | `${CHATWOOT_IMAGE}` → default `chatwoot/chatwoot:v4.13.0-ce` |
+| Chatwoot / Sidekiq | `${CHATWOOT_IMAGE}` → default **`blinkone/chatwoot:v4.13.0-ce-b1`** (local build; upstream CE has no BlinkOne UI) |
 | PostgreSQL (Chatwoot) | `pgvector/pgvector:pg16` |
 | PostgreSQL (sidecars) | `postgres:16-alpine` |
 | Redis | `redis:7-alpine` |
@@ -24,7 +25,11 @@ BlinkOne tracks **Chatwoot Community Edition** via the official Docker image (no
 Set in `.env`:
 
 ```bash
-CHATWOOT_IMAGE=chatwoot/chatwoot:v4.13.0-ce
+# Local BlinkOne (includes overlay + Vite rebuild):
+CHATWOOT_IMAGE=blinkone/chatwoot:v4.13.0-ce-b1
+
+# Upstream CE only (no BlinkOne dashboard changes — do not use for demos):
+# CHATWOOT_IMAGE=chatwoot/chatwoot:v4.13.0-ce
 ```
 
 ## Upgrade procedure

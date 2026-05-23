@@ -1,0 +1,419 @@
+{
+  "meta": {
+    "generatedAt": "2026-05-20T12:50:13.956Z"
+  },
+  "results": [
+    {
+      "trId": "TR-29",
+      "title": "Arabic voice bot",
+      "status": "SKIP",
+      "detail": "Set RUN_ACCEPTANCE=1 or start AI service"
+    },
+    {
+      "trId": "TR-37",
+      "title": "Multi-tenant SaaS model",
+      "status": "SKIP",
+      "detail": "BLINKONE_DATABASE_URL required"
+    },
+    {
+      "trId": "TR-38",
+      "title": "Tenant data isolation",
+      "status": "SKIP",
+      "detail": "BLINKONE_DATABASE_URL required"
+    },
+    {
+      "trId": "TR-39",
+      "title": "White-label branding",
+      "status": "SKIP",
+      "detail": "Partial stack: down Gateway, AI, Tenant, Integration"
+    },
+    {
+      "trId": "TR-41",
+      "title": "Tenant RBAC",
+      "status": "SKIP",
+      "detail": "Partial stack: down Gateway, AI, Tenant, Integration"
+    },
+    {
+      "trId": "TR-49",
+      "title": "SSO / SAML / AD",
+      "status": "SKIP",
+      "detail": "Integration service not up"
+    },
+    {
+      "trId": "TR-55",
+      "title": "Encryption at rest",
+      "status": "SKIP",
+      "detail": "Set RUN_ENCRYPTION_TEST=1 and RECORDING_MINIO_KEY to probe bucket"
+    },
+    {
+      "trId": "TR-58",
+      "title": "MFA",
+      "status": "SKIP",
+      "detail": "Enable MFA in Keycloak realm + Chatwoot; set KEYCLOAK_URL for automated probe"
+    },
+    {
+      "trId": "TR-67",
+      "title": "KPI dashboards",
+      "status": "PASS",
+      "detail": "Dashboard API OK (seeded ~20 agents). Full 100-call load: tests/load/routing-load.js",
+      "durationMs": 479,
+      "artifact": {
+        "tenantId": "1",
+        "at": "2026-05-20T12:50:14.604Z",
+        "agents": {
+          "available": 1,
+          "busy": 1,
+          "away": 0,
+          "offline": 20,
+          "list": [
+            {
+              "agentId": "1000",
+              "tenantId": "1",
+              "status": "busy",
+              "currentCallId": "test-20260520044429",
+              "lastIdleAt": "2026-05-19T23:44:30.327Z",
+              "skills": [
+                "sales"
+              ],
+              "queueKeys": [
+                "sales"
+              ],
+              "occupancy": 2,
+              "updatedAt": "2026-05-19T23:44:30.354Z"
+            },
+            {
+              "agentId": "kpi-agent-10",
+              "tenantId": "1",
+              "status": "offline",
+              "currentCallId": null,
+              "lastIdleAt": "2026-05-20T12:50:14.434Z",
+              "skills": [
+                "support"
+              ],
+              "queueKeys": [],
+              "occupancy": 0,
+              "updatedAt": "2026-05-20T12:50:14.434Z"
+            },
+            {
+              "agentId": "kpi-agent-9",
+              "tenantId": "1",
+              "status": "offline",
+              "currentCallId": null,
+              "lastIdleAt": "2026-05-20T12:50:14.416Z",
+              "skills": [
+                "support"
+              ],
+              "queueKeys": [],
+              "occupancy": 0,
+              "updatedAt": "2026-05-20T12:50:14.416Z"
+            },
+            {
+              "agentId": "kpi-agent-2",
+              "tenantId": "1",
+              "status": "offline",
+              "currentCallId": null,
+              "lastIdleAt": "2026-05-20T12:50:14.274Z",
+              "skills": [
+                "support"
+              ],
+              "queueKeys": [],
+              "occupancy": 0,
+              "updatedAt": "2026-05-20T12:50:14.274Z"
+            },
+            {
+              "agentId": "kpi-agent-7",
+              "tenantId": "1",
+              "status": "offline",
+              "currentCallId": null,
+              "lastIdleAt": "2026-05-20T12:50:14.367Z",
+              "skills": [
+                "support"
+              ],
+              "queueKeys": [],
+              "occupancy": 0,
+              "updatedAt": "2026-05-20T12:50:14.367Z"
+            },
+            {
+              "agentId": "1",
+              "tenantId": "1",
+              "status": "available",
+              "currentCallId": null,
+              "lastIdleAt": "2026-05-20T10:53:15.137Z",
+              "skills": [
+                "sales",
+                "support"
+              ],
+              "queueKeys": [
+                "sales"
+              ],
+              "occupancy": 0,
+              "updatedAt": "2026-05-20T10:53:15.137Z"
+            },
+            {
+              "agentId": "kpi-agent-11",
+              "tenantId": "1",
+              "status": "offline",
+              "currentCallId": null,
+              "lastIdleAt": "2026-05-20T12:50:14.452Z",
+              "skills": [
+                "support"
+              ],
+              "queueKeys": [],
+              "occupancy": 0,
+              "updatedAt": "2026-05-20T12:50:14.452Z"
+            },
+            {
+              "agentId": "kpi-agent-5",
+              "tenantId": "1",
+              "status": "offline",
+              "currentCallId": null,
+              "lastIdleAt": "2026-05-20T12:50:14.330Z",
+              "skills": [
+                "support"
+              ],
+              "queueKeys": [],
+              "occupancy": 0,
+              "updatedAt": "2026-05-20T12:50:14.330Z"
+            },
+            {
+              "agentId": "kpi-agent-1",
+              "tenantId": "1",
+              "status": "offline",
+              "currentCallId": null,
+              "lastIdleAt": "2026-05-20T12:50:14.255Z",
+              "skills": [
+                "support"
+              ],
+              "queueKeys": [],
+              "occupancy": 0,
+              "updatedAt": "2026-05-20T12:50:14.255Z"
+            },
+            {
+              "agentId": "kpi-agent-18",
+              "tenantId": "1",
+              "status": "offline",
+              "currentCallId": null,
+              "lastIdleAt": "2026-05-20T12:50:14.570Z",
+              "skills": [
+                "support"
+              ],
+              "queueKeys": [],
+              "occupancy": 0,
+              "updatedAt": "2026-05-20T12:50:14.570Z"
+            },
+            {
+              "agentId": "kpi-agent-17",
+              "tenantId": "1",
+              "status": "offline",
+              "currentCallId": null,
+              "lastIdleAt": "2026-05-20T12:50:14.554Z",
+              "skills": [
+                "support"
+              ],
+              "queueKeys": [],
+              "occupancy": 0,
+              "updatedAt": "2026-05-20T12:50:14.554Z"
+            },
+            {
+              "agentId": "kpi-agent-14",
+              "tenantId": "1",
+              "status": "offline",
+              "currentCallId": null,
+              "lastIdleAt": "2026-05-20T12:50:14.506Z",
+              "skills": [
+                "support"
+              ],
+              "queueKeys": [],
+              "occupancy": 0,
+              "updatedAt": "2026-05-20T12:50:14.506Z"
+            },
+            {
+              "agentId": "kpi-agent-16",
+              "tenantId": "1",
+              "status": "offline",
+              "currentCallId": null,
+              "lastIdleAt": "2026-05-20T12:50:14.538Z",
+              "skills": [
+                "support"
+              ],
+              "queueKeys": [],
+              "occupancy": 0,
+              "updatedAt": "2026-05-20T12:50:14.538Z"
+            },
+            {
+              "agentId": "kpi-agent-0",
+              "tenantId": "1",
+              "status": "offline",
+              "currentCallId": null,
+              "lastIdleAt": "2026-05-20T12:50:14.227Z",
+              "skills": [
+                "support"
+              ],
+              "queueKeys": [],
+              "occupancy": 0,
+              "updatedAt": "2026-05-20T12:50:14.227Z"
+            },
+            {
+              "agentId": "kpi-agent-8",
+              "tenantId": "1",
+              "status": "offline",
+              "currentCallId": null,
+              "lastIdleAt": "2026-05-20T12:50:14.396Z",
+              "skills": [
+                "support"
+              ],
+              "queueKeys": [],
+              "occupancy": 0,
+              "updatedAt": "2026-05-20T12:50:14.396Z"
+            },
+            {
+              "agentId": "kpi-agent-13",
+              "tenantId": "1",
+              "status": "offline",
+              "currentCallId": null,
+              "lastIdleAt": "2026-05-20T12:50:14.489Z",
+              "skills": [
+                "support"
+              ],
+              "queueKeys": [],
+              "occupancy": 0,
+              "updatedAt": "2026-05-20T12:50:14.489Z"
+            },
+            {
+              "agentId": "kpi-agent-6",
+              "tenantId": "1",
+              "status": "offline",
+              "currentCallId": null,
+              "lastIdleAt": "2026-05-20T12:50:14.349Z",
+              "skills": [
+                "support"
+              ],
+              "queueKeys": [],
+              "occupancy": 0,
+              "updatedAt": "2026-05-20T12:50:14.349Z"
+            },
+            {
+              "agentId": "kpi-agent-4",
+              "tenantId": "1",
+              "status": "offline",
+              "currentCallId": null,
+              "lastIdleAt": "2026-05-20T12:50:14.312Z",
+              "skills": [
+                "support"
+              ],
+              "queueKeys": [],
+              "occupancy": 0,
+              "updatedAt": "2026-05-20T12:50:14.312Z"
+            },
+            {
+              "agentId": "kpi-agent-15",
+              "tenantId": "1",
+              "status": "offline",
+              "currentCallId": null,
+              "lastIdleAt": "2026-05-20T12:50:14.521Z",
+              "skills": [
+                "support"
+              ],
+              "queueKeys": [],
+              "occupancy": 0,
+              "updatedAt": "2026-05-20T12:50:14.521Z"
+            },
+            {
+              "agentId": "kpi-agent-12",
+              "tenantId": "1",
+              "status": "offline",
+              "currentCallId": null,
+              "lastIdleAt": "2026-05-20T12:50:14.469Z",
+              "skills": [
+                "support"
+              ],
+              "queueKeys": [],
+              "occupancy": 0,
+              "updatedAt": "2026-05-20T12:50:14.469Z"
+            },
+            {
+              "agentId": "kpi-agent-19",
+              "tenantId": "1",
+              "status": "offline",
+              "currentCallId": null,
+              "lastIdleAt": "2026-05-20T12:50:14.588Z",
+              "skills": [
+                "support"
+              ],
+              "queueKeys": [],
+              "occupancy": 0,
+              "updatedAt": "2026-05-20T12:50:14.588Z"
+            },
+            {
+              "agentId": "kpi-agent-3",
+              "tenantId": "1",
+              "status": "offline",
+              "currentCallId": null,
+              "lastIdleAt": "2026-05-20T12:50:14.293Z",
+              "skills": [
+                "support"
+              ],
+              "queueKeys": [],
+              "occupancy": 0,
+              "updatedAt": "2026-05-20T12:50:14.293Z"
+            }
+          ]
+        },
+        "queues": [
+          {
+            "queueId": "9716b181-434b-4b91-8b0d-cef1684a68e0",
+            "queueKey": "sales",
+            "name": "Sales",
+            "waiting": 0,
+            "calls": []
+          },
+          {
+            "queueId": "ac5d1d7a-8746-4f6a-997d-60ebbf5c97de",
+            "queueKey": "support",
+            "name": "Support",
+            "waiting": 0,
+            "calls": []
+          }
+        ],
+        "totalWaiting": 0
+      }
+    },
+    {
+      "trId": "TR-61",
+      "title": "Routing latency",
+      "status": "SKIP",
+      "detail": "Partial stack: down Gateway, AI, Tenant, Integration"
+    },
+    {
+      "trId": "TR-62",
+      "title": "Concurrent calls",
+      "status": "SKIP",
+      "detail": "Partial stack: down Gateway, AI, Tenant, Integration"
+    },
+    {
+      "trId": "TR-57",
+      "title": "Immutable audit logs",
+      "status": "SKIP",
+      "detail": "Partial stack: down Gateway, AI, Tenant, Integration"
+    },
+    {
+      "trId": "TR-47",
+      "title": "Outbound webhooks",
+      "status": "SKIP",
+      "detail": "Partial stack: down Gateway, AI, Tenant, Integration"
+    },
+    {
+      "trId": "TR-68",
+      "title": "Acceptance criteria",
+      "status": "SKIP",
+      "detail": "Partial stack: down Gateway, AI, Tenant, Integration"
+    },
+    {
+      "trId": "TR-70",
+      "title": "Handover package",
+      "status": "PASS",
+      "detail": "Handover docs present",
+      "durationMs": 1
+    }
+  ]
+}

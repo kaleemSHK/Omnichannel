@@ -3,6 +3,7 @@ import express from 'express';
 import { createLogger } from '../lib/logger.js';
 import { createStore } from '../lib/store.js';
 import { ok, fail, bearerAuth, requestId, errorHandler, healthRouter, gracefulShutdown } from '../lib/http.js';
+import { putObject, recordingKey } from '../lib/minio.js';
 
 const log        = createLogger('recording');
 const PORT       = parseInt(process.env.PORT || '8799', 10);
@@ -43,12 +44,46 @@ app.get('/v1/recordings', auth, (req, res) => {
 });
 
 app.post('/v1/recordings', auth, async (req, res) => {
-  const { chatwootAccountId, callSessionId, channel = 'voice', durationMs, startedAt, endedAt } = req.body ?? {};
+  const {
+    chatwootAccountId,
+    callSessionId,
+    channel = 'voice',
+    durationMs,
+    startedAt,
+    endedAt,
+    audioBase64,
+    contentType = 'audio/wav',
+  } = req.body ?? {};
   if (!Number.isFinite(Number(chatwootAccountId))) return fail(res, 'VALIDATION_ERROR', 'chatwootAccountId required');
+  let storageKey = null;
+  let storageBackend = STORAGE;
+  if (audioBase64 && callSessionId) {
+    try {
+      const buf = Buffer.from(audioBase64, 'base64');
+      const key = recordingKey(String(chatwootAccountId), callSessionId);
+      const put = await putObject(key, buf, contentType);
+      storageKey = put.storageKey;
+      storageBackend = 'minio';
+    } catch (e) {
+      log.warn({ err: e.message }, 'minio upload failed');
+    }
+  }
   ok(res, await store.withStore(s => {
-    const r = { id: `rec-${s.seq.next++}`, chatwootAccountId: Number(chatwootAccountId), callSessionId: callSessionId ?? null, channel, durationMs: durationMs ?? null, startedAt: startedAt ?? null, endedAt: endedAt ?? null, storageBackend: STORAGE, storageKey: null, createdAt: new Date().toISOString() };
-    s.recordings = s.recordings ?? []; s.recordings.push(r);
-    log.info({ recordingId: r.id }, 'recording created');
+    const r = {
+      id: `rec-${s.seq.next++}`,
+      chatwootAccountId: Number(chatwootAccountId),
+      callSessionId: callSessionId ?? null,
+      channel,
+      durationMs: durationMs ?? null,
+      startedAt: startedAt ?? null,
+      endedAt: endedAt ?? null,
+      storageBackend,
+      storageKey,
+      createdAt: new Date().toISOString(),
+    };
+    s.recordings = s.recordings ?? [];
+    s.recordings.push(r);
+    log.info({ recordingId: r.id, storageKey }, 'recording created');
     return r;
   }), 201);
 });
@@ -56,6 +91,14 @@ app.post('/v1/recordings', auth, async (req, res) => {
 app.get('/v1/recordings/:id', auth, (req, res) => {
   const r = (store.load().recordings ?? []).find(x => x.id === req.params.id);
   return r ? ok(res, r) : fail(res, 'NOT_FOUND', 'Recording not found', 404);
+});
+
+app.get('/v1/recordings/:id/url', auth, (req, res) => {
+  const r = (store.load().recordings ?? []).find(x => x.id === req.params.id);
+  if (!r) return fail(res, 'NOT_FOUND', 'Recording not found', 404);
+  const ttl = Math.min(300, Math.max(60, parseInt(req.query.ttl_sec || '300', 10)));
+  const token = sign(r.id, ttl);
+  ok(res, { recordingId: r.id, url: `/api/recordings/v1/play/${token}`, expiresInSec: ttl });
 });
 
 app.get('/v1/recordings/:id/playback-url', auth, (req, res) => {

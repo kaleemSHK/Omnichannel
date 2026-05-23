@@ -1,0 +1,16 @@
+# BlinkOne — server-side rebrand only (no Vite rebuild). Use when the full
+# Dockerfile OOMs on your machine. Waves A, B, D apply; Wave C (i18n) is partial
+# via INSTALLATION_NAME + useBranding only — not full string replacement.
+FROM chatwoot/chatwoot:v4.13.0-ce
+
+USER root
+WORKDIR /app
+
+COPY chatwoot-fork-overlay/config/ /app/config/
+COPY chatwoot-fork-overlay/public/ /app/public/
+COPY chatwoot-fork-overlay/app/views/ /app/app/views/
+
+COPY lib/blink_one/ /app/lib/blink_one/
+COPY config/blinkone/ /app/config/blinkone/
+COPY config/initializers/blinkone_branding.rb /app/config/initializers/blinkone_branding.rb
+COPY lib/tasks/blinkone_branding.rake /app/lib/tasks/blinkone_branding.rake

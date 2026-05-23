@@ -1,0 +1,33 @@
+const cache = new Map();
+const TTL_MS = 60000;
+const TENANT_URL = (process.env.TENANT_URL || 'http://tenant:8802').replace(/\/$/, '');
+const TENANT_TOKEN = (process.env.TENANT_TOKEN || process.env.PLATFORM_TOKEN || '').trim();
+
+async function getTenantStatus(tenantId) {
+  const key = String(tenantId);
+  const hit = cache.get(key);
+  if (hit && hit.exp > Date.now()) return hit.status;
+  if (!TENANT_TOKEN) return 'active';
+  try {
+    const res = await fetch(`${TENANT_URL}/v1/tenants/${encodeURIComponent(key)}`, {
+      headers: { Authorization: `Bearer ${TENANT_TOKEN}` },
+    });
+    if (!res.ok) return 'active';
+    const json = await res.json();
+    const status = json.data?.status ?? 'active';
+    cache.set(key, { status, exp: Date.now() + TTL_MS });
+    return status;
+  } catch {
+    return 'active';
+  }
+}
+
+export function tenantSuspendedMiddleware(resolveTenantId, failFn) {
+  return async (req, res, next) => {
+    const status = await getTenantStatus(resolveTenantId(req));
+    if (status === 'suspended' || status === 'terminated') {
+      return failFn(res, 'TENANT_SUSPENDED', 'This workspace is suspended', 423);
+    }
+    next();
+  };
+}

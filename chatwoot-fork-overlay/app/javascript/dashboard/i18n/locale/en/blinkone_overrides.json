@@ -1,0 +1,407 @@
+{
+  "LOGIN": {
+    "TITLE": "Login to BlinkOne"
+  },
+  "REGISTER": {
+    "GET_STARTED": "Get started with BlinkOne",
+    "TERMS_ACCEPT": "By creating an account, you agree to our <a href=\"https://blinkone.ai/terms\">T & C</a> and <a href=\"https://blinkone.ai/privacy\">Privacy policy</a>"
+  },
+  "RESET_PASSWORD": {
+    "DESCRIPTION": "Enter the email address you use to log in to BlinkOne to get the password reset instructions."
+  },
+  "SETTINGS": {
+    "INTERFACE_SECTION": {
+      "NOTE": "Customize the look and feel of your BlinkOne workspace."
+    },
+    "NO_ACCOUNT_WARNING": "Uh oh! We could not find any BlinkOne workspaces. Please create a new account to continue."
+  },
+  "INTEGRATIONS": {
+    "DESCRIPTION": "BlinkOne integrates with multiple tools and services to improve your team's efficiency."
+  },
+  "LABELS_MGMT": {
+    "SUGGESTIONS": {
+      "POWERED_BY": "BlinkOne AI"
+    }
+  },
+  "GENERAL_SETTINGS": {
+    "UPDATE_CHATWOOT": "An update {latestChatwootVersion} for BlinkOne is available. Please update your instance.",
+    "PAYMENT_PENDING": "Your payment is pending. Please update your payment information to continue using BlinkOne",
+    "UPGRADE": "Upgrade to continue using BlinkOne",
+    "LIMITS_UPGRADE": "Your account has exceeded the usage limits, please upgrade your plan to continue using BlinkOne"
+  },
+  "FEATURES": {
+    "UPGRADE_REQUIRED": "This capability is not included in your plan. Contact your administrator to upgrade."
+  },
+  "YEAR_IN_REVIEW": {
+    "SHARE": {
+      "SHARE_TEXT": "Check out my {year} Year in Review with BlinkOne!",
+      "BRANDING": "Made with BlinkOne"
+    }
+  },
+  "CHAT_LIST": {
+    "CHAT_STATUS_FILTER_ITEMS": {
+      "open": { "TEXT": "Open" },
+      "resolved": { "TEXT": "Resolved" },
+      "pending": { "TEXT": "Pending" },
+      "snoozed": { "TEXT": "Snoozed" },
+      "all": { "TEXT": "All" }
+    }
+  },
+  "CONVERSATION": {
+    "NATIVE_APP_ADVISORY": "This message was sent from the native app. Reply from BlinkOne to maintain the message window.",
+    "SELECT_A_CONVERSATION": "Select a conversation to get started"
+  },
+  "AUDIT_LOGS": {
+    "SIDEBAR_TXT": "<p><b>Audit Logs</b></p><p>Audit logs are trails for events and actions in BlinkOne.</p>",
+    "EMPTY_STATE": {
+      "DESC": "Audit logs are trails for events and actions in BlinkOne."
+    }
+  },
+  "HELP_CENTER": {
+    "PORTAL": {
+      "SEO": {
+        "PLACEHOLDER": "User Guide | BlinkOne"
+      }
+    }
+  },
+  "SIDEBAR": {
+    "BLINKONE_IVR": "IVR flows",
+    "BLINKONE_ROUTING": "Call routing (ACD)",
+    "BLINKONE_REALTIME": "Telephony realtime",
+    "BLINKONE_REPORTS": "Agent reports",
+    "BLINKONE_PHONE": "Phone panel",
+    "BLINKONE_SLA_POLICIES": "SLA policies",
+    "BLINKONE_SLA_DASHBOARD": "SLA dashboard",
+    "BLINKONE_ESCALATIONS": "Escalation rules"
+  },
+  "BLINKONE": {
+    "TELEPHONY": {
+      "REFRESH": "Refresh",
+      "INVALID_JSON": "Invalid JSON in graph editor",
+      "IVR": {
+        "TITLE": "IVR flows",
+        "DESCRIPTION": "Versioned call flows for Asterisk Stasis. Tenant scope follows this Chatwoot account.",
+        "FLOWS": "Flows",
+        "NEW_FLOW": "New flow",
+        "EMPTY": "No flows yet.",
+        "FLOW_NAME": "Flow name",
+        "DEFAULT_FLOW": "Default flow for this account",
+        "SAVE_META": "Save metadata",
+        "GRAPH": "Flow graph (JSON)",
+        "PUBLISH": "Publish version",
+        "VERSION_COMMENT": "Version comment (optional)",
+        "VERSIONS": "Version history",
+        "ACTIVATE": "Activate",
+        "ACTIVE": "Active",
+        "CREATED": "Flow created",
+        "SAVED": "Metadata saved",
+        "PUBLISHED": "New version published",
+        "SAVE_FIRST": "Save flow metadata first",
+        "ACTIVATED": "Activated version {n}"
+      },
+      "ROUTING": {
+        "TITLE": "Call routing (ACD)",
+        "DESCRIPTION": "Queues, agent presence, and waiting calls (Redis). Assignment algorithm ships in step 5.",
+        "AVAILABLE": "Available",
+        "BUSY": "Busy",
+        "WAITING": "Calls waiting",
+        "QUEUES": "Queues",
+        "QUEUE_KEY": "Queue key",
+        "QUEUE_NAME": "Display name",
+        "ADD_QUEUE": "Add queue",
+        "QUEUE_CREATED": "Queue created",
+        "AGENTS": "Agents",
+        "REGISTER_AGENT": "Register / update state",
+        "AGENT_REGISTERED": "Agent updated",
+        "NO_AGENTS": "No agents registered."
+      },
+      "REALTIME": {
+        "TITLE": "Realtime telephony",
+        "DESCRIPTION": "Live queue depth and agent states (refreshes every 2s).",
+        "QUEUES": "Queues"
+      },
+      "REPORTS": {
+        "TITLE": "Agent performance",
+        "DESCRIPTION": "Routing decisions from the last 7 days.",
+        "HANDLED": "{n} handled",
+        "EMPTY": "No agent activity in range."
+      },
+      "PHONE": {
+        "TITLE": "Agent phone",
+        "DESCRIPTION": "Set your ACD status and WebRTC softphone (JsSIP).",
+        "AGENT_ID": "Agent ID",
+        "TENANT": "Tenant",
+        "SIP_PLACEHOLDER": "WebRTC dialpad — JsSIP connects to Asterisk WSS when enabled.",
+        "SIP_HINT": "Register softphone extension matching your agent ID.",
+        "SIP_CONNECTED": "Softphone registered"
+      },
+      "CALLS_MONITOR": {
+        "TITLE": "Live calls",
+        "DESCRIPTION": "Supervisor view of active and ringing calls."
+      }
+    },
+    "CALLING": {
+      "INCOMING_TITLE": "Incoming calls",
+      "INCOMING_EMPTY": "No incoming calls",
+      "INCOMING_EMPTY_HINT": "New PSTN and WhatsApp calls will appear here.",
+      "SCOPE_ALL": "All",
+      "SCOPE_MINE": "Mine",
+      "SCOPE_UNASSIGNED": "Unassigned",
+      "INBOX_TITLE": "Inbox",
+      "CHATS_TAB": "Chats",
+      "CALLS_TAB": "Calls",
+      "STATUS_RINGING_SHORT": "ringing",
+      "STATUS_LIVE": "live",
+      "STATUS_MISSED": "missed",
+      "STATUS_ENDED": "ended",
+      "ACTIVE_CALL": "active call",
+      "UNKNOWN_CALLER": "Unknown caller",
+      "DEMO_PREVIEW": "Demo preview — run .\\scripts\\seed-demo.ps1 for live calls",
+      "PANEL_INFO": "Info",
+      "PANEL_CALLS": "Calls",
+      "PANEL_AI": "AI",
+      "PANEL_INFO_HINT": "Contact details are in the panels above.",
+      "PANEL_AI_HINT": "Agent assist suggestions appear during conversations.",
+      "IN_PROGRESS": "In progress",
+      "IN_PROGRESS_HINT": "Elapsed time updates while connected",
+      "PREVIOUS_CALLS": "Previous calls",
+      "ACCEPT": "Accept",
+      "DECLINE": "Decline",
+      "END": "End call",
+      "HOLD": "Hold",
+      "MUTE": "Mute",
+      "TRANSFER": "Transfer",
+      "RECORD": "Record",
+      "ACTIVITIES_TAB": "Call activity",
+      "ACTIVITIES_EMPTY": "No call history",
+      "ACTIVITIES_EMPTY_HINT": "Calls linked to this conversation will show here.",
+      "HISTORY_EMPTY": "No calls yet",
+      "HISTORY_EMPTY_HINT": "Ended and missed calls appear in this list.",
+      "HISTORY_SECTION": "Recent",
+      "ACTIVITIES_HEADING": "Call activity",
+      "RECORDING": "Recording",
+      "STATUS_RINGING": "Incoming call",
+      "CHANNEL_PSTN": "Phone (PSTN)",
+      "CHANNEL_WHATSAPP": "WhatsApp",
+      "START_CALL": "Call",
+      "TRANSFER_FROM": "Transfer from {name}",
+      "PERMISSION_REQUEST": "Request call permission",
+      "CONNECTED": "On call",
+      "DURATION": "Duration",
+      "EVENT_INCOMING": "Incoming call",
+      "EVENT_OUTGOING": "Outgoing call",
+      "EVENT_ANSWERED": "Call answered",
+      "EVENT_ENDED": "Call ended",
+      "EVENT_MISSED": "Missed call",
+      "EVENT_TRANSFER": "Transferred",
+      "EVENT_UNKNOWN": "Call event"
+    },
+    "SLA": {
+      "POLICY_CREATED": "SLA policy saved",
+      "CALENDAR_CREATED": "Business hours calendar saved",
+      "POLICIES": {
+        "TITLE": "SLA policies",
+        "DESCRIPTION": "Gold / Silver / Bronze style targets per priority and channel.",
+        "ADD_GOLD": "Add Gold policy",
+        "EMPTY": "No policies yet."
+      },
+      "CALENDARS": {
+        "TITLE": "Business hours",
+        "DESCRIPTION": "Calendars used when computing SLA due times.",
+        "ADD_DEFAULT": "Add Muscat calendar",
+        "EMPTY": "No calendars yet."
+      },
+      "DASHBOARD": {
+        "TITLE": "SLA dashboard",
+        "DESCRIPTION": "At-risk and breached conversations.",
+        "AT_RISK": "At risk (warning)",
+        "BREACHED": "Breached",
+        "ACTIVE": "Due within 1h"
+      }
+    },
+    "ESCALATION": {
+      "TITLE": "Escalation rules",
+      "DESCRIPTION": "JSON-Logic rules on SLA and conversation events.",
+      "RULESETS": "Rulesets",
+      "ADD_RULE": "Add breach rule",
+      "ADD_RULESET": "Create ruleset",
+      "RULESET_CREATED": "Escalation ruleset created",
+      "TEST": "Test simulate",
+      "SELECT_RULESET": "Select a ruleset first"
+    },
+    "TENANT_SUSPENDED_BANNER": "This workspace has been suspended. Contact your administrator or LABBIK support.",
+    "UI": {
+      "RAIL_INBOX": "Inbox",
+      "RAIL_CONVERSATIONS": "Conversations",
+      "RAIL_DASHBOARD": "Dashboard",
+      "RAIL_CONTACTS": "Contacts",
+      "RAIL_BROADCASTS": "Broadcasts",
+      "RAIL_WORKFLOWS": "Workflows",
+      "RAIL_REPORTS": "Reports",
+      "RAIL_VOICE": "Voice",
+      "RAIL_AI": "AI Agents",
+      "RAIL_NOTIFICATIONS": "Notifications",
+      "RAIL_HELP": "Help",
+      "RAIL_AGENT": "Agent profile",
+      "SIDEBAR_INBOX": "Inbox",
+      "TAB_CHATS": "Chats",
+      "TAB_CALLS": "Calls",
+      "NAV_ALL": "All",
+      "NAV_MINE": "Mine",
+      "NAV_UNASSIGNED": "Unassigned",
+      "NAV_INCOMING_CALLS": "Incoming calls",
+      "CREATE_AI_AGENT": "Create AI Agent",
+      "SECTION_LIFECYCLE": "Lifecycle",
+      "SECTION_TEAM_INBOX": "Team Inbox",
+      "SECTION_CUSTOM_INBOX": "Custom Inbox",
+      "NO_INBOXES": "No inboxes created",
+      "LC_NEW": "New Lead",
+      "LC_HOT": "Hot Lead",
+      "LC_PAYMENT": "Payment",
+      "LC_CUSTOMER": "Customer",
+      "CV_SORT_OPEN": "Open, Newest",
+      "CV_UNREPLIED": "Unreplied",
+      "WORKSPACE": "Workspace",
+      "SEARCH_CMD": "Search…",
+      "SECTION_INBOXES": "Inboxes",
+      "SECTION_LABELS": "Labels",
+      "SECTION_VIEWS": "Views",
+      "VIEW_SLA_BREACH": "SLA breached",
+      "ALL_CONVERSATIONS": "All conversations",
+      "COMPOSE_PLACEHOLDER": "Type a message or use / for templates…",
+      "SLA_STRIP": "SLA first response due in",
+      "CMD_PLACEHOLDER": "Search actions…",
+      "CMD_NEW": "New conversation",
+      "CMD_ASSIGN": "Assign to me",
+      "CMD_RESOLVE": "Resolve",
+      "CMD_SEARCH": "Search contacts",
+      "REPORTS_TITLE": "Reports",
+      "REPORTS_PLACEHOLDER": "Charts wire to routing + SLA aggregates.",
+      "KPI_CSAT": "CSAT",
+      "KPI_FRT": "First response",
+      "KPI_RESOLUTION": "Resolution time",
+      "KPI_VOLUME": "Conversations",
+      "CONTACT_CHANNELS": "Channels",
+      "CONTACT_NOTES": "Notes"
+    },
+    "PLATFORM": {
+      "TENANTS": {
+        "TITLE": "Platform tenants",
+        "DESCRIPTION": "LABBIK staff — provision and manage white-label clients.",
+        "NEW": "New tenant",
+        "NAME": "Client name",
+        "PROVISION": "Provision tenant",
+        "EMPTY": "No tenants yet.",
+        "TENANT_CREATED": "Tenant provisioned",
+        "DETAIL": "Tenant detail",
+        "DETAIL_DESC": "Usage, domains, and support actions.",
+        "SUSPEND": "Suspend",
+        "SUSPENDED": "Tenant suspended",
+        "IMPERSONATE": "Impersonate (audited)",
+        "USAGE": "Usage",
+        "DOMAINS": "Domains",
+        "ASSIGN_PLAN": "Subscription plan",
+        "APPLY_PLAN": "Apply plan",
+        "PLAN_ASSIGNED": "Plan applied; features synced to tenant",
+        "FEATURE_OVERRIDES": "Feature overrides",
+        "SAVE_FEATURES": "Save feature overrides",
+        "FEATURES_SAVED": "Features updated"
+      }
+    },
+    "BRANDING": {
+      "TITLE": "White-label branding",
+      "DESCRIPTION": "Logo, colors, custom domain, and live preview.",
+      "PRODUCT_NAME": "Product name",
+      "PRIMARY_COLOR": "Primary color",
+      "CUSTOM_CSS": "Custom CSS (sanitized)",
+      "SAVE": "Save branding",
+      "SAVED": "Branding saved",
+      "ADD_DOMAIN": "Add domain",
+      "DOMAIN_ADDED": "Domain added — ACME worker will issue SSL",
+      "PREVIEW": "Live preview",
+      "PREVIEW_HINT": "Dashboard chrome uses these tokens when host resolves to your tenant."
+    },
+    "WEBHOOKS": {
+      "TITLE": "Outbound webhooks",
+      "DESCRIPTION": "Signed deliveries to your endpoints (X-BlinkOne-Signature).",
+      "ADD": "Add endpoint",
+      "CREATED": "Webhook created",
+      "TEST": "Send sample",
+      "TEST_SENT": "Sample event queued",
+      "DELIVERIES": "Recent deliveries"
+    },
+    "SSO": {
+      "TITLE": "SSO / identity",
+      "DESCRIPTION": "Keycloak realm per tenant — OIDC, SAML, or LDAP.",
+      "SAVE": "Save & provision",
+      "SAVED": "SSO configuration saved",
+      "ENABLED": "Enabled",
+      "PREVIEW_LOGIN": "Preview login URL"
+    },
+    "INTEGRATIONS": {
+      "TITLE": "ERP & connectors",
+      "DESCRIPTION": "Generic REST plus SAP B1 / Dynamics / Oracle skeletons.",
+      "SAVE": "Save connector",
+      "SAVED": "Connector saved",
+      "TEST": "Test",
+      "TEST_OK": "Health check passed"
+    },
+    "AUDIT": {
+      "TITLE": "Audit log",
+      "DESCRIPTION": "Append-only timeline (7-year retention default — confirm with LABBIK).",
+      "EXPORT": "Export CSV",
+      "EVENTS": "events"
+    },
+    "BILLING": {
+      "MRR": "MRR",
+      "ARR": "ARR",
+      "OVERDUE": "Overdue invoices",
+      "PLAN_DIST": "Plan distribution",
+      "NO_DATA": "No billing data yet",
+      "INVOICES": "Invoices",
+      "NO_INVOICES": "No invoices for this period",
+      "GENERATE_INVOICE": "Generate invoice",
+      "INVOICE_GENERATED": "Invoice generated",
+      "PLATFORM": {
+        "TITLE": "Platform billing",
+        "DESCRIPTION": "Revenue overview, renewals, and overdue accounts (LABBIK)."
+      },
+      "PLANS": {
+        "TITLE": "Subscription plans",
+        "DESCRIPTION": "Catalog, entitlements, and usage allowances (OMR).",
+        "BASE_PRICE": "Base price (OMR)",
+        "INCLUDED_AGENTS": "Included agents",
+        "INCLUDED_MINUTES": "Included minutes",
+        "INCLUDED_MESSAGES": "Included messages",
+        "INCLUDED_AI": "Included AI credits",
+        "FEATURE_MATRIX": "Plan features",
+        "SAVE": "Save plan",
+        "SAVED": "Plan updated"
+      },
+      "ADMIN": {
+        "TITLE": "Billing & usage",
+        "DESCRIPTION": "Current plan, usage vs allowance, and invoices."
+      }
+    },
+    "AI": {
+      "ASSIST": {
+        "TITLE": "Agent assist",
+        "SUGGEST": "Suggest reply",
+        "SUMMARIZE": "Summarize",
+        "INTENT": "Detect intent",
+        "SENTIMENT": "Sentiment"
+      },
+      "KB": {
+        "TITLE": "Knowledge base",
+        "DESCRIPTION": "RAG collections for agent assist, voice bot, and reply suggestions.",
+        "COLLECTION_NAME": "Collection name",
+        "ADD": "Add collection",
+        "CREATED": "Collection created",
+        "SELECT_COLLECTION": "Select collection",
+        "PASTE": "Paste document text to index…",
+        "INDEX": "Index document",
+        "INDEXED": "Document queued for indexing"
+      }
+    }
+  }
+}
