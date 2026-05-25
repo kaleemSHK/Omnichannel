@@ -4,7 +4,7 @@ import { useEffect, useCallback } from 'react';
 import { useCallsStore } from '@/lib/store/calls';
 import { useAuthStore } from '@/lib/store/auth';
 import { isDemoDataEnabled, shouldSkipGatewayFetch } from '@/lib/demo/config';
-import { isSipReady } from '@/lib/env/telephony';
+import { isPlaceholderEnv, isSipReady } from '@/lib/env/telephony';
 import { getWebRTCCredentials } from '@/lib/api/routing';
 import type { CallSession } from '@/types';
 
@@ -12,6 +12,24 @@ const SIP_WSS = process.env.NEXT_PUBLIC_SIP_WSS ?? '';
 const SIP_DOMAIN = process.env.NEXT_PUBLIC_SIP_DOMAIN ?? 'blinkone.local';
 const SIP_USER = process.env.NEXT_PUBLIC_SIP_USER ?? 'agent';
 const SIP_PASS = process.env.NEXT_PUBLIC_SIP_PASS ?? '';
+
+/** Registrar host for REGISTER (Kamailio/nginx); trunk domain stays SIP_DOMAIN for outbound. */
+function sipRegistrarHost(): string {
+  if (!SIP_WSS || isPlaceholderEnv(SIP_WSS)) return SIP_DOMAIN;
+  try {
+    return new URL(SIP_WSS).host;
+  } catch {
+    return SIP_DOMAIN;
+  }
+}
+
+function sipAccountUser(
+  user: { email?: string } | null,
+): string {
+  const envUser = SIP_USER?.trim();
+  if (envUser) return envUser;
+  return user?.email?.split('@')[0] ?? 'agent';
+}
 
 interface JsSIPUA {
   start(): void;
@@ -157,8 +175,8 @@ export function useJsSip() {
         const JsSIP = await import('jssip');
         if (destroyed) return;
 
-        const sipUser = user?.email?.split('@')[0] ?? SIP_USER;
-        const sipUri = `sip:${sipUser}@${SIP_DOMAIN}`;
+        const sipUser = sipAccountUser(user);
+        const sipUri = `sip:${sipUser}@${sipRegistrarHost()}`;
 
         const UA = (JsSIP as unknown as { UA: new (cfg: unknown) => JsSIPUA }).UA;
         const WSIface = (JsSIP as unknown as { WebSocketInterface: new (u: string) => unknown })
