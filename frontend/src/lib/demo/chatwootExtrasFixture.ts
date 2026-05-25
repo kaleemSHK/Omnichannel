@@ -1,3 +1,5 @@
+import { DEMO_CANNED } from '@/lib/demo/settingsFixture';
+
 export interface DemoCannedResponse {
   id: number;
   short_code: string;
@@ -16,28 +18,8 @@ export interface DemoTeam {
   name: string;
 }
 
-export const DEMO_CANNED_RESPONSES: DemoCannedResponse[] = [
-  {
-    id: 1,
-    short_code: 'greet',
-    content: 'Hello! Thank you for contacting LABBIK Telecom. How can I help you today?',
-  },
-  {
-    id: 2,
-    short_code: 'hold',
-    content: 'Please hold while I look into this for you.',
-  },
-  {
-    id: 3,
-    short_code: 'thanks',
-    content: 'Thank you for your patience. Is there anything else I can help with?',
-  },
-  {
-    id: 4,
-    short_code: 'close',
-    content: 'Glad we could resolve this. Have a great day!',
-  },
-];
+/** Same canned responses as Settings → Canned Responses (demo + fallback). */
+export const DEMO_CANNED_RESPONSES: DemoCannedResponse[] = DEMO_CANNED;
 
 export const DEMO_LABELS: DemoLabel[] = [
   { id: 1, title: 'billing', color: '#F59E0B', show_on_sidebar: true },

@@ -1,0 +1,1396 @@
+You are a senior frontend engineer building the BlinkOne contact center UI for LABBIK Telecom S.P.C (Muscat, Oman).
+
+This is a brand new Next.js 14 frontend that replaces Chatwoot's built-in Vue UI.
+Chatwoot's BACKEND stays running. You call it via REST API + Action Cable WebSocket.
+All custom BlinkOne features are served by sidecar microservices through the gateway.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STACK (locked — do not deviate)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- Framework:     Next.js 14 (App Router), TypeScript strict
+- UI:            Tailwind CSS + shadcn/ui components
+- State:         Zustand (auth, calls stores)  +  TanStack Query v5 (server state)
+- Realtime:      Action Cable (actioncable npm) → /cable WS
+- Calling:       JsSIP (npm) → wss://<host>/telephony/wss → Asterisk 20
+- i18n:          next-intl — Arabic (RTL) + English
+- Forms:         react-hook-form + zod
+- Icons:         lucide-react only
+- Charts:        recharts only
+- Notifications: sonner
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FOLDER STRUCTURE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+frontend/
+  src/
+    app/
+      (dashboard)/
+        conversations/
+        calling/
+          wallboard/
+          ivr/
+        contacts/
+        sla/
+        escalation/
+        billing/
+        platform/
+        settings/
+        tickets/
+        ai/
+      login/
+    components/
+      layout/        ← IconSidebar, TopBar, Providers
+      ui/            ← shadcn/ui re-exports + custom base
+      calling/       ← PhonePanel, DialPad, ActiveCallBar, IncomingCallToast
+      conversations/ ← ConversationList, MessageThread, AgentAssistPanel
+      contacts/      ← ContactList, ContactDetailPanel, ContactForm
+      sla/           ← SLAKPICards, SLAInstanceTable, PolicyCard, CountdownBar
+      escalation/    ← RulesetCard, ConditionBuilder, DryRunPanel
+      billing/       ← PlanBanner, UsageGauge, InvoiceTable, AddOnCard
+      platform/      ← TenantCard, FeatureToggle, NewTenantWizard, PlatformKPICards
+      ai/            ← CollectionsSidebar, DocumentList, QueryTester, RAGResultCard
+      tickets/       ← TicketNav, TicketList, TicketDetail, TicketThread, TicketReplyBox
+      routing/       ← WallboardTable, QueueStats
+      ivr/           ← IVRFlowCanvas, IVRNodePalette, IVRPropertiesPanel
+    lib/
+      api/           ← ALL fetch wrappers (DO NOT REWRITE OR MODIFY)
+        client.ts        cwFetch() + bnFetch() base clients
+        auth.ts
+        conversations.ts
+        contacts.ts
+        calls.ts
+        routing.ts
+        sla.ts
+        ivr.ts
+        ai.ts
+        billing.ts
+        tickets.ts
+        escalation.ts
+        platform.ts
+        recording.ts
+        websocket.ts
+      hooks/
+        useJsSip.ts      (already written — DO NOT REWRITE)
+        useConversations.ts
+        useCalls.ts
+        useAgentState.ts
+      store/
+        auth.ts          (already written — DO NOT REWRITE)
+        calls.ts         (already written — DO NOT REWRITE)
+      utils/
+        cn.ts
+      i18n.ts
+    types/
+      index.ts           (already written — DO NOT REWRITE)
+    styles/
+      globals.css
+    messages/
+      en.json
+      ar.json
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+API BASE URLS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+NEXT_PUBLIC_API_BASE = http://localhost (or domain in prod)
+
+Chatwoot REST (use cwFetch — never raw fetch):
+  GET/POST  {BASE}/api/v1/accounts/{accountId}/conversations
+  GET/POST  {BASE}/api/v1/accounts/{accountId}/contacts
+  GET/POST  {BASE}/api/v1/accounts/{accountId}/messages
+  GET       {BASE}/api/v2/accounts/{accountId}/conversations  (paginated)
+  Auth header: api_access_token: <chatwoot_user_token>
+
+BlinkOne sidecars (use bnFetch — never raw fetch):
+  {BASE}/api/calls/*         → calls sidecar
+  {BASE}/api/routing/*       → routing sidecar
+  {BASE}/api/sla/*           → SLA sidecar
+  {BASE}/api/ivr/*           → IVR sidecar
+  {BASE}/api/ai/*            → AI sidecar
+  {BASE}/api/billing/*       → billing sidecar
+  {BASE}/api/tickets/*       → tickets sidecar
+  {BASE}/api/escalations/*   → escalation sidecar
+  {BASE}/api/platform/*      → platform sidecar
+  {BASE}/api/recordings/*    → recording sidecar
+  Auth header: Authorization: Bearer <gateway_jwt>
+
+Action Cable WebSocket:
+  ws://{BASE}/cable?access_token=<chatwoot_token>
+  Channels: RoomChannel, NotificationsChannel, BlinkoneCallChannel
+
+Asterisk WSS (JsSIP):
+  wss://{BASE}/telephony/wss
+  Credentials: GET /api/routing/v1/agents/{agentId}/webrtc
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+AUTH FLOW
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. POST /auth/sign_in → { data: { access_token, id, name, email, role, account_id } }
+2. POST /api/auth/token (header: api_access_token) → { token: <gateway_jwt>, expiresIn }
+3. Store both in Zustand useAuthStore (memory only — no localStorage)
+4. cwFetch() auto-sends api_access_token header
+5. bnFetch() auto-sends Authorization: Bearer header
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+HARD RULES — NEVER BREAK THESE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1.  NEVER use localStorage or sessionStorage — tokens in Zustand memory only
+2.  NEVER hardcode colors — use Tailwind tokens or CSS vars (--brand-primary etc.)
+3.  NEVER call Chatwoot API with raw fetch — always use cwFetch() from client.ts
+4.  NEVER call sidecar APIs with raw fetch — always use bnFetch() from client.ts
+5.  NEVER use `any` type — use proper types from src/types/index.ts
+6.  Every page component: async server component UNLESS needs client state → 'use client'
+7.  Every API call through TanStack Query (useQuery/useMutation) — no raw useEffect fetches
+8.  All forms use react-hook-form + zod schema validation
+9.  Arabic RTL: dir="auto" on message content, logical CSS (start/end not left/right)
+10. Sidecar tenant_id context: handled by bnFetch via JWT — do NOT add manually
+11. Do NOT modify src/lib/api/*.ts or src/types/index.ts
+12. Do NOT touch anything outside frontend/ directory
+13. Loading states: shadcn Skeleton — never a spinner for list/table loads
+14. Error states: inline error card with retry button — never just console.log
+15. Use ms-* / me-* (margin-start/end) — not ml-*/mr-* — for RTL compatibility
+16. Icons: lucide-react ONLY — never import from any other icon library
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+BRAND TOKENS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Product:        BlinkOne
+Company:        LABBIK Telecom S.P.C
+Primary color:  #0B5FFF  → Tailwind: brand-primary (text-brand-primary, bg-brand-primary)
+Ink color:      #0A0F1C  → Tailwind: brand-ink
+Font:           Inter (LTR) / Noto Sans Arabic (RTL)
+Border radius:  rounded-lg (cards) · rounded-md (inputs/badges)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+COMPONENT PATTERNS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Query pattern (always use):
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['key', filters],
+    queryFn: () => apiFn(filters),
+    refetchInterval: 30_000,
+  })
+
+Mutation pattern:
+  const mutation = useMutation({
+    mutationFn: (data) => apiCall(data),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['key'] }),
+    onError: (err) => toast.error(err.message),
+  })
+
+Infinite scroll pattern:
+  useInfiniteQuery({
+    queryKey: ['key', filters],
+    queryFn: ({ pageParam = 1 }) => apiFn({ ...filters, page: pageParam }),
+    getNextPageParam: (last) => last.meta.next_page ?? undefined,
+  })
+
+RTL pattern:
+  <div className="flex gap-3 rtl:flex-row-reverse">
+  <p dir="auto" className="text-sm">  ← CRITICAL for Arabic
+  Use ms-* / me-* (never ml-* / mr-*)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SHARED SHELL — ALL SCREENS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Every dashboard screen:
+  [52px IconSidebar] | [section nav sidebar ~180-220px] | [main content]
+  TopBar: h-12, white bg, border-b, page title left, contextual actions right
+
+IconSidebar (lucide-react icons):
+  MessageSquare  → /conversations
+  Phone          → /calling
+  Users          → /contacts
+  Clock          → /sla
+  TrendingUp     → /escalation
+  Bot            → /ai
+  Receipt        → /billing
+  Building2      → /platform  (only if user.role === 'platform_admin')
+  Ticket         → /tickets
+  Settings       → /settings
+
+Active:   bg-blue-50 text-brand-primary
+Inactive: text-muted-foreground hover:bg-muted
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CALLING / JSSIP SPECIFICS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- useJsSip() is in src/lib/hooks/useJsSip.ts — use it, never rewrite it
+- PhonePanel: fixed bottom-4 right-4 (LTR) / bottom-4 left-4 (RTL)
+  Lives in DashboardLayout, renders over ALL pages
+- Active call: show ActiveCallBar at top of main content area
+- Incoming call via BlinkoneCallChannel WS: sonner toast.custom() with Answer/Decline
+- PSTN calls: JsSIP → Asterisk
+- WhatsApp calls: POST /api/calls with transport: 'whatsapp'
+- Always show count-up timer (00:00)
+- Screen pop on incoming: searchContacts(phoneNumber) → show in PhonePanel
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STEP-BY-STEP BUILD ORDER — DO EACH STEP IN FULL BEFORE PROCEEDING
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+════════════════════════════════════════════════════════
+STEP 01 — Foundation & Shell Layout
+════════════════════════════════════════════════════════
+Files:
+  src/app/(dashboard)/layout.tsx
+  src/components/layout/IconSidebar.tsx
+  src/components/layout/Providers.tsx
+  src/app/layout.tsx              (update root)
+  src/styles/globals.css          (add CSS vars)
+  tailwind.config.ts              (add brand colors)
+  src/middleware.ts               (next-intl)
+
+>> layout.tsx (dashboard protected shell):
+'use client'
+- import useAuthStore from src/lib/store/auth.ts
+- On mount: if useAuthStore.getState().tokens === null → redirect('/login')
+- Render: <IconSidebar /> + <main>{children}</main>
+- Render <PhonePanel /> floating (or stub <div id="phone-panel" /> for now)
+- Use usePathname() to detect active route
+
+>> IconSidebar.tsx:
+- Width 52px, full height, white bg, border-r
+- Each nav item: w-9 h-9 rounded-lg flex items-center justify-center
+- shadcn Tooltip for label on hover
+- Platform link only if user.role === 'platform_admin'
+
+>> Providers.tsx ('use client'):
+- QueryClientProvider (staleTime: 30_000, retry: 1)
+- NextIntlClientProvider
+- ReactQueryDevtools (dev only)
+- Wrap body in root layout with <Providers>
+
+>> globals.css:
+:root { --brand-primary: #0B5FFF; --brand-ink: #0A0F1C; }
+
+>> tailwind.config.ts:
+theme: { extend: { colors: { brand: { primary: '#0B5FFF', ink: '#0A0F1C' } } } }
+
+>> middleware.ts:
+- next-intl middleware
+- Detect locale from bn_locale cookie (default: 'en')
+- html dir="rtl" when locale is 'ar'
+
+>> Root app/layout.tsx:
+- <html lang={locale} dir={locale === 'ar' ? 'rtl' : 'ltr'}>
+- Inter + Noto_Sans_Arabic via next/font/google
+- import globals.css
+- Wrap body with <Providers>
+
+CHECKLIST (verify before Step 02):
+[ ] npm run dev starts with no errors
+[ ] /conversations redirects to /login when not authenticated
+[ ] npm run type-check → 0 errors
+[ ] IconSidebar shows all icons + tooltips
+[ ] text-brand-primary resolves to #0B5FFF
+[ ] html dir="rtl" when bn_locale cookie is 'ar'
+
+════════════════════════════════════════════════════════
+STEP 02 — Login Page
+════════════════════════════════════════════════════════
+File: src/app/login/page.tsx
+(NOT under dashboard layout — no auth guard, no sidebar)
+
+Visual: Two-column split, full viewport height
+
+LEFT PANEL (45% width, bg-[#0B5FFF]):
+- "BlinkOne" text-2xl font-bold text-white top-left p-8
+- Centered: "Your contact center, unified." text-3xl font-semibold text-white
+- Feature list with CheckCircle icons (w-4 h-4 text-white):
+  · Unified inbox (voice, WhatsApp, email)
+  · PSTN + WhatsApp calling
+  · AI-powered agent assist
+  · SLA management & escalation
+  · Visual IVR builder
+
+RIGHT PANEL (55% width, white bg):
+- Language toggle top-right: "EN" | "AR" buttons
+  · Click AR → set bn_locale cookie to 'ar' → reload page
+- Centered: max-w-sm mx-auto
+- "Sign in to BlinkOne" text-2xl font-semibold text-[#0A0F1C]
+- "Welcome back, LABBIK Telecom S.P.C" subtitle
+- Form (react-hook-form + zod):
+  · Email: label "Email", type email, placeholder "agent@labbik.om"
+  · Password: label "Password", type password, Eye icon show/hide toggle
+  · Schema: z.object({ email: z.string().email(), password: z.string().min(8) })
+- "Sign in" button: full width, bg-brand-primary, Loader2 spinner while submitting
+- Divider "Or"
+- "Continue with SSO" outline button full width
+- On API error: toast.error() via sonner
+
+On successful login:
+1. loginWithPassword({ email, password }) from src/lib/api/auth.ts
+2. useAuthStore.getState().setAuth(user, tokens)
+3. router.push('/conversations')
+
+Mobile: panels stack vertically (left collapses to top banner)
+
+CHECKLIST (verify before Step 03):
+[ ] Renders at /login
+[ ] Left blue panel shows all 5 feature items + check icons
+[ ] Form validates email format + password min 8 before submit
+[ ] Wrong credentials → sonner error toast
+[ ] Correct credentials → redirects to /conversations
+[ ] EN/AR toggle sets bn_locale cookie
+[ ] Mobile: stacks vertically
+[ ] npm run type-check → 0 errors
+
+════════════════════════════════════════════════════════
+STEP 03 — Conversations Inbox
+════════════════════════════════════════════════════════
+Files:
+  src/app/(dashboard)/conversations/page.tsx
+  src/components/conversations/ConversationList.tsx
+  src/components/conversations/ConversationListItem.tsx
+  src/components/conversations/MessageThread.tsx
+  src/components/conversations/MessageBubble.tsx
+  src/components/conversations/ReplyBox.tsx
+  src/components/conversations/AgentAssistPanel.tsx
+  src/lib/hooks/useConversations.ts
+
+Layout: [52px sidebar] | [280px ConversationList] | [flex-1 MessageThread] | [300px AgentAssistPanel collapsible]
+
+>> ConversationList:
+- Search <Input> + status tabs: All / Open / Pending / Resolved
+- listConversations({ status, page }) — queryKey: ['conversations', { status }]
+- Infinite scroll (load next page near bottom)
+- Skeleton 3 rows while loading
+
+Each ConversationListItem:
+- Initials avatar (2 chars, bg-blue-100 text-blue-700)
+- Contact name (font-medium) + inbox badge (type label, small)
+- Message snippet (text-sm muted, 1-line truncate)
+- Timestamp relative right-aligned ("2m ago", "1h ago")
+- Unread badge: count, bg-brand-primary text-white rounded-full
+- Selected: bg-blue-50 border-l-2 border-brand-primary
+
+>> MessageThread:
+TopBar (h-12 border-b):
+- Contact name + avatar
+- Inbox badge
+- <Select> agent assignment → assignConversation(conversationId, agentId)
+- Status toggle (Open→Resolve / Reopen) → updateConversationStatus()
+- Chevron button → toggle AgentAssistPanel
+
+Messages (flex-col, overflow-y-auto, newest at bottom):
+Each MessageBubble:
+- Inbound: left-aligned, bg-muted, rounded-lg rounded-tl-none
+- Outbound: right-aligned, bg-blue-50 border-blue-100, rounded-lg rounded-tr-none
+- <p dir="auto"> on text — CRITICAL for Arabic
+- Timestamp below bubble
+- Activity events (assigned, resolved): centered gray text rows
+
+ReplyBox (border-t p-3):
+- <Textarea> auto-resize, placeholder "Reply…"
+- Send button (bg-brand-primary, SendHorizontal icon)
+- Attachment button
+- sendMessage(conversationId, { content, message_type: 'outgoing' })
+- useMutation → onSuccess: invalidateQueries(['messages', conversationId])
+
+Realtime: subscribeToConversation(accountId, conversationId, { onMessage }) on mount
+New messages: append immediately (optimistic update)
+
+>> AgentAssistPanel (collapsible, slide animation, only when conversation selected):
+Section 1 — Suggested reply:
+- queryKey: ['suggestReply', conversationId]
+- suggestReply(conversationId) from src/lib/api/ai.ts
+- Gray card + "Insert" button → sets ReplyBox value
+
+Section 2 — RAG sources (auto-query on last inbound message):
+- 2-3 cards: score badge (blue "94% match"), source title, text snippet
+
+Section 3 — Sentiment + Summary:
+- Positive=green / Neutral=gray / Negative=red badge
+- "Summarize" button → summarizeConversation(conversationId) → modal
+
+>> useConversations.ts:
+export function useConversations(filters) {
+  return useInfiniteQuery({
+    queryKey: ['conversations', filters],
+    queryFn: ({ pageParam = 1 }) => listConversations({ ...filters, page: pageParam }),
+    getNextPageParam: (last) => last.meta.next_page ?? undefined,
+  })
+}
+export function useMessages(conversationId) {
+  return useQuery({
+    queryKey: ['messages', conversationId],
+    queryFn: () => getMessages(conversationId),
+    enabled: !!conversationId,
+  })
+}
+
+CHECKLIST (verify before Step 04):
+[ ] Conversation list renders with data / skeleton while loading
+[ ] Clicking a conversation loads message thread
+[ ] Arabic messages render RTL (dir="auto")
+[ ] Sending a message adds it immediately
+[ ] Status toggle works (Open ↔ Resolved)
+[ ] AgentAssistPanel collapses/expands
+[ ] Suggested reply Insert fills ReplyBox
+[ ] npm run type-check → 0 errors
+
+════════════════════════════════════════════════════════
+STEP 04 — Calling Screen + PhonePanel + Wallboard + IVR
+════════════════════════════════════════════════════════
+Files:
+  src/app/(dashboard)/calling/page.tsx
+  src/app/(dashboard)/calling/wallboard/page.tsx
+  src/app/(dashboard)/calling/ivr/page.tsx
+  src/components/calling/PhonePanel.tsx
+  src/components/calling/DialPad.tsx
+  src/components/calling/ActiveCallBar.tsx
+  src/components/calling/IncomingCallToast.tsx
+  src/components/calling/CallListItem.tsx
+  src/components/calling/AgentStateSelector.tsx
+  src/components/routing/WallboardTable.tsx
+  src/components/routing/QueueStats.tsx
+  src/components/ivr/IVRFlowCanvas.tsx
+  src/components/ivr/IVRNodePalette.tsx
+  src/components/ivr/IVRPropertiesPanel.tsx
+  src/lib/hooks/useCalls.ts
+  src/lib/hooks/useAgentState.ts
+
+>> PhonePanel (add to DashboardLayout — renders on EVERY page):
+- Position: fixed bottom-4 right-4 (LTR) / bottom-4 left-4 (RTL)
+- Uses useJsSip() from src/lib/hooks/useJsSip.ts (DO NOT rewrite)
+- Uses useCallsStore from src/lib/store/calls.ts
+- Idle: small collapsed button (Phone icon bg-brand-primary)
+- Active call: expanded — contact name, count-up timer, Mute/Hold/End
+- Incoming: IncomingCallToast via sonner
+
+IncomingCallToast:
+- Triggered by subscribeToCallEvents() on 'call.ringing'
+- sonner toast.custom() with Answer (green) + Decline (red)
+- On answer: useJsSip().answerCall(session)
+- Screen pop: searchContacts(phoneNumber) → show contact name
+
+ActiveCallBar (at top of main content when callsStore.activeCall !== null):
+- Contact name, phone, elapsed timer (count-up 00:00)
+- Mute/Hold/End mini-buttons
+- On End: useJsSip().hangup() + endCall(sessionId)
+
+>> Calling page layout: [220px call-list] | [flex-1 call-panel] | [240px dialpad]
+
+Call-list sidebar:
+- PSTN / WhatsApp tab switcher (border-b tabs)
+- Active section: listActiveSessions() — name, green "Live" badge, timer
+- Recent section: listCDR({ limit: 20 }) — name, Ended/Missed badge, duration
+
+Call panel TopBar:
+- Contact name + queue
+- AgentStateSelector dropdown: Available/Busy/Break/Offline
+  · setAgentState(agentId, state) from routing API
+  · dot colors: Available=green, Busy=amber, Break=pink, Offline=gray
+
+Incoming call banner (callsStore.incomingCalls.length > 0):
+- bg-green-50 border-green-200 rounded-lg
+- Initials avatar, name, number, queue
+- Answer (green Phone) + Decline (red PhoneOff) buttons
+
+Active call card (callsStore.activeCall !== null):
+- Initials avatar, contact name, number, SLA tier badge
+- Count-up timer (large, brand-primary)
+- Controls: Mute | Hold | Transfer | Merge | DTMF | Record | End (red)
+  · Mute: useJsSip().mute()/unmute(), highlights blue when muted
+  · Hold: holdCall(sessionId) + useJsSip().hold()
+  · Record: POST /api/recordings, button goes red
+  · Transfer: modal with agent/queue select
+
+DialPad (right panel):
+- Number display + 3×4 key grid + Call button
+- PSTN: useJsSip().makeCall(number)
+- WhatsApp: createSession({ transport: 'whatsapp', to: number })
+- Supervisor section (role === 'supervisor'|'admin'): Silent listen | Whisper | Barge
+  · supervisorListen/Whisper/Barge from routing API
+
+>> Wallboard (full-width, no secondary sidebar, refetchInterval: 5000):
+TopBar: "Realtime wallboard" + pulsing green dot + queue filter select
+
+KPI row (5 cards) from getQueueStats():
+- Active calls (blue)
+- Waiting (amber if > 5)
+- Agents online/total (green)
+- Handled today (neutral)
+- Missed today (red if miss rate > 10%)
+
+Queue breakdown (2-col grid) from listQueues():
+- Name, avg wait, Waiting / Active / Agents / Handled counts
+
+Agent states table from listAgents():
+Columns: Agent | State pill | Current call | Duration | Handled today | Actions
+- Available=green, Busy=amber, Break=pink, Offline=gray
+- Listen/Whisper/Barge only on Busy rows
+- Skeleton while loading
+
+>> IVR Builder layout: [180px palette+flows] | [flex-1 canvas] | [200px properties]
+
+Node palette (click-to-add for v1):
+- Play message (blue) | DTMF menu (green) | Voice bot (amber) | Route to queue (teal)
+- Condition (purple) | Collect input (pink) | Hangup (red)
+
+Flows list below palette: listFlows() — click to load, "New flow" → createFlow()
+
+IVRFlowCanvas:
+- Light gray dotted-grid background (CSS radial-gradient)
+- Nodes: absolute-positioned white cards — colored icon badge, title, description
+- Port circles (top=in, bottom=out) for connections
+- SVG overlay for connector lines between nodes
+- Render saved flow from getFlow(flowId) in preset layout
+- Click to select → sends to PropertiesPanel (border-brand-primary)
+
+IVRPropertiesPanel (for selected node):
+- Play message: label input, TTS text textarea
+- DTMF menu: label, prompt, timeout (number), max retries, key→node mapping rows
+- Route to queue: label, queue select, max wait, overflow destination
+- Save: updateFlow(flowId, nodes)
+
+TopBar: "Test flow" | "History" | "Publish" → publishFlow(flowId)
+
+>> useCalls.ts:
+export function useActiveSessions() {
+  return useQuery({ queryKey: ['activeSessions'], queryFn: listActiveSessions, refetchInterval: 5000 })
+}
+export function useCDR(filters) {
+  return useQuery({ queryKey: ['cdr', filters], queryFn: () => listCDR(filters) })
+}
+
+>> useAgentState.ts:
+export function useAgents() {
+  return useQuery({ queryKey: ['agents'], queryFn: listAgents, refetchInterval: 5000 })
+}
+export function useSetAgentState() {
+  return useMutation({ mutationFn: ({ agentId, state }) => setAgentState(agentId, state) })
+}
+
+CHECKLIST (verify before Step 05):
+[ ] PhonePanel renders on every page (floating, not inside content)
+[ ] ActiveCallBar appears at top of main content when call active
+[ ] IncomingCallToast fires on call.ringing WS event
+[ ] Calling page shows PSTN/WhatsApp tabs with call list
+[ ] Dialpad sends PSTN calls via JsSIP
+[ ] Wallboard shows agent states with correct color pills
+[ ] Wallboard polls every 5 seconds
+[ ] IVR canvas shows nodes with connector lines
+[ ] IVR properties panel updates on node selection
+[ ] npm run type-check → 0 errors
+
+════════════════════════════════════════════════════════
+STEP 05 — Contacts / CRM
+════════════════════════════════════════════════════════
+Files:
+  src/app/(dashboard)/contacts/page.tsx
+  src/components/contacts/ContactList.tsx
+  src/components/contacts/ContactListItem.tsx
+  src/components/contacts/ContactDetailPanel.tsx
+  src/components/contacts/ContactForm.tsx
+
+Layout: [52px sidebar] | [280px contacts-list] | [flex-1 detail-panel]
+
+>> ContactList toolbar:
+- <Input> with Search icon, placeholder "Search contacts…"
+  · Debounce 300ms → searchContacts(query)
+  · No search: listContacts({ page }) — infinite scroll
+- "New contact" button (outline, UserPlus icon) → ContactForm in Sheet
+
+Each ContactListItem:
+- Initials avatar (2 chars, deterministic bg from name hash)
+- Full name (font-medium), phone (text-sm muted), company if available
+- SLA tier badge right: Gold=amber-100/amber-700, Silver=gray-100/gray-600, Bronze=orange-100/orange-700
+- Selected: blue left border
+- Loading: 3 skeleton rows | Empty: "No contacts found" with search icon
+
+>> ContactDetailPanel:
+Empty state: "Select a contact" when none selected
+
+Header:
+- 48px initials avatar (rounded-full)
+- Contact name (text-xl font-semibold), company (muted)
+- Actions: Edit (Sheet) | Phone (call) | MessageSquare (new conversation)
+
+Info grid 2-col from getContact(contactId):
+Phone | Email | Account ID | SLA Tier badge | Plan | Location | Created
+
+Recent conversations (max 5 from getContactConversations(contactId)):
+- Status badge (Open/Resolved), message snippet, timestamp
+- "View all" → /conversations?contact_id=X
+
+Open tickets (max 5 from listTickets({ contact_id, status: 'open' })):
+- #TKT-XXXX, title, priority chip
+- "View all" → /tickets?contact_id=X
+
+>> ContactForm (shadcn Sheet, create + edit — pass contact?: CWContact prop):
+Fields (react-hook-form + zod):
+- Name (required, min 2)
+- Email (optional, email format)
+- Phone (optional, min 7)
+- Company (optional)
+- SLA tier (select: Gold / Silver / Bronze)
+
+Create: createContact(data) → invalidateQueries(['contacts'])
+Edit:   updateContact(contactId, data) → invalidateQueries(['contact', contactId])
+
+CHECKLIST (verify before Step 06):
+[ ] Contact list renders with real data
+[ ] Search debounces 300ms + filters live
+[ ] Clicking a contact shows detail panel
+[ ] SLA tier badges correct colors
+[ ] New contact Sheet opens + saves
+[ ] Edit pre-fills form with contact data
+[ ] Recent conversations link to /conversations
+[ ] npm run type-check → 0 errors
+
+════════════════════════════════════════════════════════
+STEP 06 — SLA Dashboard
+════════════════════════════════════════════════════════
+Files:
+  src/app/(dashboard)/sla/page.tsx
+  src/components/sla/SLAKPICards.tsx
+  src/components/sla/SLAInstanceTable.tsx
+  src/components/sla/SLAInstanceRow.tsx
+  src/components/sla/PolicyCard.tsx
+  src/components/sla/CountdownBar.tsx
+
+Layout: [52px sidebar] | [180px sla-nav] | [flex-1 main-content]
+
+>> SLA Nav (section links):
+- Dashboard (default, active)
+- Breached — red badge from getSlaDashboard().breachedCount
+- At risk — amber badge
+- Active
+- Met
+--- divider ---
+- Policies
+- Business hours
+Click → sets active filter for main content
+
+>> SLAKPICards — 4 cards in a row from getSlaDashboard():
+| Breached | always red text     | ↑2 from yesterday          |
+| At risk  | always amber text   | current at-risk count      |
+| Active   | blue text           | currently active           |
+| Met today| green text          | count + "87% compliance"   |
+
+>> SLAInstanceTable from listSLAInstances({ status: activeFilter }):
+refetchInterval: 30_000
+
+Columns: # | Contact | Tier | Status | Deadline | Remaining | Assignee
+
+- #: conversationId, clickable → /conversations?id=X
+- Contact: name + conversation title (2 lines)
+- Tier: Gold=amber-100/amber-700, Silver=gray-100/gray-600, Bronze=orange-100/orange-700
+- Status: Breached=red, At risk=amber, Active=blue, Met=gray
+- Deadline: HH:mm
+- Remaining:
+  · Breached: red "-Xh Xm" (negative elapsed)
+  · At risk: <CountdownBar> + amber "Xm left"
+  · Active: green "Xh Xm left" + thin progress bar
+  · Met: gray "—"
+- Assignee: agent name or red "Unassigned" if breached + unassigned
+
+Row left borders:
+  Breached: border-l-4 border-red-500
+  At risk:  border-l-4 border-amber-400
+
+>> CountdownBar:
+Props: elapsed_seconds, total_seconds
+- Animated horizontal progress bar (h-2 rounded-full)
+- Color: green (< 50%) → amber (50–85%) → red (> 85%)
+
+>> PolicyCard from listPolicies() — 3-col grid:
+Per card: tier badge + "Edit" link
+Rows: First response | Resolution time | Business hours only (Yes/No) | Escalates to
+
+CHECKLIST (verify before Step 07):
+[ ] SLA nav links filter instance table correctly
+[ ] Breached rows have red left border
+[ ] At-risk rows have amber left border + countdown bar
+[ ] KPI cards update every 30s
+[ ] Policy cards show Gold/Silver/Bronze with correct values
+[ ] Clicking # navigates to /conversations
+[ ] npm run type-check → 0 errors
+
+════════════════════════════════════════════════════════
+STEP 07 — Escalation Rules
+════════════════════════════════════════════════════════
+Files:
+  src/app/(dashboard)/escalation/page.tsx
+  src/components/escalation/RulesetCard.tsx
+  src/components/escalation/ConditionBuilder.tsx
+  src/components/escalation/ActionsList.tsx
+  src/components/escalation/DryRunPanel.tsx
+  src/components/escalation/NewRuleModal.tsx
+
+Layout: [52px sidebar] | [flex-1 rules-list] | [260px DryRunPanel]
+
+TopBar: "Escalation rules" | "Dry-run simulator" outline button | "New rule" blue button → NewRuleModal
+
+>> Rules list from listRulesets():
+Each RulesetCard:
+- Header: name (font-medium) | Active=green/Inactive=gray pill with toggle switch
+  · Toggle → updateRuleset(id, { enabled: !current })
+- "Edit" + "Duplicate" action buttons
+- Inactive cards: opacity-60
+
+CONDITIONS block (label "CONDITIONS · ALL MATCH"):
+- Chips: rounded-full border text-sm — format: "field operator value"
+- Between chips: "AND"/"OR" pill (gray bg)
+- Fields: sla_tier, sla_status, call_status, missed_count, ai_sentiment,
+           assigned_agent, inbox_type, contact_tag
+- Operators: =, ≠, >, ≥, <, ≤, ∈
+
+ACTIONS block (label "ACTIONS"):
+- Reassign:  UserPlus icon (blue)   "Reassign to [agent/team]"
+- Notify:    Bell icon (amber)      "Notify via [email/WhatsApp/SMS]"
+- Label:     Tag icon (green)       "Add label: [label]"
+- Message:   MessageSquare (purple) "Send message to [channel]"
+- Webhook:   Globe icon (gray)      "POST to [url]"
+
+"Add rule" dashed button at bottom of list
+
+>> ConditionBuilder (used in NewRuleModal + edit):
+- Dropdown: field select + operator select + value input (type changes per field)
+- "Add condition" adds row | AND/OR toggle between rows | × remove per row
+
+>> DryRunPanel (right side panel):
+Form (react-hook-form):
+- Conversation ID (text)
+- SLA tier (select: Gold/Silver/Bronze)
+- SLA status (select: breached/at_risk/active/met)
+- Call status (select: active/missed/ended)
+- AI sentiment (select: positive/neutral/negative)
+- Assigned agent (text)
+
+"Run simulation" → simulateRule({ rulesetId: 'all', context: formValues })
+
+Results:
+- Per ruleset: ✓ matched (green text) or "no match" (gray)
+- Matched: indented list of actions that would fire
+- Inactive would-have-matched: "(inactive, skipped)" muted text
+
+>> NewRuleModal (shadcn Dialog):
+1. Rule name text input
+2. Enabled toggle
+3. Conditions — use ConditionBuilder
+4. Actions — rows of [type select + target input]
+5. Save → createRuleset(data) → invalidateQueries(['rulesets'])
+
+CHECKLIST (verify before Step 08):
+[ ] Rules list renders all rulesets from API
+[ ] Condition chips render with field/operator/value
+[ ] Active/Inactive toggle updates ruleset
+[ ] Dry-run returns correct match/no-match results
+[ ] New rule modal creates + appears in list
+[ ] npm run type-check → 0 errors
+
+════════════════════════════════════════════════════════
+STEP 08 — Billing & Usage
+════════════════════════════════════════════════════════
+Files:
+  src/app/(dashboard)/billing/page.tsx
+  src/components/billing/PlanBanner.tsx
+  src/components/billing/UsageGauge.tsx
+  src/components/billing/InvoiceTable.tsx
+  src/components/billing/AddOnCard.tsx
+
+Layout: [52px sidebar] | [160px billing-nav] | [flex-1 main-content]
+
+>> Billing Nav:
+- Overview (default)
+- Usage
+- Invoices
+- Payment methods
+- Add-ons
+
+>> PlanBanner from getSubscription():
+- Plan badge: Enterprise=blue / Professional=indigo / Starter=gray
+- Plan name + "Renews [date] · [N] days left"
+- Monthly price (right-aligned, large text, brand-primary)
+- "Manage plan" button
+- Layout: horizontal flex, white card, rounded-lg, border, p-5
+
+>> UsageGauge (6 in 3-col grid) from getUsage():
+Props: label, used, total, unit, overage?, overageCost?
+
+Each gauge:
+- Label top-left + "X / Y unit" top-right (font-medium)
+- Horizontal progress bar (h-2 rounded-full):
+  · Blue:  used/total < 85%
+  · Amber: 85–99%
+  · Red:   ≥ 100% (fills to 100%, shows overage)
+- Overage: "+N unit overage · OMR X.XX" red-600 text-sm
+
+| Label             | API field                               | Unit   |
+|-------------------|-----------------------------------------|--------|
+| Agents            | seats_used / seats_limit                | agents |
+| PSTN minutes      | pstn_minutes_used / pstn_minutes_limit  | min    |
+| WhatsApp messages | wa_messages_used / wa_messages_limit    | msgs   |
+| AI assist tokens  | ai_tokens_used / ai_tokens_limit        | tokens |
+| Storage           | storage_used / storage_limit            | GB     |
+| SMS               | sms_used / sms_limit                    | msgs   |
+
+>> InvoiceTable from listInvoices():
+Columns: Period | Amount | Overage | Status | Action
+- Period: "May 2026"
+- Amount: "OMR 432.00" (always 2 dp)
+- Overage: "+OMR X.XX" red if > 0, else "—"
+- Status badge: Paid=green, Pending=amber, Failed=red
+- Action: "Download" → opens PDF URL in new tab
+
+>> Usage detail page (/billing?tab=usage):
+Same 6 gauges + recharts AreaChart per metric past 6 months
+Data: getUsage({ period: 'historical', months: 6 })
+
+CHECKLIST (verify before Step 09):
+[ ] Plan banner shows correct plan, renewal date, price
+[ ] All 6 gauges render with correct colors
+[ ] Gauges turn red at ≥ 100% + show overage cost
+[ ] Invoice table correct status badges
+[ ] Download link opens PDF in new tab
+[ ] npm run type-check → 0 errors
+
+════════════════════════════════════════════════════════
+STEP 09 — Platform Admin
+════════════════════════════════════════════════════════
+Files:
+  src/app/(dashboard)/platform/page.tsx
+  src/components/platform/TenantCard.tsx
+  src/components/platform/FeatureToggle.tsx
+  src/components/platform/NewTenantWizard.tsx
+  src/components/platform/PlatformKPICards.tsx
+
+AUTH GUARD (top of page component):
+  const { user } = useAuthStore()
+  if (user?.role !== 'platform_admin') redirect('/conversations')
+
+Layout: [52px sidebar] | [170px platform-nav] | [flex-1 main-content]
+
+>> Platform Nav:
+- Tenants (default)
+- Feature flags (global)
+- Admins
+- Storage
+- Health
+--- divider ---
+- Audit log
+- Alerts
+
+>> PlatformKPICards (top row) from listTenants() aggregated:
+- Total tenants (neutral)
+- Active tenants (green)
+- Trial tenants (amber)
+- Total agents (blue)
+
+>> Toolbar:
+- Search input (client-side filter by name/slug)
+- "New tenant" blue button → NewTenantWizard
+
+>> TenantCard from listTenants():
+Top row:
+- Initials avatar (2 chars, colored)
+- name (font-semibold), tenant ID (muted text-xs), agent count + location
+- Status pill: Active/Trial/Suspended
+- Plan label
+- "Edit" + "Impersonate" links
+  · Impersonate: impersonateTenant(tenantId) → sets gateway JWT in memory + refreshes
+
+Feature flags section (below subtle divider):
+- Label: "Feature flags" text-xs muted
+- FeatureToggle for each:
+  · PSTN calling · WhatsApp · AI assist · IVR builder
+  · SLA · Voice bot · RAG knowledge base · Billing module
+- Switch component per flag
+- On toggle: updateTenantFeatures(tenantId, { [flagKey]: !currentValue })
+- Disabled flags: opacity-50
+
+Suspended tenants: bg-red-50/30, red border
+
+>> FeatureToggle component:
+interface FeatureFlagToggleProps {
+  tenantId: string
+  flagKey: keyof TenantFeatures
+  label: string
+  value: boolean
+}
+Uses useMutation + optimistic update (instant feel)
+
+>> NewTenantWizard (shadcn Dialog, 3 steps):
+Step 1 — Basics: name (req) | slug (req, url-safe, auto from name) | plan select | admin email (req)
+Step 2 — Features: feature flag checkboxes (same 8 flags)
+Step 3 — Review: summary + "Create tenant" → createTenant(data) → invalidateQueries(['tenants'])
+"Step X of 3" progress indicator at top
+
+CHECKLIST (verify before Step 10):
+[ ] /platform as non-platform_admin redirects to /conversations
+[ ] Tenant cards render with feature flag toggles
+[ ] Toggling flag updates optimistically + calls API
+[ ] Wizard steps through 3 pages correctly
+[ ] KPI cards correct counts
+[ ] npm run type-check → 0 errors
+
+════════════════════════════════════════════════════════
+STEP 10 — AI Knowledge Base
+════════════════════════════════════════════════════════
+Files:
+  src/app/(dashboard)/ai/page.tsx
+  src/components/ai/CollectionsSidebar.tsx
+  src/components/ai/DocumentList.tsx
+  src/components/ai/DocumentListItem.tsx
+  src/components/ai/QueryTester.tsx
+  src/components/ai/RAGResultCard.tsx
+  src/components/ai/UploadDocumentModal.tsx
+
+Layout: [52px sidebar] | [190px collections-sidebar] | [flex-1 documents-panel] | [280px query-tester]
+
+>> CollectionsSidebar from listCollections() — GET /api/ai/v1/collections:
+Each item:
+- FolderOpen icon (lucide), collection name (font-medium), doc count (muted right)
+- Selected: bg-blue-50 text-brand-primary
+- Click → loads collection's documents
+
+"New collection" dashed button at bottom:
+- Click → inline text input appears → Enter: createCollection({ name }) → invalidateQueries(['collections'])
+
+>> DocumentList:
+TopBar: Search input (client-side filter) + "Upload" blue button (Upload icon) → UploadDocumentModal
+
+From listDocuments(collectionId):
+Each DocumentListItem:
+- File type icon via lucide FileText (PDF=red, XLSX=green, MD=blue, DOCX=indigo, default=gray)
+- File name (font-medium, truncate)
+- Meta: "{type} · {size} · {page count if PDF} · {upload date}"
+- Index status chip (right side):
+  · Indexed:   green badge
+  · Indexing…: amber badge + spinning Loader icon
+  · Error:     red badge + hover Tooltip showing error message
+- Click → highlight selected
+
+Empty state: "No documents in this collection. Upload your first document."
+
+>> UploadDocumentModal (shadcn Dialog):
+- Drag-and-drop zone: dashed border, Upload icon, "Drop files here or click to browse"
+- Accepted types: PDF, DOCX, XLSX, TXT, MD — max 50MB per file
+- On select: show file name + size
+- "Start upload" button:
+  · POST /api/ai/v1/collections/{collectionId}/documents (multipart/form-data)
+  · Progress bar while uploading
+  · Success: close modal + invalidateQueries(['documents', collectionId])
+- Multiple files: queue one by one
+
+>> QueryTester panel:
+Form:
+- "Ask a question" Textarea (3 rows)
+- Collection select (all collections as options)
+- Top K results (number input, default 3, range 1–10)
+- "Run query" blue button
+- On submit: queryRAG({ collection_id, query, top_k }) from src/lib/api/ai.ts
+
+Each result → RAGResultCard:
+- Score badge: blue "XX% match"
+- Chunk text (text-sm, line-clamp-4)
+- Source: "{filename} · page {page}" muted text-xs
+- "Insert to reply" button (only when conversation selected in store)
+
+CHECKLIST (verify before Step 11):
+[ ] Collections sidebar loads + selecting one filters documents
+[ ] "New collection" inline input creates on Enter
+[ ] Document list shows correct index status badges
+[ ] Upload modal accepts drag-and-drop + shows progress
+[ ] Query tester returns results with correct scores
+[ ] npm run type-check → 0 errors
+
+════════════════════════════════════════════════════════
+STEP 11 — Tickets
+════════════════════════════════════════════════════════
+Files:
+  src/app/(dashboard)/tickets/page.tsx
+  src/components/tickets/TicketNav.tsx
+  src/components/tickets/TicketList.tsx
+  src/components/tickets/TicketListItem.tsx
+  src/components/tickets/TicketDetail.tsx
+  src/components/tickets/TicketThread.tsx
+  src/components/tickets/TicketReplyBox.tsx
+  src/components/tickets/NewTicketModal.tsx
+
+Layout: [52px sidebar] | [190px ticket-nav] | [300px ticket-list] | [flex-1 ticket-detail]
+
+>> TicketNav:
+Views (set filter for ticket list):
+- All open — badge with total open count
+- High priority — red badge count
+- Assigned to me
+- Resolved
+
+Teams:
+- Sales · Support · Billing
+
+>> TicketList:
+Toolbar: status dropdown (All/Open/Pending/Resolved) + priority dropdown (All/High/Medium/Low)
+
+From listTickets({ status, priority, assigned_to, team }) — GET /api/tickets/v1/tickets
+
+Each TicketListItem:
+- #TKT-XXXX (text-xs muted)
+- Priority chip: High=red-100/red-700, Medium=amber-100/amber-700, Low=gray
+- Title (font-medium, 1-line truncate)
+- Status chip: Open=blue, Pending=amber, Resolved=green
+- Contact name + SLA tier
+- Timestamp (relative)
+- Selected: blue left border
+
+>> TicketDetail panel:
+Empty state: "Select a ticket" when none selected.
+
+Header:
+- Ticket title (text-lg font-semibold)
+- Chips row: status | priority | contact name (linked) | assignee name
+- Actions: "Change status" select + "Reassign" button
+
+Info grid (2-column cards):
+- Created at
+- SLA deadline (red text if breached)
+- Inbox type
+- Contact → link to /contacts
+- Related conversation → link
+
+>> TicketThread from getTicketMessages(ticketId) — GET /api/tickets/v1/tickets/{id}/messages:
+Timeline:
+- Avatar (initials), author name, timestamp
+- Message text (dir="auto" for Arabic)
+- Inbound (contact): left-aligned, gray bg
+- Outbound (agent): right-aligned, bg-blue-50
+
+>> TicketReplyBox:
+- Textarea placeholder "Reply…"
+- "Send" button → createTicketMessage(ticketId, { content }) → invalidateQueries(['ticketMessages', ticketId])
+- "Close & reply" → send message + resolve ticket simultaneously
+
+>> NewTicketModal (shadcn Dialog):
+Fields:
+- Subject (required)
+- Contact (searchable select → searchContacts)
+- Assignee (select from agents)
+- Priority (select: High / Medium / Low)
+- Team (select)
+- Description (textarea)
+
+On save: createTicket(data) → invalidateQueries(['tickets'])
+
+CHECKLIST (verify before marking COMPLETE):
+[ ] Ticket list filters by status and priority
+[ ] Clicking a ticket shows detail panel
+[ ] Thread displays correctly with RTL for Arabic (dir="auto")
+[ ] Sending a reply adds it to thread
+[ ] New ticket modal creates + appears in list
+[ ] SLA deadline shows red when breached
+[ ] npm run type-check → 0 errors
+
+════════════════════════════════════════════════════════
+STEP 12 — Settings Page + SLA Business Hours
+════════════════════════════════════════════════════════
+Files to CREATE:
+  src/app/(dashboard)/settings/page.tsx          ← replace the placeholder
+  src/components/settings/SettingsNav.tsx
+  src/components/settings/ProfileSection.tsx
+  src/components/settings/NotificationsSection.tsx
+  src/components/settings/TeamSection.tsx
+  src/components/settings/InboxSection.tsx
+  src/components/settings/WebhooksSection.tsx
+  src/components/settings/BusinessHoursSection.tsx
+
+File to PATCH:
+  src/components/sla/SLAWorkspace.tsx            ← replace SectionPlaceholder for 'hours' view
+
+Layout: [52px IconSidebar] | [200px SettingsNav] | [flex-1 settings-content (max-w-3xl, p-8)]
+
+>> settings/page.tsx:
+'use client' — useState for active view (default: 'profile')
+Views: profile | notifications | team | inboxes | webhooks | business-hours
+Render: <SettingsNav active={view} onChange={setView} /> + content panel
+
+>> SettingsNav.tsx:
+Width 200px, border-e, grouped nav items (lucide-react icons):
+Group "Account":
+  User icon    → profile         "Profile"
+  Bell icon    → notifications   "Notifications"
+Group "Workspace":
+  Users icon   → team            "Team & Agents"
+  Inbox icon   → inboxes         "Inboxes"
+  Webhook icon → webhooks        "Webhooks"
+  Clock icon   → business-hours  "Business hours"
+Active: bg-blue-50 text-brand-primary font-medium
+Inactive: text-muted-foreground hover:bg-muted
+
+>> ProfileSection.tsx:
+- Read user from useAuthStore().user
+- react-hook-form + zod: name (min 2), email (email), phone (optional)
+- defaultValues pre-filled from store
+- Avatar: 64px initials circle (bg-blue-100 text-blue-700)
+- "Save changes" button disabled when form not dirty
+- Separate "Change password" section below a border-t
+- On save: toast.success('Profile updated') (stub — no API yet)
+
+>> NotificationsSection.tsx:
+Groups: In-app | Email | SMS
+In-app:  New conversation assigned, Mention, SLA breach, Incoming call
+Email:   New conversation digest, SLA breached, Ticket assigned
+SMS:     Missed call alert
+Each: label + Switch, all state local (useState)
+"Save preferences" button → toast.success()
+
+>> TeamSection.tsx:
+- useQuery({ queryKey: ['agents'], queryFn: listAgents }) from src/lib/api/routing
+- Skeleton 3 rows while loading
+- Agents table columns: Agent (name+email+initials avatar) | Role | Status (dot+label) | Remove button
+  Status dots: available=green-500, busy=amber-500, offline=gray-400
+- Invite form above table: email input + role select (agent/supervisor/admin) + "Invite" button
+  On invite: toast.success(`Invite sent to ${email}`)
+
+>> InboxSection.tsx:
+- useQuery({ queryKey: ['inboxes'], queryFn: listInboxes }) from src/lib/api/conversations
+- If listInboxes doesn't exist in the API file, stub it locally (do NOT modify conversations.ts)
+- Each inbox: channel icon (Phone/MessageSquare/Mail/Globe) + name + channel label badge + "Business hours on/off" badge + Edit button
+- "+ New inbox" button (outline) top-right
+
+>> WebhooksSection.tsx:
+- Local state (useState) — no API wiring needed yet
+- List of webhooks: url (mono font) + event tags + active Switch + delete (Trash2) button
+- "Add webhook" button → shows inline form:
+  · URL input (zod: z.string().url())
+  · Event checkboxes: conversation.created | conversation.resolved | message.created | call.ended | sla.breached | ticket.created
+  · Save + Cancel buttons
+
+>> BusinessHoursSection.tsx:
+7-day schedule grid:
+- Columns: Day | Open toggle (Switch) | Opens at (Select) | → | Closes at (Select)
+- Days: Monday–Sunday
+- Default: Mon–Fri 09:00–18:00 enabled, Sat 09:00–13:00 disabled, Sun disabled
+- Times: 30-min slots 00:00–23:30
+- Timezone select: Asia/Muscat (default), Asia/Dubai, Asia/Riyadh, Asia/Kuwait, UTC, Europe/London, America/New_York
+- "Save business hours" button → toast.success()
+- When day toggle is OFF: time selects are disabled (opacity)
+
+>> PATCH SLAWorkspace.tsx:
+  import { BusinessHoursSection } from '@/components/settings/BusinessHoursSection'
+  Replace:
+    <SectionPlaceholder title="Business hours" ... />
+  With:
+    <BusinessHoursSection />
+  Remove unused SectionPlaceholder import if no longer needed in that file.
+
+CHECKLIST (verify before marking COMPLETE):
+[ ] /settings renders full settings page — NOT the "on the roadmap" placeholder
+[ ] SettingsNav shows Account + Workspace groups with correct icons
+[ ] Profile: form pre-filled, Save disabled when unchanged, avatar shows initials
+[ ] Notifications: all toggles grouped by In-app / Email / SMS
+[ ] Team: agents table with status dots + invite form
+[ ] Inboxes: connected channels list with channel type labels
+[ ] Webhooks: list + add form with event checkboxes
+[ ] Business hours: 7-day grid with timezone select, toggling day disables time selects
+[ ] SLA Business hours nav → shows real schedule editor (no placeholder)
+[ ] npm run type-check → 0 errors
+
+════════════════════════════════════════════════════════
+STEP 13 — Full Chatwoot Feature Parity + RBAC
+════════════════════════════════════════════════════════
+
+## CRITICAL BUG: Conversations page renders blank
+AgentInboxShell returns null. conversations/page.tsx must render:
+  <ConversationList /> | <MessageThread /> | <AgentAssistPanel />
+directly — NOT via AgentInboxShell.
+
+## Missing Chatwoot features to add:
+
+### 1. Private Notes (ReplyBox)
+- Add "Reply" | "Note" tab toggle above textarea
+- Note mode: amber bg on textarea + send button, private: true param to sendMessage
+- import Lock from lucide-react for the Note tab icon
+
+### 2. Canned Responses
+- CannedResponsePicker component: shows when user types "/" in ReplyBox
+- Fetch: GET /api/v1/accounts/{accountId}/canned_responses?search={query} via cwFetch
+- Popover list: short_code badge + content preview
+- Selecting replaces textarea content
+
+### 3. Conversation Labels (LabelPicker)
+- Fetch labels: GET /api/v1/accounts/{accountId}/labels via cwFetch
+- Apply: POST /api/v1/accounts/{accountId}/conversations/{id}/labels
+- Popover with colored dot per label, checkmark for active
+- Show in MessageThread TopBar
+
+### 4. Snooze Conversation (SnoozeButton)
+- Popover: 30min / 1hr / 3hr / Tomorrow 9am / Next week options
+- API: PATCH /api/v1/accounts/{accountId}/conversations/{id}/toggle_status
+  body: { status: 'snoozed', snoozed_until: ISO_string }
+- Show AlarmClock icon in MessageThread TopBar
+- On success: invalidateQueries(['conversations']) + toast.success
+
+### 5. Team Assignment (MessageThread TopBar)
+- Add team <select> next to agent select
+- Fetch: GET /api/v1/accounts/{accountId}/teams via cwFetch
+- Assign: PATCH /api/v1/accounts/{accountId}/conversations/{id}/assignments
+  body: { team_id: number | null }
+
+### 6. Inbox Filter (ConversationList)
+- Add inbox dropdown above status tabs
+- Fetch: GET /api/v1/accounts/{accountId}/inboxes via cwFetch
+- Pass inboxId to listConversations filters
+
+## Missing Reports/Analytics screen (MISSING ENTIRELY):
+Files to create:
+  src/app/(dashboard)/reports/page.tsx
+  src/components/reports/ReportsWorkspace.tsx
+  src/components/reports/OverviewReport.tsx
+  src/components/reports/AgentReport.tsx
+  src/components/reports/InboxReport.tsx
+  src/components/reports/TeamReport.tsx
+
+Add BarChart2 icon → /reports to IconSidebar navItems array.
+
+Reports nav: Overview | Agent reports | Inbox reports | Team reports
+OverviewReport:
+- Date range filter: Today / Last 7 days / Last 30 days (useState)
+- KPI cards (4): Total conversations | Resolved | Avg first response | Avg resolution
+- Data: GET /api/v1/accounts/{accountId}/reports/summary?since=&until= via cwFetch
+- recharts AreaChart: conversations over time (open + resolved lines)
+- recharts BarChart (horizontal): conversations by agent top 10
+AgentReport / InboxReport / TeamReport:
+- Sortable table per entity with columns: Name | Open | Resolved | Avg first response | Avg resolution
+
+## RBAC System:
+
+### src/lib/rbac.ts  (CREATE NEW FILE)
+```ts
+export type UserRole = 'agent' | 'supervisor' | 'admin' | 'platform_admin'
+
+export const ROLE_PERMISSIONS = {
+  routes: {
+    '/conversations':     ['agent','supervisor','admin','platform_admin'],
+    '/calling':           ['agent','supervisor','admin','platform_admin'],
+    '/calling/wallboard': ['supervisor','admin','platform_admin'],
+    '/calling/ivr':       ['admin','platform_admin'],
+    '/contacts':          ['agent','supervisor','admin','platform_admin'],
+    '/sla':               ['supervisor','admin','platform_admin'],
+    '/escalation':        ['supervisor','admin','platform_admin'],
+    '/ai':                ['agent','supervisor','admin','platform_admin'],
+    '/billing':           ['admin','platform_admin'],
+    '/platform':          ['platform_admin'],
+    '/tickets':           ['agent','supervisor','admin','platform_admin'],
+    '/reports':           ['supervisor','admin','platform_admin'],
+    '/settings':          ['agent','supervisor','admin','platform_admin'],
+  },
+  features: {
+    assignConversation:   ['supervisor','admin','platform_admin'],
+    supervisorListen:     ['supervisor','admin','platform_admin'],
+    supervisorWhisper:    ['supervisor','admin','platform_admin'],
+    supervisorBarge:      ['supervisor','admin','platform_admin'],
+    viewWallboard:        ['supervisor','admin','platform_admin'],
+    manageEscalation:     ['supervisor','admin','platform_admin'],
+    manageSLA:            ['supervisor','admin','platform_admin'],
+    manageIVR:            ['admin','platform_admin'],
+    manageBilling:        ['admin','platform_admin'],
+    manageWebhooks:       ['admin','platform_admin'],
+    manageInboxes:        ['admin','platform_admin'],
+    manageTeam:           ['admin','platform_admin'],
+    impersonateTenant:    ['platform_admin'],
+    viewReports:          ['supervisor','admin','platform_admin'],
+  },
+}
+
+export function can(role: UserRole | undefined, feature: keyof typeof ROLE_PERMISSIONS.features): boolean {
+  if (!role) return false
+  return (ROLE_PERMISSIONS.features[feature] as UserRole[]).includes(role)
+}
+
+export function canAccessRoute(role: UserRole | undefined, pathname: string): boolean {
+  if (!role) return false
+  const match = Object.entries(ROLE_PERMISSIONS.routes)
+    .filter(([r]) => pathname.startsWith(r))
+    .sort((a,b) => b[0].length - a[0].length)[0]
+  if (!match) return true
+  return (match[1] as UserRole[]).includes(role)
+}
+
+export const ROLE_META: Record<UserRole, { label: string; color: string }> = {
+  agent:          { label: 'Agent',          color: 'bg-blue-100 text-blue-700' },
+  supervisor:     { label: 'Supervisor',     color: 'bg-purple-100 text-purple-700' },
+  admin:          { label: 'Admin',          color: 'bg-green-100 text-green-700' },
+  platform_admin: { label: 'Platform Admin', color: 'bg-red-100 text-red-700' },
+}
+```
+
+### src/components/layout/RoleGuard.tsx  (CREATE NEW FILE)
+'use client' — wraps dashboard layout
+- useEffect: if !tokens || !user → router.replace('/login')
+- if !canAccessRoute(user.role, pathname) → router.replace('/conversations')
+- Returns null while redirecting, children otherwise
+
+### Update src/app/(dashboard)/layout.tsx
+- Import and wrap entire layout with <RoleGuard>
+- Remove old manual tokens check (RoleGuard handles it)
+
+### Update src/components/layout/IconSidebar.tsx
+- Import canAccessRoute from @/lib/rbac
+- Filter navItems: only show if canAccessRoute(role, item.href)
+- Add Reports item: { icon: BarChart2, label: 'Reports', href: '/reports' }
+
+### Update src/components/layout/TopBar.tsx — REWRITE
+- Show page title (map pathname → title)
+- Show role badge from ROLE_META (color-coded)
+- Show user initials avatar
+- Logout button calls clearAuth() + router.push('/login')
+
+### Update src/app/login/page.tsx onSubmit — role-based redirect:
+  platform_admin → /platform
+  supervisor     → /conversations
+  admin          → /conversations
+  agent          → /conversations
+
+### Apply can() guards in components:
+- MessageThread: hide agent/team selectors if !can(role, 'assignConversation')
+- CallingWorkspace: hide Listen/Whisper/Barge if !can(role, 'supervisorListen')
+- BillingWorkspace: show lock screen if !can(role, 'manageBilling')
+- SettingsNav: hide Team/Inboxes/Webhooks sections if !can(role, 'manageTeam')
+
+## CHECKLIST (verify before complete):
+[ ] /conversations renders 3-panel layout (not blank)
+[ ] Reply/Note tab in ReplyBox — note mode turns amber
+[ ] Typing /text in ReplyBox shows canned response picker
+[ ] Label picker in MessageThread TopBar — can toggle labels
+[ ] Snooze button opens time options popover
+[ ] Team selector in MessageThread TopBar
+[ ] Inbox filter dropdown in ConversationList
+[ ] /reports route renders Overview with KPI cards + charts
+[ ] Reports link visible only for supervisor/admin/platform_admin
+[ ] src/lib/rbac.ts created with can() and canAccessRoute() exports
+[ ] Agent login → /conversations, no Reports/Billing/Platform/SLA/Escalation in sidebar
+[ ] Supervisor login → no Billing/Platform in sidebar
+[ ] Admin login → no Platform in sidebar
+[ ] Platform Admin login → /platform, all nav visible
+[ ] Accessing /billing as agent shows lock screen
+[ ] Accessing /platform as non-platform_admin → redirects to /conversations
+[ ] TopBar shows color-coded role badge
+[ ] Logout properly redirects to /login
+[ ] npm run type-check → 0 errors
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+NGINX ROUTES (already configured — do not change)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+/dashboard/*     → Next.js frontend (port 3001)
+/api/*           → BlinkOne gateway
+/cable           → Chatwoot Action Cable WS
+/telephony/wss   → Asterisk WSS
+/                → Chatwoot (web widget + legacy)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+DOCKER SERVICE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+blinkone-frontend:
+  build: { context: ./frontend, dockerfile: Dockerfile }
+  restart: unless-stopped
+  environment:
+    NEXT_PUBLIC_API_BASE: ${FRONTEND_URL:-http://localhost}
+    NEXT_PUBLIC_WS_URL: ws://localhost/cable
+    NEXT_PUBLIC_SIP_WSS: wss://localhost/telephony/wss
+    NEXT_PUBLIC_SIP_DOMAIN: blinkone.local
+  ports: ["3001:3001"]
+  networks: [blinkone]

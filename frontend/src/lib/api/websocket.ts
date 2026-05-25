@@ -13,15 +13,17 @@
  */
 
 import { useAuthStore } from '@/lib/store/auth';
+import { isActionCableReady, getConfiguredWsUrl } from '@/lib/env/telephony';
 
-const WS_URL =
-  process.env.NEXT_PUBLIC_WS_URL ??
-  `${(process.env.NEXT_PUBLIC_CHATWOOT_URL ?? 'http://127.0.0.1:3000').replace(/^http/, 'ws')}/cable`;
+const WS_URL = getConfiguredWsUrl();
 
 let cable: ActionCable.Cable | null = null;
 let subscriptions: Map<string, ActionCable.Subscription> = new Map();
 
 function getCable(): ActionCable.Cable {
+  if (!isActionCableReady()) {
+    throw new Error('ActionCable not configured — set NEXT_PUBLIC_WS_URL in .env.local');
+  }
   if (cable) return cable;
   if (typeof window === 'undefined') throw new Error('ActionCable requires browser environment');
 
@@ -53,6 +55,7 @@ export function subscribeToConversation(
     onTyping?: (data: unknown) => void;
   },
 ): () => void {
+  if (!isActionCableReady()) return () => undefined;
   const key = `conversation_${conversationId}`;
   if (subscriptions.has(key)) subscriptions.get(key)?.unsubscribe();
 
@@ -108,6 +111,7 @@ export function subscribeToCallEvents(
     callSession: unknown;
   }) => void,
 ): () => void {
+  if (!isActionCableReady()) return () => undefined;
   const key = `blinkone_calls_${accountId}`;
   if (subscriptions.has(key)) subscriptions.get(key)?.unsubscribe();
 

@@ -1,0 +1,117 @@
+{
+  "expo": {
+    "name": "BlinkOne",
+    "slug": "blinkone",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "ai.blinkone.app",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "BlinkOne needs microphone access for voice calls.",
+        "NSCameraUsageDescription": "BlinkOne needs camera access for video calls.",
+        "UIBackgroundModes": [
+          "audio",
+          "voip",
+          "remote-notification",
+          "fetch"
+        ]
+      },
+      "bitcode": false
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "backgroundColor": "#0f1117"
+      },
+      "package": "ai.blinkone.app",
+      "permissions": [
+        "RECORD_AUDIO",
+        "CAMERA",
+        "INTERNET",
+        "ACCESS_NETWORK_STATE",
+        "RECEIVE_BOOT_COMPLETED",
+        "VIBRATE",
+        "POST_NOTIFICATIONS",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.CAMERA",
+        "android.permission.INTERNET",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.WAKE_LOCK",
+        "android.permission.BLUETOOTH"
+      ]
+    },
+    "plugins": [
+      "expo-dev-client",
+      "expo-router",
+      "expo-secure-store",
+      "expo-font",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/splash.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#0f1117"
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "minSdkVersion": 24,
+            "compileSdkVersion": 35,
+            "targetSdkVersion": 35,
+            "buildToolsVersion": "35.0.0",
+            "kotlinVersion": "1.9.25",
+            "newArchEnabled": false
+          }
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/icon.png",
+          "color": "#63b3ed"
+        }
+      ],
+      [
+        "@config-plugins/react-native-webrtc",
+        {
+          "cameraPermission": "Allow BlinkOne to use your camera for video calls",
+          "microphonePermission": "Allow BlinkOne to use your microphone for voice calls",
+          "bluetoothPermission": "Allow BlinkOne to use Bluetooth audio devices"
+        }
+      ],
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "BlinkOne needs microphone access for voice calls.",
+          "enableBackgroundPlayback": true
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "scheme": "blinkone",
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "b0749666-b11b-491e-acdc-d03a26daac83"
+      }
+    },
+    "doctor": {
+      "reactNativeDirectoryCheck": {
+        "exclude": [
+          "react-native-webrtc",
+          "react-native-actioncable",
+          "expo-modules-jsi"
+        ]
+      }
+    }
+  }
+}

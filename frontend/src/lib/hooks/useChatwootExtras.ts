@@ -3,6 +3,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { cwFetch } from '@/lib/api/client';
 import { assignConversation } from '@/lib/api/conversations';
+import { listCannedResponses, listAgents } from '@/lib/api/settings';
+import { DEMO_AGENTS } from '@/lib/demo/settingsFixture';
 import {
   DEMO_CANNED_RESPONSES,
   DEMO_LABELS,
@@ -19,27 +21,64 @@ function accountId() {
   return useAuthStore.getState().user?.chatwootAccountId ?? 1;
 }
 
+function filterCanned(list: DemoCannedResponse[], query: string) {
+  const q = query.toLowerCase().trim();
+  if (!q) return list;
+  return list.filter(
+    cr => cr.short_code.includes(q) || cr.content.toLowerCase().includes(q),
+  );
+}
+
 export function useCannedResponses(query: string) {
   return useQuery({
     queryKey: ['cannedResponses', query, isDemoDataEnabled()],
     queryFn: async () => {
-      if (isDemoDataEnabled()) {
-        const q = query.toLowerCase();
-        return DEMO_CANNED_RESPONSES.filter(
-          cr => cr.short_code.includes(q) || cr.content.toLowerCase().includes(q),
-        );
-      }
+      if (isDemoDataEnabled()) return filterCanned(DEMO_CANNED_RESPONSES, query);
       try {
-        const res = await cwFetch<{ payload?: DemoCannedResponse[] }>(
-          `/accounts/${accountId()}/canned_responses?search=${encodeURIComponent(query)}`,
-        );
-        return res.payload ?? [];
+        const list = await listCannedResponses(query.trim() || undefined);
+        const filtered = filterCanned(list, query);
+        return filtered.length ? filtered : filterCanned(DEMO_CANNED_RESPONSES, query);
       } catch {
-        return DEMO_CANNED_RESPONSES;
+        return filterCanned(DEMO_CANNED_RESPONSES, query);
       }
     },
-    enabled: query.length >= 1,
+    staleTime: 30_000,
   });
+}
+
+export function useMentionableAgents(query: string) {
+  return useQuery({
+    queryKey: ['mentionable-agents', query, isDemoDataEnabled()],
+    queryFn: async (): Promise<MentionableAgent[]> => {
+      const filter = (list: MentionableAgent[]) => {
+        const q = query.toLowerCase().trim();
+        if (!q) return list;
+        return list.filter(
+          a =>
+            a.name.toLowerCase().includes(q) ||
+            a.email.toLowerCase().includes(q),
+        );
+      };
+
+      if (isDemoDataEnabled()) {
+        return filter(DEMO_AGENTS.map(a => ({ id: a.id, name: a.name, email: a.email })));
+      }
+      try {
+        const list = await listAgents();
+        const agents = list.map(a => ({ id: a.id, name: a.name, email: a.email }));
+        return filter(agents.length ? agents : DEMO_AGENTS.map(a => ({ id: a.id, name: a.name, email: a.email })));
+      } catch {
+        return filter(DEMO_AGENTS.map(a => ({ id: a.id, name: a.name, email: a.email })));
+      }
+    },
+    staleTime: 60_000,
+  });
+}
+
+export interface MentionableAgent {
+  id: number;
+  name: string;
+  email: string;
 }
 
 export function useLabels() {
@@ -49,9 +88,9 @@ export function useLabels() {
       if (isDemoDataEnabled()) return DEMO_LABELS;
       try {
         const res = await cwFetch<{ payload?: DemoLabel[] }>(`/accounts/${accountId()}/labels`);
-        return res.payload ?? DEMO_LABELS;
+        return res.payload ?? [];
       } catch {
-        return DEMO_LABELS;
+        return isDemoDataEnabled() ? DEMO_LABELS : [];
       }
     },
     staleTime: 60_000,
@@ -65,9 +104,9 @@ export function useTeams() {
       if (isDemoDataEnabled()) return DEMO_TEAMS;
       try {
         const res = await cwFetch<{ payload?: DemoTeam[] }>(`/accounts/${accountId()}/teams`);
-        return res.payload ?? DEMO_TEAMS;
+        return res.payload ?? [];
       } catch {
-        return DEMO_TEAMS;
+        return isDemoDataEnabled() ? DEMO_TEAMS : [];
       }
     },
     staleTime: 60_000,

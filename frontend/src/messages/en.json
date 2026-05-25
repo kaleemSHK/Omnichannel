@@ -1,0 +1,45 @@
+{
+  "nav": {
+    "conversations": "Conversations",
+    "calling": "Calling",
+    "contacts": "Contacts",
+    "sla": "SLA",
+    "escalation": "Escalation",
+    "ai": "AI Assist",
+    "billing": "Billing",
+    "platform": "Platform",
+    "settings": "Settings"
+  },
+  "calling": {
+    "available": "Available",
+    "busy": "Busy",
+    "break": "Break",
+    "offline": "Offline",
+    "incomingCall": "Incoming call",
+    "answer": "Answer",
+    "decline": "Decline",
+    "hold": "Hold",
+    "transfer": "Transfer",
+    "mute": "Mute",
+    "endCall": "End call",
+    "pstn": "PSTN call",
+    "whatsapp": "WhatsApp call"
+  },
+  "sla": {
+    "breached": "Breached",
+    "atRisk": "At risk",
+    "active": "Active",
+    "met": "Met",
+    "policies": "Policies"
+  },
+  "common": {
+    "loading": "Loading…",
+    "error": "Something went wrong",
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "create": "Create",
+    "search": "Search"
+  }
+}

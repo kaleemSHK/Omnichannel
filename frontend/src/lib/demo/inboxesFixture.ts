@@ -25,4 +25,10 @@ export const DEMO_INBOXES: CWInbox[] = [
     channel_type: 'Channel::TwilioSms',
     working_hours_enabled: true,
   },
+  {
+    id: 5,
+    name: 'Voice / SIP',
+    channel_type: 'Channel::Voice',
+    working_hours_enabled: true,
+  },
 ];

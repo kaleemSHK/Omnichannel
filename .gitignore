@@ -2,6 +2,8 @@
 .env.production
 .env.staging
 .env.local
+infra/ngrok/ngrok.yml
+infra/ngrok/ngrok-demo.log
 *.pem
 *.key
 age-recipient.txt
@@ -14,6 +16,12 @@ backups/
 
 # Runtime / OS
 node_modules/
+dist/
+.pnpm-store/
+chatwoot-fork-overlay/node_modules/
+.upstream-inventory/
+spec/vendor/
+spec/.bundle/
 .DS_Store
 Thumbs.db
 *.log

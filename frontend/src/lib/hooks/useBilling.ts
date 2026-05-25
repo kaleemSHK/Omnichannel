@@ -3,7 +3,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { bnFetch } from '@/lib/api/client';
 import { getSubscription, listInvoices, listPlans } from '@/lib/api/billing';
-import { isDemoDataEnabled } from '@/lib/demo/config';
+import { isDemoDataEnabled, isGatewayQueryEnabled } from '@/lib/demo/config';
 import {
   DEMO_ADDONS,
   DEMO_GAUGES,
@@ -15,7 +15,9 @@ import {
 import {
   gaugesFromUsageBundle,
   normalizeInvoice,
+  normalizePlanOption,
   normalizeSubscription,
+  type BillingPlanOption,
   type BillingPlanView,
   type InvoiceView,
   type UsageGaugeData,
@@ -32,6 +34,7 @@ export function useBillingDemoMode() {
 }
 
 export function useBillingSubscription() {
+  const gwEnabled = isGatewayQueryEnabled();
   return useQuery({
     queryKey: ['billing-subscription', isDemoDataEnabled()],
     queryFn: async (): Promise<BillingPlanView> => {
@@ -47,14 +50,16 @@ export function useBillingSubscription() {
           );
           return normalizeSubscription(res.data);
         } catch {
-          return DEMO_SUBSCRIPTION;
+          throw new Error('Billing subscription unavailable');
         }
       }
     },
+    enabled: gwEnabled,
   });
 }
 
 export function useBillingUsage() {
+  const gwEnabled = isGatewayQueryEnabled();
   return useQuery({
     queryKey: ['billing-usage', isDemoDataEnabled()],
     queryFn: async (): Promise<UsageGaugeData[]> => {
@@ -64,56 +69,60 @@ export function useBillingUsage() {
           'billing',
           `/v1/tenants/${tenantId()}/usage`,
         );
-        const gauges = gaugesFromUsageBundle(res.data as Parameters<typeof gaugesFromUsageBundle>[0]);
-        return gauges.some(g => g.total > 0) ? gauges : DEMO_GAUGES;
+        return gaugesFromUsageBundle(res.data as Parameters<typeof gaugesFromUsageBundle>[0]);
       } catch {
-        return DEMO_GAUGES;
+        return [];
       }
     },
+    enabled: gwEnabled,
   });
 }
 
 export function useBillingInvoices() {
+  const gwEnabled = isGatewayQueryEnabled();
   return useQuery({
     queryKey: ['billing-invoices', isDemoDataEnabled()],
     queryFn: async (): Promise<InvoiceView[]> => {
       if (isDemoDataEnabled()) return DEMO_INVOICES;
       try {
         const rows = await listInvoices(tenantId());
-        const mapped = rows.map(row => normalizeInvoice(row));
-        return mapped.length ? mapped : DEMO_INVOICES;
+        return rows.map(row => normalizeInvoice(row));
       } catch {
-        return DEMO_INVOICES;
+        return [];
       }
     },
+    enabled: gwEnabled,
   });
 }
 
 export function useBillingHistory() {
+  const gwEnabled = isGatewayQueryEnabled();
   return useQuery({
-    queryKey: ['billing-usage-history'],
+    queryKey: ['billing-usage-history', isDemoDataEnabled()],
     queryFn: async (): Promise<UsageHistoryPoint[]> => {
+      if (isDemoDataEnabled()) return DEMO_USAGE_HISTORY;
       try {
         await bnFetch('billing', `/v1/tenants/${tenantId()}/usage?period=historical&months=6`);
       } catch {
         /* historical endpoint optional */
       }
-      return DEMO_USAGE_HISTORY;
+      return [];
     },
+    enabled: gwEnabled,
   });
 }
 
 export function useBillingPlans() {
+  const gwEnabled = isGatewayQueryEnabled();
   return useQuery({
     queryKey: ['billing-plans', isDemoDataEnabled()],
-    queryFn: async () => {
-      if (isDemoDataEnabled()) return DEMO_PLANS;
-      try {
-        return await listPlans();
-      } catch {
-        return DEMO_PLANS;
-      }
+    queryFn: async (): Promise<BillingPlanOption[]> => {
+      const raw = isDemoDataEnabled()
+        ? DEMO_PLANS
+        : await listPlans().catch(() => []);
+      return raw.map(row => normalizePlanOption(row));
     },
+    enabled: gwEnabled,
   });
 }
 

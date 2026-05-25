@@ -20,14 +20,20 @@ export function ConversationListItem({ conversation, selected, onClick }: Props)
   const name = conversationContactName(conversation);
   const snippet = conversationSnippet(conversation);
   const channel = inboxLabel(conversation.channel);
+  const lastActive = relativeTime(conversation.last_activity_at);
 
   return (
     <button
       type="button"
+      role="option"
+      aria-selected={selected}
+      aria-label={`Conversation with ${name}, ${channel}, ${lastActive}`}
       onClick={onClick}
       className={cn(
         'w-full flex items-start gap-3 px-3 py-2.5 cursor-pointer transition-colors text-start',
-        selected ? 'bg-blue-50 border-l-2 border-brand-primary' : 'hover:bg-muted border-l-2 border-transparent',
+        selected
+          ? 'bg-blue-50 border-s-2 border-brand-primary'
+          : 'hover:bg-muted border-s-2 border-transparent',
       )}
     >
       <div className="w-9 h-9 rounded-full bg-blue-100 text-blue-700 text-xs font-medium flex items-center justify-center shrink-0">

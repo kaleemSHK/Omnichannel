@@ -1,13 +1,14 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Search } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
 import { ConversationListItem } from '@/components/conversations/ConversationListItem';
 import { Input } from '@/components/ui/input';
+import { Select } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useQuery } from '@tanstack/react-query';
+import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { useConversations } from '@/lib/hooks/useConversations';
-import { conversationContactName } from '@/lib/utils/conversations';
 import { listInboxes } from '@/lib/api/conversations';
 import { DEMO_INBOXES } from '@/lib/demo/inboxesFixture';
 import { isDemoDataEnabled } from '@/lib/demo/config';
@@ -16,11 +17,6 @@ import type { CWConversation } from '@/types';
 
 type StatusTab = 'all' | 'open' | 'pending' | 'resolved';
 
-interface Props {
-  selectedId: number | null;
-  onSelect: (conv: CWConversation) => void;
-}
-
 const TABS: { id: StatusTab; label: string }[] = [
   { id: 'all', label: 'All' },
   { id: 'open', label: 'Open' },
@@ -28,77 +24,73 @@ const TABS: { id: StatusTab; label: string }[] = [
   { id: 'resolved', label: 'Resolved' },
 ];
 
+interface Props {
+  selectedId: number | null;
+  onSelect: (conv: CWConversation) => void;
+}
+
 export function ConversationList({ selectedId, onSelect }: Props) {
   const [activeTab, setActiveTab] = useState<StatusTab>('open');
-  const [search, setSearch] = useState('');
+  const [rawSearch, setRawSearch] = useState('');
   const [inboxFilter, setInboxFilter] = useState('');
-  const sentinelRef = useRef<HTMLDivElement>(null);
+  const search = useDebouncedValue(rawSearch, 300);
 
   const { data: inboxes = [] } = useQuery({
     queryKey: ['inboxes', 'filter', isDemoDataEnabled()],
     queryFn: async () => {
+      if (isDemoDataEnabled()) return DEMO_INBOXES;
       try {
         const data = await listInboxes();
-        return data.length ? data : isDemoDataEnabled() ? DEMO_INBOXES : [];
+        return data.length ? data : [];
       } catch {
-        return isDemoDataEnabled() ? DEMO_INBOXES : [];
+        return [];
       }
     },
     staleTime: 60_000,
   });
 
-  const filters: ConversationFilters = useMemo(
-    () => ({
-      status: activeTab === 'all' ? undefined : activeTab,
-      inboxId: inboxFilter ? Number(inboxFilter) : undefined,
-    }),
-    [activeTab, inboxFilter],
-  );
+  const filters: ConversationFilters = {
+    status: activeTab === 'all' ? undefined : activeTab,
+    inboxId: inboxFilter ? Number(inboxFilter) : undefined,
+    search: search || undefined,
+  };
 
   const { data, isLoading, isError, refetch, fetchNextPage, hasNextPage, isFetchingNextPage } =
     useConversations(filters);
 
-  const conversations = useMemo(
-    () => data?.pages.flatMap(p => p.data) ?? [],
-    [data],
-  );
+  const conversations = useMemo(() => data?.pages.flatMap(p => p.data) ?? [], [data]);
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return conversations;
-    return conversations.filter(c =>
-      conversationContactName(c).toLowerCase().includes(q),
-    );
-  }, [conversations, search]);
-
-  useEffect(() => {
-    const el = sentinelRef.current;
+  const obsRef = useRef<IntersectionObserver | null>(null);
+  const sentinelCallback = (el: HTMLDivElement | null) => {
+    obsRef.current?.disconnect();
     if (!el) return;
-    const obs = new IntersectionObserver(entries => {
+    obsRef.current = new IntersectionObserver(entries => {
       if (entries[0]?.isIntersecting && hasNextPage && !isFetchingNextPage) {
         void fetchNextPage();
       }
     });
-    obs.observe(el);
-    return () => obs.disconnect();
-  }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
+    obsRef.current.observe(el);
+  };
 
   return (
-    <div className="w-[280px] border-r flex flex-col h-full bg-white shrink-0">
+    <div className="w-[280px] border-e flex flex-col h-full bg-white shrink-0">
       <div className="border-b p-3 space-y-2 shrink-0">
         <div className="relative">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Search className="absolute start-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Search…"
-            className="pl-8"
+            value={rawSearch}
+            onChange={e => setRawSearch(e.target.value)}
+            placeholder="Search conversations…"
+            className="ps-8"
+            aria-label="Search conversations"
           />
         </div>
-        <select
+
+        <Select
           value={inboxFilter}
           onChange={e => setInboxFilter(e.target.value)}
-          className="text-xs border rounded px-2 py-1 w-full"
+          className="text-xs"
+          aria-label="Filter by inbox"
         >
           <option value="">All inboxes</option>
           {inboxes.map(inbox => (
@@ -106,12 +98,15 @@ export function ConversationList({ selectedId, onSelect }: Props) {
               {inbox.name}
             </option>
           ))}
-        </select>
-        <div className="flex gap-1">
+        </Select>
+
+        <div className="flex gap-1" role="tablist" aria-label="Conversation status">
           {TABS.map(tab => (
             <button
               key={tab.id}
               type="button"
+              role="tab"
+              aria-selected={activeTab === tab.id}
               onClick={() => setActiveTab(tab.id)}
               className={
                 activeTab === tab.id
@@ -125,9 +120,9 @@ export function ConversationList({ selectedId, onSelect }: Props) {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto min-h-0">
+      <div className="flex-1 overflow-y-auto min-h-0" role="listbox" aria-label="Conversations">
         {isLoading &&
-          Array.from({ length: 3 }).map((_, i) => (
+          Array.from({ length: 4 }).map((_, i) => (
             <Skeleton key={i} className="h-16 mx-3 my-1 rounded-lg" />
           ))}
 
@@ -140,9 +135,15 @@ export function ConversationList({ selectedId, onSelect }: Props) {
           </div>
         )}
 
+        {!isLoading && !isError && conversations.length === 0 && (
+          <p className="p-4 text-sm text-muted-foreground text-center">
+            {search ? `No results for "${search}"` : 'No conversations'}
+          </p>
+        )}
+
         {!isLoading &&
           !isError &&
-          filtered.map(conv => (
+          conversations.map(conv => (
             <ConversationListItem
               key={conv.id}
               conversation={conv}
@@ -151,11 +152,7 @@ export function ConversationList({ selectedId, onSelect }: Props) {
             />
           ))}
 
-        {!isLoading && !isError && filtered.length === 0 && (
-          <p className="p-4 text-sm text-muted-foreground text-center">No conversations</p>
-        )}
-
-        <div ref={sentinelRef} className="h-2" />
+        <div ref={sentinelCallback} className="h-2" />
         {isFetchingNextPage && <Skeleton className="h-12 mx-3 my-1 rounded-lg" />}
       </div>
     </div>

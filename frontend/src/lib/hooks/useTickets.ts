@@ -9,7 +9,7 @@ import {
   listTickets,
   updateTicket,
 } from '@/lib/api/tickets';
-import { isDemoDataEnabled } from '@/lib/demo/config';
+import { isDemoDataEnabled, isGatewayQueryEnabled } from '@/lib/demo/config';
 import {
   DEMO_TICKET_AGENTS,
   DEMO_TICKETS,
@@ -70,10 +70,9 @@ async function loadTickets(): Promise<TicketView[]> {
   try {
     const res = await listTickets();
     const rows = ((res as { data?: unknown[] }).data ?? res) as Record<string, unknown>[];
-    const mapped = Array.isArray(rows) ? rows.map(mapApiTicket) : [];
-    return mapped.length ? mapped : DEMO_TICKETS;
+    return Array.isArray(rows) ? rows.map(mapApiTicket) : [];
   } catch {
-    return DEMO_TICKETS;
+    return [];
   }
 }
 
@@ -81,9 +80,9 @@ async function loadMessages(ticketId: string): Promise<TicketMessageView[]> {
   if (isDemoDataEnabled()) return demoMessagesFor(ticketId);
   try {
     const rows = await getTicketMessages(ticketId);
-    return rows.length ? rows : demoMessagesFor(ticketId);
+    return rows.length ? rows : [];
   } catch {
-    return demoMessagesFor(ticketId);
+    return [];
   }
 }
 
@@ -92,9 +91,11 @@ export function useTicketsDemoMode() {
 }
 
 export function useTicketsList() {
+  const gwEnabled = isGatewayQueryEnabled();
   return useQuery({
     queryKey: [...TICKETS_KEY, isDemoDataEnabled()],
     queryFn: loadTickets,
+    enabled: gwEnabled,
   });
 }
 

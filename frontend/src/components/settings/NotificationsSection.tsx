@@ -1,38 +1,108 @@
 'use client';
 
-import { useState } from 'react';
-import { Switch } from '@/components/ui/switch';
-import { Label } from '@/components/ui/label';
-import { Button } from '@/components/ui/button';
+import { useEffect, useState } from 'react';
+import { useQuery, useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { getNotificationPreferences, updateNotificationPreferences } from '@/lib/api/settings';
+import { DEMO_NOTIFICATION_PREFS, settingsDemoDelay } from '@/lib/demo/settingsFixture';
+import { isDemoDataEnabled } from '@/lib/demo/config';
+import { Switch } from '@/components/ui/switch';
+import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Mail, Bell } from 'lucide-react';
 
-const NOTIFICATION_PREFS = [
-  { id: 'new_conversation', label: 'New conversation assigned to me', group: 'In-app' },
-  { id: 'mention', label: 'Someone mentions me in a note', group: 'In-app' },
-  { id: 'sla_breach', label: 'SLA breach alert', group: 'In-app' },
-  { id: 'incoming_call', label: 'Incoming call notification', group: 'In-app' },
-  { id: 'email_new_conv', label: 'New conversation (email digest)', group: 'Email' },
-  { id: 'email_sla', label: 'SLA breached (email alert)', group: 'Email' },
-  { id: 'email_ticket', label: 'Ticket assigned to me (email)', group: 'Email' },
-  { id: 'sms_call_missed', label: 'Missed call alert (SMS)', group: 'SMS' },
-];
+const NOTIFICATION_TYPES = [
+  {
+    key: 'conversation_creation',
+    label: 'New conversation',
+    description: 'When a new conversation is created',
+  },
+  {
+    key: 'conversation_assignment',
+    label: 'Conversation assigned',
+    description: 'When a conversation is assigned to you',
+  },
+  {
+    key: 'conversation_mention',
+    label: 'Mentioned',
+    description: 'When someone mentions you in a note',
+  },
+  {
+    key: 'assigned_conversation_creation',
+    label: 'New message',
+    description: 'When your assigned conversation gets a new message',
+  },
+  {
+    key: 'participant_conversation_creation',
+    label: 'Participant message',
+    description: 'New message in a conversation you participate in',
+  },
+] as const;
+
+interface PrefsState {
+  email: Record<string, boolean>;
+  push: Record<string, boolean>;
+}
 
 export function NotificationsSection() {
-  const [prefs, setPrefs] = useState<Record<string, boolean>>({
-    new_conversation: true,
-    mention: true,
-    sla_breach: true,
-    incoming_call: true,
-    email_new_conv: false,
-    email_sla: true,
-    email_ticket: false,
-    sms_call_missed: false,
+  const { data: prefs, isLoading } = useQuery({
+    queryKey: ['notification-prefs'],
+    queryFn: async () => {
+      if (isDemoDataEnabled()) return DEMO_NOTIFICATION_PREFS;
+      try {
+        return await getNotificationPreferences();
+      } catch {
+        return DEMO_NOTIFICATION_PREFS;
+      }
+    },
   });
 
-  const groups = [...new Set(NOTIFICATION_PREFS.map(p => p.group))];
+  const [state, setState] = useState<PrefsState>({ email: {}, push: {} });
 
-  function toggle(id: string) {
-    setPrefs(prev => ({ ...prev, [id]: !prev[id] }));
+  useEffect(() => {
+    if (!prefs) return;
+    const email: Record<string, boolean> = {};
+    const push: Record<string, boolean> = {};
+    NOTIFICATION_TYPES.forEach(({ key }) => {
+      email[key] = prefs.selected_email_flags.includes(key);
+      push[key] = prefs.selected_push_flags.includes(key);
+    });
+    setState({ email, push });
+  }, [prefs]);
+
+  const { mutate: save, isPending } = useMutation({
+    mutationFn: async () => {
+      if (isDemoDataEnabled()) {
+        await settingsDemoDelay(500);
+        return;
+      }
+      await updateNotificationPreferences({
+        notifications: NOTIFICATION_TYPES.map(({ key }) => ({
+          notification_type: key,
+          email: state.email[key] ?? false,
+          push: state.push[key] ?? false,
+        })),
+      });
+    },
+    onSuccess: () => toast.success('Notification preferences saved'),
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  function toggle(channel: 'email' | 'push', key: string) {
+    setState(prev => ({
+      ...prev,
+      [channel]: { ...prev[channel], [key]: !prev[channel][key] },
+    }));
+  }
+
+  if (isLoading) {
+    return (
+      <div className="space-y-3">
+        {[1, 2, 3, 4, 5].map(i => (
+          <Skeleton key={i} className="h-12" />
+        ))}
+      </div>
+    );
   }
 
   return (
@@ -40,31 +110,63 @@ export function NotificationsSection() {
       <div>
         <h1 className="text-lg font-semibold">Notifications</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Control which events trigger alerts for your account.
+          Choose how you receive notifications for different events.
         </p>
       </div>
 
-      {groups.map(group => (
-        <div key={group} className="space-y-3">
-          <h2 className="text-sm font-semibold border-b pb-1">{group}</h2>
-          {NOTIFICATION_PREFS.filter(p => p.group === group).map(({ id, label }) => (
-            <div key={id} className="flex items-center justify-between py-1">
-              <Label htmlFor={id} className="text-sm cursor-pointer">
-                {label}
-              </Label>
-              <Switch id={id} checked={prefs[id] ?? false} onCheckedChange={() => toggle(id)} />
-            </div>
-          ))}
-        </div>
-      ))}
+      <div className="border rounded-lg overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-muted/40 border-b">
+            <tr>
+              <th className="text-start px-4 py-2.5 font-medium text-muted-foreground">Event</th>
+              <th className="px-4 py-2.5 text-center w-24">
+                <div className="flex items-center justify-center gap-1">
+                  <Mail size={13} /> Email
+                </div>
+              </th>
+              <th className="px-4 py-2.5 text-center w-24">
+                <div className="flex items-center justify-center gap-1">
+                  <Bell size={13} /> Push
+                </div>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {NOTIFICATION_TYPES.map(({ key, label, description }) => (
+              <tr key={key} className="border-b last:border-0">
+                <td className="px-4 py-3">
+                  <p className="font-medium text-sm">{label}</p>
+                  <p className="text-xs text-muted-foreground">{description}</p>
+                </td>
+                <td className="px-4 py-3 text-center">
+                  <Switch
+                    checked={state.email[key] ?? false}
+                    onCheckedChange={() => toggle('email', key)}
+                    aria-label={`Email for ${label}`}
+                  />
+                </td>
+                <td className="px-4 py-3 text-center">
+                  <Switch
+                    checked={state.push[key] ?? false}
+                    onCheckedChange={() => toggle('push', key)}
+                    aria-label={`Push for ${label}`}
+                  />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
 
-      <Button
-        type="button"
-        onClick={() => toast.success('Notification preferences saved')}
-        className="bg-brand-primary hover:bg-brand-primary/90"
-      >
-        Save preferences
-      </Button>
+      <div className="flex justify-end">
+        <Button
+          disabled={isPending}
+          onClick={() => save()}
+          className="bg-brand-primary hover:bg-brand-primary/90"
+        >
+          {isPending ? 'Saving…' : 'Save preferences'}
+        </Button>
+      </div>
     </div>
   );
 }

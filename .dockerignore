@@ -1,0 +1,6 @@
+.git
+.upstream-inventory
+**/node_modules
+**/.env
+*.md
+doc/

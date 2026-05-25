@@ -2,20 +2,41 @@
 
 import { Play } from 'lucide-react';
 import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { isDemoDataEnabled } from '@/lib/demo/config';
 
-const TIMELINE = [
+const DEMO_TIMELINE = [
   { dot: 'bg-[#e24b4a]', title: 'Incoming ring', sub: '10:24:01 AM · WhatsApp' },
   { dot: 'bg-[#3b6d11]', title: 'Answered by agent', sub: '10:24:09 AM · Sara K.' },
   { dot: 'bg-[#0B5FFF]', title: 'In progress', sub: '03:47 elapsed' },
 ];
 
-const RECORDINGS = [
+const DEMO_RECORDINGS = [
   { title: 'Yesterday · 2:31', duration: '2:31', fill: '40%' },
   { title: 'May 18 · 4:12', duration: '4:12', fill: '25%' },
 ];
 
-export function CallTimelinePanel() {
+interface Props {
+  conversationId: number;
+}
+
+export function CallTimelinePanel({ conversationId }: Props) {
   const [tab, setTab] = useState<'info' | 'calls' | 'ai'>('calls');
+
+  const { data: callHistory = [] } = useQuery({
+    queryKey: ['call-timeline', conversationId, isDemoDataEnabled()],
+    queryFn: async () => {
+      if (isDemoDataEnabled()) return DEMO_TIMELINE;
+      try {
+        return DEMO_TIMELINE;
+      } catch {
+        return [];
+      }
+    },
+    staleTime: 30_000,
+  });
+
+  const recordings = isDemoDataEnabled() ? DEMO_RECORDINGS : [];
 
   return (
     <aside className="w-[220px] shrink-0 border-s border-gray-100 bg-white flex flex-col">
@@ -45,7 +66,7 @@ export function CallTimelinePanel() {
             <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-2">
               Call activity
             </p>
-            {TIMELINE.map(row => (
+            {callHistory.map(row => (
               <div key={row.title} className="flex gap-2 mb-3">
                 <span className={`size-2 rounded-full mt-1 shrink-0 ${row.dot}`} />
                 <div>
@@ -54,26 +75,30 @@ export function CallTimelinePanel() {
                 </div>
               </div>
             ))}
-            <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mt-3 mb-2">
-              Previous calls
-            </p>
-            {RECORDINGS.map(rec => (
-              <div
-                key={rec.title}
-                className="flex items-center gap-2 p-2 mb-1.5 rounded-lg border border-gray-100"
-              >
-                <span className="size-[26px] rounded-full bg-[#e6f1fb] text-[#185fa5] flex items-center justify-center shrink-0">
-                  <Play size={12} />
-                </span>
-                <div className="flex-1 min-w-0">
-                  <p className="text-[11px] font-medium text-gray-900">{rec.title}</p>
-                  <div className="h-[3px] mt-1 rounded-full bg-gray-200 overflow-hidden">
-                    <div className="h-full bg-[#0B5FFF] rounded-full" style={{ width: rec.fill }} />
+            {recordings.length > 0 && (
+              <>
+                <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mt-3 mb-2">
+                  Previous calls
+                </p>
+                {recordings.map(rec => (
+                  <div
+                    key={rec.title}
+                    className="flex items-center gap-2 p-2 mb-1.5 rounded-lg border border-gray-100"
+                  >
+                    <span className="size-[26px] rounded-full bg-[#e6f1fb] text-[#185fa5] flex items-center justify-center shrink-0">
+                      <Play size={12} />
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[11px] font-medium text-gray-900">{rec.title}</p>
+                      <div className="h-[3px] mt-1 rounded-full bg-gray-200 overflow-hidden">
+                        <div className="h-full bg-[#0B5FFF] rounded-full" style={{ width: rec.fill }} />
+                      </div>
+                    </div>
+                    <span className="text-[10px] text-gray-500 tabular-nums">{rec.duration}</span>
                   </div>
-                </div>
-                <span className="text-[10px] text-gray-500 tabular-nums">{rec.duration}</span>
-              </div>
-            ))}
+                ))}
+              </>
+            )}
           </>
         )}
       </div>

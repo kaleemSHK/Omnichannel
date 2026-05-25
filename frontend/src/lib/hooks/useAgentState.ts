@@ -2,36 +2,43 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { listAgents, listQueues, setAgentState } from '@/lib/api/routing';
+import { isDemoDataEnabled, shouldSkipGatewayFetch } from '@/lib/demo/config';
 import { DEMO_AGENTS, DEMO_QUEUES } from '@/lib/demo/callingFixture';
 import type { AgentState } from '@/types';
 
 export function useAgents() {
+  const gwEnabled = !shouldSkipGatewayFetch() || isDemoDataEnabled();
   return useQuery({
-    queryKey: ['agents'],
+    queryKey: ['agents', isDemoDataEnabled()],
     queryFn: async () => {
+      if (shouldSkipGatewayFetch()) return DEMO_AGENTS;
       try {
-        const data = await listAgents();
-        return data.length ? data : DEMO_AGENTS;
+        const rows = await listAgents();
+        return rows.length ? rows : DEMO_AGENTS;
       } catch {
         return DEMO_AGENTS;
       }
     },
-    refetchInterval: 5_000,
+    enabled: gwEnabled,
+    refetchInterval: gwEnabled ? 5_000 : false,
   });
 }
 
 export function useQueues() {
+  const gwEnabled = !shouldSkipGatewayFetch() || isDemoDataEnabled();
   return useQuery({
-    queryKey: ['queues'],
+    queryKey: ['queues', isDemoDataEnabled()],
     queryFn: async () => {
+      if (shouldSkipGatewayFetch()) return DEMO_QUEUES;
       try {
-        const data = await listQueues();
-        return data.length ? data : DEMO_QUEUES;
+        const rows = await listQueues();
+        return rows.length ? rows : DEMO_QUEUES;
       } catch {
         return DEMO_QUEUES;
       }
     },
-    refetchInterval: 5_000,
+    enabled: gwEnabled,
+    refetchInterval: gwEnabled ? 5_000 : false,
   });
 }
 

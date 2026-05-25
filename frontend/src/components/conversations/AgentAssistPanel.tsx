@@ -53,11 +53,7 @@ export function AgentAssistPanel({ conversationId }: Props) {
           messages: payload,
         });
       } catch {
-        return {
-          suggestion:
-            'وعليكم السلام! يسعدنا مساعدتك في ترقية خط الألياف. هل يمكنك إرسال رقم الحساب المسجل؟',
-          confidence: 0.92,
-        };
+        return { suggestion: '', confidence: 0 };
       }
     },
     enabled: !!conversationId && messages.length > 0,
@@ -100,19 +96,30 @@ export function AgentAssistPanel({ conversationId }: Props) {
       confidence: number;
       sentiment: 'positive' | 'neutral' | 'negative';
     }> => {
-      try {
-        await classifyConversation(String(conversationId));
+      if (isDemoDataEnabled()) {
         return {
           category: 'support',
           intent: 'plan_change',
           confidence: 0.8,
           sentiment: 'neutral',
         };
+      }
+      try {
+        const res = await classifyConversation(String(conversationId));
+        return {
+          category: res.category ?? 'support',
+          intent: res.intent ?? 'general',
+          confidence: res.confidence ?? 0.5,
+          sentiment: ((res as { sentiment?: string }).sentiment ?? 'neutral') as
+            | 'positive'
+            | 'neutral'
+            | 'negative',
+        };
       } catch {
         return {
           category: 'support',
-          intent: 'plan_change',
-          confidence: 0.8,
+          intent: 'general',
+          confidence: 0.5,
           sentiment: 'neutral',
         };
       }

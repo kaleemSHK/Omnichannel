@@ -1,6 +1,9 @@
 'use client';
 
-import { initials, relativeTime } from '@/lib/utils/conversations';
+import { initials } from '@/lib/utils/conversations';
+import { MessageAttachments } from '@/components/conversations/MessageAttachments';
+import { parseMentionSegments } from '@/lib/utils/mentions';
+import { useLiveRelativeTime } from '@/hooks/useLiveRelativeTime';
 import { cn } from '@/lib/utils/cn';
 import type { CWMessage } from '@/types';
 
@@ -8,10 +11,25 @@ interface Props {
   message: CWMessage;
 }
 
+function messageTimestampIso(createdAt: number | string): string {
+  const ms =
+    typeof createdAt === 'number'
+      ? createdAt > 1e12
+        ? createdAt
+        : createdAt * 1000
+      : new Date(createdAt).getTime();
+  return new Date(ms).toISOString();
+}
+
 export function MessageBubble({ message }: Props) {
+  const timeLabel = useLiveRelativeTime(message.created_at);
+
   if (message.message_type === 2) {
+    const safe = message.content.replace(/<[^>]+>/g, '').trim();
     return (
-      <div className="text-xs text-center text-muted-foreground py-1">{message.content}</div>
+      <div className="text-xs text-center text-muted-foreground py-1" aria-live="polite">
+        {safe}
+      </div>
     );
   }
 
@@ -40,21 +58,27 @@ export function MessageBubble({ message }: Props) {
           {isPrivateNote && (
             <span className="text-[10px] text-amber-600 font-medium block mb-1">Private note</span>
           )}
-          <p dir="auto">{message.content}</p>
-          {message.attachments?.map(att => (
-            <a
-              key={att.id}
-              href={att.data_url}
-              target="_blank"
-              rel="noreferrer"
-              className="block text-xs text-brand-primary mt-1 underline"
-            >
-              Attachment ({att.file_type})
-            </a>
-          ))}
+          {message.content.trim() ? (
+            <p dir="auto" className="whitespace-pre-wrap">
+              {isPrivateNote
+                ? parseMentionSegments(message.content).map((seg, i) =>
+                    seg.type === 'mention' ? (
+                      <span key={i} className="font-semibold text-amber-800">
+                        @{seg.value}
+                      </span>
+                    ) : (
+                      <span key={i}>{seg.value}</span>
+                    ),
+                  )
+                : message.content}
+            </p>
+          ) : null}
+          {message.attachments && message.attachments.length > 0 && (
+            <MessageAttachments attachments={message.attachments} />
+          )}
         </div>
         <p className="text-xs text-muted-foreground mt-1 px-1">
-          {relativeTime(message.created_at)}
+          <time dateTime={messageTimestampIso(message.created_at)}>{timeLabel}</time>
         </p>
       </div>
     </div>

@@ -1,155 +1,164 @@
 'use client';
 
-import { useState } from 'react';
-import { Button } from '@/components/ui/button';
-import { Switch } from '@/components/ui/switch';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select-radix';
+import { useEffect, useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { getBusinessHours, updateBusinessHours, type BusinessHourEntry } from '@/lib/api/settings';
+import { DEMO_BUSINESS_HOURS, settingsDemoDelay } from '@/lib/demo/settingsFixture';
+import { isDemoDataEnabled } from '@/lib/demo/config';
+import { Switch } from '@/components/ui/switch';
+import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
+import { cn } from '@/lib/utils/cn';
 
-const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'] as const;
-type Day = (typeof DAYS)[number];
+const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
-const HOURS = Array.from({ length: 24 }, (_, i) => {
-  const h = String(i).padStart(2, '0');
-  return [`${h}:00`, `${h}:30`];
-}).flat();
+const TIME_OPTIONS = Array.from({ length: 48 }, (_, i) => {
+  const h = Math.floor(i / 2);
+  const m = i % 2 === 0 ? '00' : '30';
+  return `${String(h).padStart(2, '0')}:${m}`;
+});
 
-interface DaySchedule {
-  enabled: boolean;
-  open: string;
-  close: string;
+function fmt(h: number, m: number) {
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
-const DEFAULT_SCHEDULE: Record<Day, DaySchedule> = {
-  Monday: { enabled: true, open: '09:00', close: '18:00' },
-  Tuesday: { enabled: true, open: '09:00', close: '18:00' },
-  Wednesday: { enabled: true, open: '09:00', close: '18:00' },
-  Thursday: { enabled: true, open: '09:00', close: '18:00' },
-  Friday: { enabled: true, open: '09:00', close: '17:00' },
-  Saturday: { enabled: false, open: '09:00', close: '13:00' },
-  Sunday: { enabled: false, open: '09:00', close: '13:00' },
-};
+function parse(v: string): { h: number; m: number } {
+  const [hh, mm] = v.split(':').map(Number);
+  return { h: hh ?? 0, m: mm ?? 0 };
+}
 
 export function BusinessHoursSection() {
-  const [schedule, setSchedule] = useState<Record<Day, DaySchedule>>(DEFAULT_SCHEDULE);
-  const [timezone, setTimezone] = useState('Asia/Muscat');
-  const [saving, setSaving] = useState(false);
+  const qc = useQueryClient();
+  const [hours, setHours] = useState<BusinessHourEntry[]>([]);
 
-  function updateDay(day: Day, patch: Partial<DaySchedule>) {
-    setSchedule(prev => ({ ...prev, [day]: { ...prev[day], ...patch } }));
+  const { data, isLoading } = useQuery({
+    queryKey: ['business-hours'],
+    queryFn: async () => {
+      if (isDemoDataEnabled()) return DEMO_BUSINESS_HOURS;
+      try {
+        const list = await getBusinessHours();
+        return list.length ? list : DEMO_BUSINESS_HOURS;
+      } catch {
+        return DEMO_BUSINESS_HOURS;
+      }
+    },
+  });
+
+  useEffect(() => {
+    if (data?.length) {
+      setHours([...data].sort((a, b) => a.day_of_week - b.day_of_week));
+    }
+  }, [data]);
+
+  const { mutate: save, isPending } = useMutation({
+    mutationFn: async () => {
+      if (isDemoDataEnabled()) {
+        await settingsDemoDelay(500);
+        return;
+      }
+      await updateBusinessHours(hours);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['business-hours'] });
+      toast.success('Business hours saved');
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  function patch(dayOfWeek: number, changes: Partial<BusinessHourEntry>) {
+    setHours(prev => prev.map(h => (h.day_of_week === dayOfWeek ? { ...h, ...changes } : h)));
   }
 
-  async function handleSave() {
-    setSaving(true);
-    await new Promise(r => setTimeout(r, 600));
-    setSaving(false);
-    toast.success('Business hours saved');
+  if (isLoading) {
+    return (
+      <div className="space-y-2">
+        {[1, 2, 3, 4, 5, 6, 7].map(i => (
+          <Skeleton key={i} className="h-10 rounded" />
+        ))}
+      </div>
+    );
   }
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-lg font-semibold">Business hours</h1>
+        <h1 className="text-lg font-semibold">Business Hours</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Define when your team is available. SLA timers respect these windows when &quot;Business
-          hours only&quot; is enabled on a policy.
+          Define your account-wide operating hours. Inboxes can override these per-inbox.
         </p>
       </div>
 
-      <div className="space-y-1.5 max-w-xs">
-        <label className="text-sm font-medium">Timezone</label>
-        <Select value={timezone} onValueChange={setTimezone}>
-          <SelectTrigger>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {[
-              'Asia/Muscat',
-              'Asia/Dubai',
-              'Asia/Riyadh',
-              'Asia/Kuwait',
-              'UTC',
-              'Europe/London',
-              'America/New_York',
-            ].map(tz => (
-              <SelectItem key={tz} value={tz}>
-                {tz}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
       <div className="border rounded-lg overflow-hidden">
-        <div className="grid grid-cols-[120px_60px_1fr_16px_1fr] gap-3 bg-muted/40 border-b px-4 py-2 text-xs font-semibold text-muted-foreground uppercase">
-          <span>Day</span>
-          <span>Open</span>
-          <span>Opens at</span>
-          <span />
-          <span>Closes at</span>
-        </div>
+        {hours.map((day, idx) => (
+          <div
+            key={day.day_of_week}
+            className={cn(
+              'flex items-center gap-4 px-4 py-3',
+              idx < hours.length - 1 && 'border-b',
+              day.closed_all_day && 'opacity-60',
+            )}
+          >
+            <Switch
+              checked={!day.closed_all_day}
+              onCheckedChange={open => patch(day.day_of_week, { closed_all_day: !open })}
+              aria-label={DAY_NAMES[day.day_of_week]}
+            />
 
-        {DAYS.map(day => {
-          const d = schedule[day];
-          return (
-            <div
-              key={day}
-              className="grid grid-cols-[120px_60px_1fr_16px_1fr] gap-3 items-center px-4 py-3 border-b last:border-0 hover:bg-muted/10 transition-colors"
-            >
-              <span className="text-sm font-medium">{day}</span>
-              <Switch checked={d.enabled} onCheckedChange={v => updateDay(day, { enabled: v })} />
-              <Select
-                value={d.open}
-                onValueChange={v => updateDay(day, { open: v })}
-                disabled={!d.enabled}
-              >
-                <SelectTrigger className="h-8 text-sm">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="max-h-48 overflow-y-auto">
-                  {HOURS.map(h => (
-                    <SelectItem key={h} value={h}>
-                      {h}
-                    </SelectItem>
+            <span className="w-28 text-sm shrink-0">
+              {DAY_NAMES[day.day_of_week] ?? day.name}
+            </span>
+
+            {!day.closed_all_day ? (
+              <div className="flex items-center gap-2 flex-1">
+                <select
+                  className="border rounded px-2 py-1.5 text-sm bg-background w-24"
+                  value={fmt(day.open_hour, day.open_minutes)}
+                  onChange={e => {
+                    const { h, m } = parse(e.target.value);
+                    patch(day.day_of_week, { open_hour: h, open_minutes: m });
+                  }}
+                  aria-label={`${DAY_NAMES[day.day_of_week]} open time`}
+                >
+                  {TIME_OPTIONS.map(t => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
                   ))}
-                </SelectContent>
-              </Select>
-              <span className="text-xs text-muted-foreground text-center">→</span>
-              <Select
-                value={d.close}
-                onValueChange={v => updateDay(day, { close: v })}
-                disabled={!d.enabled}
-              >
-                <SelectTrigger className="h-8 text-sm">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="max-h-48 overflow-y-auto">
-                  {HOURS.map(h => (
-                    <SelectItem key={h} value={h}>
-                      {h}
-                    </SelectItem>
+                </select>
+                <span className="text-muted-foreground text-sm">–</span>
+                <select
+                  className="border rounded px-2 py-1.5 text-sm bg-background w-24"
+                  value={fmt(day.close_hour, day.close_minutes)}
+                  onChange={e => {
+                    const { h, m } = parse(e.target.value);
+                    patch(day.day_of_week, { close_hour: h, close_minutes: m });
+                  }}
+                  aria-label={`${DAY_NAMES[day.day_of_week]} close time`}
+                >
+                  {TIME_OPTIONS.map(t => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
                   ))}
-                </SelectContent>
-              </Select>
-            </div>
-          );
-        })}
+                </select>
+              </div>
+            ) : (
+              <span className="text-xs text-muted-foreground flex-1">Closed all day</span>
+            )}
+          </div>
+        ))}
       </div>
 
-      <Button
-        type="button"
-        onClick={handleSave}
-        disabled={saving}
-        className="bg-brand-primary hover:bg-brand-primary/90"
-      >
-        {saving ? 'Saving…' : 'Save business hours'}
-      </Button>
+      <div className="flex justify-end">
+        <Button
+          disabled={isPending}
+          onClick={() => save()}
+          className="bg-brand-primary hover:bg-brand-primary/90"
+        >
+          {isPending ? 'Saving…' : 'Save hours'}
+        </Button>
+      </div>
     </div>
   );
 }

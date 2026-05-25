@@ -12,11 +12,11 @@ import { Select } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   assignConversation,
+  listChatwootAgents,
   updateConversationStatus,
 } from '@/lib/api/conversations';
 import { useMessages } from '@/lib/hooks/useConversations';
 import { useAssignTeam, useTeams } from '@/lib/hooks/useChatwootExtras';
-import { listAgents } from '@/lib/api/routing';
 import { subscribeToConversation } from '@/lib/api/websocket';
 import {
   conversationContactName,
@@ -27,7 +27,7 @@ import { useAuthStore } from '@/lib/store/auth';
 import { can } from '@/lib/rbac';
 import { useQuery } from '@tanstack/react-query';
 import { DEMO_AGENTS } from '@/lib/demo/callingFixture';
-import { shouldSkipGatewayFetch } from '@/lib/demo/config';
+import { isDemoDataEnabled } from '@/lib/demo/config';
 import type { CWConversation } from '@/types';
 
 interface Props {
@@ -41,20 +41,25 @@ export function MessageThread({ conversation, onToggleAssist, assistOpen }: Prop
   const user = useAuthStore(s => s.user);
   const role = user?.role;
   const qc = useQueryClient();
-  const { data: messages = [], isLoading } = useMessages(conversation?.id ?? null);
+  const { data: messages = [], isLoading, isError, error } = useMessages(conversation?.id ?? null);
 
   const { data: agents = [] } = useQuery({
-    queryKey: ['routing-agents'],
+    queryKey: ['cw-agents', isDemoDataEnabled()],
     queryFn: async () => {
-      if (shouldSkipGatewayFetch()) return DEMO_AGENTS;
+      if (isDemoDataEnabled()) {
+        return DEMO_AGENTS.map(a => ({
+          id: Number(a.agentId),
+          name: a.name,
+          email: '',
+        }));
+      }
       try {
-        const data = await listAgents();
-        return data.length ? data : DEMO_AGENTS;
+        return await listChatwootAgents();
       } catch {
-        return DEMO_AGENTS;
+        return [];
       }
     },
-    staleTime: 60_000,
+    staleTime: 300_000,
   });
 
   const { data: teams = [] } = useTeams();
@@ -80,16 +85,22 @@ export function MessageThread({ conversation, onToggleAssist, assistOpen }: Prop
 
   useEffect(() => {
     if (!conversation || !user?.chatwootAccountId) return;
-    return subscribeToConversation(user.chatwootAccountId, conversation.id, {
-      onMessage: () => {
-        qc.invalidateQueries({ queryKey: ['messages', conversation.id] });
-        qc.invalidateQueries({ queryKey: ['conversations'] });
-      },
-      onStatusChange: () => {
-        qc.invalidateQueries({ queryKey: ['conversations'] });
-      },
-    });
-  }, [conversation, user?.chatwootAccountId, qc]);
+    let unsubscribe: (() => void) | undefined;
+    try {
+      unsubscribe = subscribeToConversation(user.chatwootAccountId, conversation.id, {
+        onMessage: () => {
+          qc.invalidateQueries({ queryKey: ['messages', conversation.id] });
+          qc.invalidateQueries({ queryKey: ['conversations'] });
+        },
+        onStatusChange: () => {
+          qc.invalidateQueries({ queryKey: ['conversations'] });
+        },
+      });
+    } catch (err) {
+      console.warn('[MessageThread] subscribeToConversation failed', err);
+    }
+    return () => unsubscribe?.();
+  }, [conversation?.id, user?.chatwootAccountId, qc]);
 
   if (!conversation) {
     return (
@@ -128,7 +139,7 @@ export function MessageThread({ conversation, onToggleAssist, assistOpen }: Prop
             >
               <option value="">Assign agent…</option>
               {agents.map(a => (
-                <option key={a.id} value={a.agentId}>
+                <option key={a.id} value={String(a.id)}>
                   {a.name}
                 </option>
               ))}
@@ -187,6 +198,11 @@ export function MessageThread({ conversation, onToggleAssist, assistOpen }: Prop
       </div>
 
       <div className="flex-1 overflow-y-auto flex flex-col gap-2 px-4 py-4 min-h-0">
+        {isError && (
+          <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-md px-3 py-2">
+            Could not load messages: {error instanceof Error ? error.message : 'API error'}
+          </p>
+        )}
         {isLoading &&
           Array.from({ length: 4 }).map((_, i) => (
             <Skeleton key={i} className="h-12 w-2/3 rounded-lg" />

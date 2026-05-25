@@ -30,16 +30,12 @@ export function UpgradePlanModal({ open, onClose }: Props) {
                 <div>
                   <p className="font-medium text-gray-900">{plan.name}</p>
                   <p className="text-xs text-gray-500 mt-1">
-                    Up to {plan.seats} agents · {plan.features?.slice(0, 2).join(', ')}
+                    Up to {plan.seats} agents
+                    {plan.featureSummary ? ` · ${plan.featureSummary}` : ''}
                   </p>
                 </div>
                 <p className="text-sm font-semibold text-[#0B5FFF]">
-                  {formatOmr(
-                    (plan as { monthlyPrice?: number; basePriceOmr?: number }).monthlyPrice ??
-                      (plan as { basePriceOmr?: number }).basePriceOmr ??
-                      0,
-                  )}
-                  /mo
+                  {formatOmr(plan.monthlyPrice)}/mo
                 </p>
               </div>
               <button

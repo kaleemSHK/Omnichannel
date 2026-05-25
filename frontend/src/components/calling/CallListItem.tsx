@@ -1,7 +1,8 @@
 'use client';
 
 import { cn } from '@/lib/utils/cn';
-import { demoCallerName } from '@/lib/demo/callsFixture';
+import { useCallsStore } from '@/lib/store/calls';
+import { resolveCallerName } from '@/lib/utils/calling';
 import type { CallSession, CDRRecord } from '@/types';
 
 function initials(label: string): string {
@@ -18,7 +19,9 @@ interface SessionProps {
 }
 
 export function CallSessionItem({ session, active, elapsed, onSelect }: SessionProps) {
-  const name = demoCallerName(session);
+  const contactCache = useCallsStore(s => s.contactCache);
+  const name = resolveCallerName(session, contactCache);
+
   return (
     <button
       type="button"
@@ -39,7 +42,9 @@ export function CallSessionItem({ session, active, elapsed, onSelect }: SessionP
         <span className="inline-flex px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-green-100 text-green-700">
           Live
         </span>
-        {elapsed && <p className="text-[10px] text-muted-foreground tabular-nums mt-0.5">{elapsed}</p>}
+        {elapsed && (
+          <p className="text-[10px] text-muted-foreground tabular-nums mt-0.5">{elapsed}</p>
+        )}
       </div>
     </button>
   );
@@ -56,6 +61,7 @@ export function CdrListItem({ record, label, active, onSelect }: CdrProps) {
   const missed = record.outcome === 'missed';
   const mins = Math.floor(record.duration / 60);
   const secs = String(record.duration % 60).padStart(2, '0');
+
   return (
     <button
       type="button"

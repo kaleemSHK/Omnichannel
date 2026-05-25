@@ -1,0 +1,81 @@
+{
+  "name": "blinkone-mobile",
+  "version": "1.0.0",
+  "main": "expo-router/entry",
+  "scripts": {
+    "start": "expo start --dev-client",
+    "android": "expo start --dev-client --android",
+    "ios": "expo start --dev-client --ios",
+    "prebuild:android": "expo prebuild --platform android --clean",
+    "build:dev:android": "npx eas-cli build --profile development --platform android",
+    "build:apk": "npx eas-cli build --platform android --profile preview",
+    "type-check": "tsc --noEmit",
+    "lint": "eslint . --ext .ts,.tsx"
+  },
+  "dependencies": {
+    "@config-plugins/react-native-webrtc": "^14.0.0",
+    "@expo-google-fonts/ibm-plex-sans": "^0.2.3",
+    "@expo-google-fonts/ibm-plex-sans-arabic": "^0.2.3",
+    "@react-native-async-storage/async-storage": "2.2.0",
+    "@tanstack/react-query": "^5.28.0",
+    "date-fns": "^3.6.0",
+    "expo": "~56.0.0",
+    "expo-audio": "~56.0.10",
+    "expo-build-properties": "~56.0.14",
+    "expo-constants": "~56.0.15",
+    "expo-dev-client": "~56.0.15",
+    "expo-font": "~56.0.5",
+    "expo-haptics": "~56.0.3",
+    "expo-linking": "~56.0.11",
+    "expo-network": "~56.0.4",
+    "expo-notifications": "~56.0.13",
+    "expo-router": "~56.2.6",
+    "expo-secure-store": "~56.0.4",
+    "expo-splash-screen": "~56.0.10",
+    "expo-status-bar": "~56.0.4",
+    "i18next": "^23.10.0",
+    "jssip": "^3.10.0",
+    "nativewind": "^4.0.1",
+    "react": "19.2.3",
+    "react-i18next": "^14.1.0",
+    "react-native": "0.85.3",
+    "react-native-actioncable": "^0.0.3",
+    "react-native-css-interop": "0.2.4",
+    "react-native-gesture-handler": "~2.31.1",
+    "react-native-reanimated": "4.3.1",
+    "react-native-safe-area-context": "~5.7.0",
+    "react-native-screens": "~4.25.2",
+    "react-native-svg": "15.15.4",
+    "react-native-webrtc": "124.0.7",
+    "react-native-worklets": "0.8.3",
+    "zod": "^3.22.0",
+    "zustand": "^4.5.0"
+  },
+  "expo": {
+    "install": {
+      "exclude": [
+        "react-native-webrtc",
+        "react-native-actioncable",
+        "@config-plugins/react-native-webrtc"
+      ]
+    },
+    "doctor": {
+      "reactNativeDirectoryCheck": {
+        "listUnknownPackages": false,
+        "exclude": [
+          "react-native-webrtc",
+          "react-native-actioncable",
+          "expo-modules-jsi"
+        ]
+      }
+    }
+  },
+  "devDependencies": {
+    "@babel/core": "^7.24.0",
+    "@types/react": "~19.2.14",
+    "babel-preset-expo": "~56.0.0",
+    "eslint": "^8.57.0",
+    "tailwindcss": "^3.4.0",
+    "typescript": "~6.0.3"
+  }
+}

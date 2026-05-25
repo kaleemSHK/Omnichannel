@@ -5,7 +5,7 @@ const withNextIntl = createNextIntlPlugin('./src/lib/i18n.ts');
 const chatwootUpstream =
   process.env.CHATWOOT_UPSTREAM || 'http://127.0.0.1:3000';
 const gatewayUpstream =
-  process.env.GATEWAY_UPSTREAM || 'http://127.0.0.1:8080';
+  process.env.GATEWAY_UPSTREAM || 'http://127.0.0.1:80';
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {

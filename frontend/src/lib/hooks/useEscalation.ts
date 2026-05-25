@@ -8,7 +8,7 @@ import {
   listRulesets,
   simulateRule,
 } from '@/lib/api/escalation';
-import { isDemoDataEnabled } from '@/lib/demo/config';
+import { isDemoDataEnabled, isGatewayQueryEnabled } from '@/lib/demo/config';
 import { DEMO_ESCALATION_RULES } from '@/lib/demo/escalationFixture';
 import {
   conditionsToLogic,
@@ -39,6 +39,7 @@ type ApiRule = {
 };
 
 async function loadAllRules(): Promise<EscalationRuleView[]> {
+  if (isDemoDataEnabled()) return DEMO_ESCALATION_RULES;
   try {
     const sets = (await listRulesets()) as unknown as ApiRuleset[];
     if (!sets?.length) return DEMO_ESCALATION_RULES;
@@ -88,9 +89,11 @@ async function loadAllRules(): Promise<EscalationRuleView[]> {
 }
 
 export function useEscalationRules() {
+  const gwEnabled = isGatewayQueryEnabled();
   return useQuery({
     queryKey: [...QUERY_KEY, isDemoDataEnabled()],
     queryFn: loadAllRules,
+    enabled: gwEnabled,
   });
 }
 

@@ -1,13 +1,39 @@
 import type { CWConversation } from '@/types';
 
-/** Chatwoot list API returns `{ data: { payload, meta } }` or legacy `{ data: [] }`. */
-export function parseConversationList(response: unknown): CWConversation[] {
-  if (!response || typeof response !== 'object') return [];
-  const root = response as { data?: unknown };
-  if (Array.isArray(root.data)) return root.data as CWConversation[];
-  const nested = root.data as { payload?: CWConversation[] } | undefined;
-  if (Array.isArray(nested?.payload)) return nested.payload;
+/**
+ * Chatwoot listConversations returns:
+ * { data: { payload: CWConversation[], meta: { ... } } }
+ * OR
+ * { payload: CWConversation[] }
+ */
+export function parseConversationList(res: unknown): CWConversation[] {
+  if (!res || typeof res !== 'object') return [];
+  const r = res as Record<string, unknown>;
+
+  if (r.data && typeof r.data === 'object') {
+    const d = r.data as Record<string, unknown>;
+    if (Array.isArray(d.payload)) return d.payload as CWConversation[];
+    if (Array.isArray(d)) return d as CWConversation[];
+  }
+
+  if (Array.isArray(r.payload)) return r.payload as CWConversation[];
+
   return [];
+}
+
+export function extractConversationMeta(res: unknown): { next_page?: number } {
+  if (!res || typeof res !== 'object') return {};
+  const r = res as Record<string, unknown>;
+
+  const meta =
+    (r.data as Record<string, unknown> | undefined)?.meta ?? r.meta;
+
+  if (!meta || typeof meta !== 'object') return {};
+  const m = meta as Record<string, unknown>;
+
+  return {
+    next_page: typeof m.next_page === 'number' ? m.next_page : undefined,
+  };
 }
 
 export function conversationContactName(c: CWConversation): string {
@@ -52,17 +78,5 @@ export function conversationSnippet(c: CWConversation): string {
 }
 
 export function inboxLabel(channel?: string): string {
-  return (channel ?? 'Chat').replace('Channel::', '');
-}
-
-export function extractConversationMeta(res: unknown): { next_page?: number } {
-  if (!res || typeof res !== 'object') return {};
-  const root = res as {
-    data?: { meta?: { next_page?: number } };
-    meta?: { next_page?: number };
-  };
-  const meta = root.data?.meta ?? root.meta;
-  if (!meta) return {};
-  const next = (meta as { next_page?: number }).next_page;
-  return next != null ? { next_page: next } : {};
+  return (channel ?? 'Chat').replace('Channel::', '').replace(/^Channel::/, '');
 }

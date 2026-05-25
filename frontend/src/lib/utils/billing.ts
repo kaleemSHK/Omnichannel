@@ -21,6 +21,58 @@ export interface BillingPlanView {
   status: BillingSubscription['status'];
 }
 
+export interface BillingPlanOption {
+  id: string;
+  name: string;
+  monthlyPrice: number;
+  seats: number;
+  featureSummary: string;
+}
+
+const FEATURE_LABELS: Record<string, string> = {
+  sla: 'SLA',
+  escalation: 'Escalation',
+  sso: 'SSO',
+  audit: 'Audit',
+  agent_assist: 'AI assist',
+  voice_bot: 'Voice bot',
+  rag: 'RAG',
+  telephony: 'Telephony',
+  'calling.pstn': 'PSTN',
+  'calling.whatsapp': 'WhatsApp',
+  'telephony.supervisor': 'Supervisor',
+  'telephony.reports': 'Reports',
+  white_label: 'White label',
+};
+
+function humanizeFeatureKey(key: string): string {
+  return FEATURE_LABELS[key] ?? key.replace(/[._]/g, ' ');
+}
+
+export function planFeaturesSummary(features: unknown, limit = 2): string {
+  if (Array.isArray(features)) {
+    return features.slice(0, limit).join(', ');
+  }
+  if (features && typeof features === 'object') {
+    const enabled = Object.entries(features as Record<string, unknown>)
+      .filter(([, value]) => value === true || (value && typeof value === 'object'))
+      .map(([key]) => humanizeFeatureKey(key));
+    return enabled.slice(0, limit).join(', ') || 'Core features';
+  }
+  return '';
+}
+
+export function normalizePlanOption(raw: unknown): BillingPlanOption {
+  const row = raw as Record<string, unknown>;
+  return {
+    id: String(row.id),
+    name: String(row.name),
+    monthlyPrice: Number(row.monthlyPrice ?? row.basePriceOmr ?? row.base_price_omr ?? 0),
+    seats: Number(row.seats ?? row.includedAgents ?? row.included_agents ?? 0),
+    featureSummary: planFeaturesSummary(row.features, 2),
+  };
+}
+
 export interface InvoiceView {
   id: string;
   period: string;

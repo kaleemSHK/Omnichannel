@@ -3,12 +3,13 @@
 import { useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuthStore } from '@/lib/store/auth';
-import { canAccessRoute, defaultRouteForRole } from '@/lib/rbac';
+import { canAccessRoute } from '@/lib/rbac';
 
 export function RoleGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const { user, tokens } = useAuthStore();
+  const user = useAuthStore(s => s.user);
+  const tokens = useAuthStore(s => s.tokens);
 
   useEffect(() => {
     if (!tokens || !user) {
@@ -16,7 +17,7 @@ export function RoleGuard({ children }: { children: React.ReactNode }) {
       return;
     }
     if (!canAccessRoute(user.role, pathname)) {
-      router.replace(defaultRouteForRole(user.role));
+      router.replace('/conversations');
     }
   }, [tokens, user, pathname, router]);
 

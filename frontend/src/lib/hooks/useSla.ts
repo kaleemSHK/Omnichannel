@@ -2,6 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { getSlaDashboard, listPolicies } from '@/lib/api/sla';
+import { isDemoDataEnabled, isGatewayQueryEnabled } from '@/lib/demo/config';
 import {
   demoDashboard,
   DEMO_POLICIES,
@@ -14,9 +15,11 @@ import type { SLAPolicy } from '@/types';
 export type SlaFilter = 'dashboard' | 'breached' | 'at_risk' | 'active' | 'met';
 
 export function useSlaDashboard() {
+  const gwEnabled = isGatewayQueryEnabled();
   return useQuery({
-    queryKey: ['sla-dashboard'],
+    queryKey: ['sla-dashboard', isDemoDataEnabled()],
     queryFn: async () => {
+      if (isDemoDataEnabled()) return demoDashboard();
       try {
         const raw = await getSlaDashboard();
         const data = raw as {
@@ -30,9 +33,6 @@ export function useSlaDashboard() {
         const atRisk = (data.atRisk ?? []).map(r => mapApiInstance(r as Record<string, unknown>));
         const active = (data.active ?? []).map(r => mapApiInstance(r as Record<string, unknown>));
         const met = (data.met ?? []).map(r => mapApiInstance(r as Record<string, unknown>));
-        if (breached.length + atRisk.length + active.length === 0 && met.length === 0) {
-          return demoDashboard();
-        }
         return {
           breached,
           atRisk,
@@ -43,29 +43,44 @@ export function useSlaDashboard() {
             atRiskCount: data.stats?.atRiskCount ?? atRisk.length,
             activeCount: data.stats?.activeCount ?? active.length,
             metToday: data.stats?.metToday ?? met.length,
-            compliancePct: data.stats?.compliancePct ?? 87,
+            compliancePct: data.stats?.compliancePct ?? 0,
           },
         };
       } catch {
-        return demoDashboard();
+        return {
+          breached: [],
+          atRisk: [],
+          active: [],
+          met: [],
+          stats: {
+            breachedCount: 0,
+            atRiskCount: 0,
+            activeCount: 0,
+            metToday: 0,
+            compliancePct: 0,
+          },
+        };
       }
     },
-    refetchInterval: 30_000,
+    enabled: gwEnabled,
+    refetchInterval: gwEnabled ? 30_000 : false,
   });
 }
 
 export function useSlaPolicies() {
+  const gwEnabled = isGatewayQueryEnabled();
   return useQuery({
-    queryKey: ['sla-policies'],
+    queryKey: ['sla-policies', isDemoDataEnabled()],
     queryFn: async () => {
+      if (isDemoDataEnabled()) return DEMO_POLICIES;
       try {
         const policies = await listPolicies();
-        const mapped = policies.map(p => normalizePolicy(p));
-        return mapped.length ? mapped : DEMO_POLICIES;
+        return policies.map(p => normalizePolicy(p));
       } catch {
-        return DEMO_POLICIES;
+        return [];
       }
     },
+    enabled: gwEnabled,
   });
 }
 
@@ -75,9 +90,9 @@ function normalizePolicy(p: SLAPolicy): SLAPolicy {
   const name = String(p.name ?? 'Policy');
   const tier = name.toLowerCase().includes('gold')
     ? 'gold'
-    : name.toLowerCase().includes('bronze')
-      ? 'bronze'
-      : 'silver';
+    : name.toLowerCase().includes('silver')
+      ? 'silver'
+      : 'bronze';
   const targets = raw.targets;
   const firstMin = targets?.[0]?.thresholdMinutes ?? 30;
   return {

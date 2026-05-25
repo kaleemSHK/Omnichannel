@@ -1,0 +1,49 @@
+import { FlatList, RefreshControl } from 'react-native';
+import { router } from 'expo-router';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useTranslation } from 'react-i18next';
+import { AppHeader } from '@/components/layout/AppHeader';
+import { TicketCard } from '@/components/tickets/TicketCard';
+import { EmptyState } from '@/components/layout/EmptyState';
+import { Skeleton } from '@/components/ui/Skeleton';
+import { View } from 'react-native';
+import { useTickets } from '@/hooks/useTickets';
+import { loadCustomerSession } from '@/lib/storage';
+import { useEffect, useState } from 'react';
+
+export default function CustomerTickets() {
+  const { t } = useTranslation();
+  const [contactId, setContactId] = useState<number | undefined>();
+
+  useEffect(() => {
+    loadCustomerSession().then((s) => setContactId(s.contactId));
+  }, []);
+
+  const { data, isLoading, refetch, isRefetching } = useTickets(contactId);
+  const tickets = data?.data ?? [];
+
+  return (
+    <SafeAreaView className="flex-1 bg-bg" edges={['top']}>
+      <AppHeader title={t('customer.my_tickets')} onBack={() => router.back()} />
+      {isLoading ? (
+        <View className="px-5 gap-3 mt-4">
+          {[1, 2, 3].map((i) => (
+            <Skeleton key={i} className="h-20 rounded-xl" />
+          ))}
+        </View>
+      ) : tickets.length === 0 ? (
+        <EmptyState icon="🎫" message={t('ticket.no_tickets')} />
+      ) : (
+        <FlatList
+          data={tickets}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => (
+            <TicketCard ticket={item} onPress={() => router.push(`/(customer)/tickets/${item.id}`)} />
+          )}
+          refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor="#63b3ed" />}
+          contentContainerStyle={{ padding: 20, gap: 12 }}
+        />
+      )}
+    </SafeAreaView>
+  );
+}

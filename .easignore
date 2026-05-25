@@ -1,0 +1,22 @@
+# BlinkOne monorepo — shrink EAS uploads when building from mobile/
+admin-panels/
+BlinkOne-Deliverables-v1.0/
+chatwoot-fork-overlay/
+config/
+doc/
+docker/
+docs/
+frontend/
+gateway/
+infra/
+lib/
+nginx/
+public/
+scripts/
+services/
+spec/
+tests/
+_patch_test/
+**/.next/
+**/.git/
+mobile/-/

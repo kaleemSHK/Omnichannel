@@ -9,7 +9,7 @@ import {
   queryRAG,
   uploadDocument,
 } from '@/lib/api/ai';
-import { isDemoDataEnabled } from '@/lib/demo/config';
+import { isDemoDataEnabled, isGatewayQueryEnabled } from '@/lib/demo/config';
 import {
   DEMO_AI_COLLECTIONS,
   DEMO_AI_DOCUMENTS,
@@ -44,10 +44,9 @@ async function loadCollections(): Promise<RagCollection[]> {
   }
   try {
     const rows = await listCollections();
-    const mapped = rows.map(normalizeCollection);
-    return mapped.length ? mapped : withDemoDocCounts(DEMO_AI_COLLECTIONS, DEMO_AI_DOCUMENTS);
+    return rows.map(normalizeCollection);
   } catch {
-    return withDemoDocCounts(DEMO_AI_COLLECTIONS, DEMO_AI_DOCUMENTS);
+    return [];
   }
 }
 
@@ -55,10 +54,9 @@ async function loadDocuments(collectionId: string | null): Promise<RagDocument[]
   if (!collectionId) return [];
   if (isDemoDataEnabled()) return demoDocuments(collectionId);
   try {
-    const rows = await listDocuments(collectionId);
-    return rows.length ? rows : demoDocuments(collectionId);
+    return await listDocuments(collectionId);
   } catch {
-    return demoDocuments(collectionId);
+    return [];
   }
 }
 
@@ -81,9 +79,11 @@ export function useAiDemoMode() {
 }
 
 export function useRagCollections() {
+  const gwEnabled = isGatewayQueryEnabled();
   return useQuery({
     queryKey: [...COLLECTIONS_KEY, isDemoDataEnabled()],
     queryFn: loadCollections,
+    enabled: gwEnabled,
   });
 }
 

@@ -8,7 +8,7 @@ import {
   listTenants,
   updateTenantFeatures,
 } from '@/lib/api/platform';
-import { isDemoDataEnabled } from '@/lib/demo/config';
+import { isDemoDataEnabled, isGatewayQueryEnabled } from '@/lib/demo/config';
 import { DEMO_PLATFORM_TENANTS } from '@/lib/demo/platformFixture';
 import {
   aggregateKpis,
@@ -26,17 +26,18 @@ async function loadTenants(): Promise<PlatformTenantView[]> {
   if (isDemoDataEnabled()) return DEMO_PLATFORM_TENANTS;
   try {
     const rows = await listTenants();
-    const mapped = rows.map(t => normalizeTenant(t));
-    return mapped.length ? mapped : DEMO_PLATFORM_TENANTS;
+    return rows.map(t => normalizeTenant(t));
   } catch {
-    return DEMO_PLATFORM_TENANTS;
+    return [];
   }
 }
 
 export function usePlatformTenants() {
+  const gwEnabled = isGatewayQueryEnabled();
   return useQuery({
     queryKey: [...QUERY_KEY, isDemoDataEnabled()],
     queryFn: loadTenants,
+    enabled: gwEnabled,
   });
 }
 

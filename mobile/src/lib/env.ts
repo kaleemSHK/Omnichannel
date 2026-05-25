@@ -1,0 +1,10 @@
+export const CHATWOOT_URL = process.env.EXPO_PUBLIC_CHATWOOT_URL ?? 'http://192.168.1.50:3000';
+export const GATEWAY_URL = process.env.EXPO_PUBLIC_GATEWAY_URL ?? 'http://192.168.1.50:8080';
+export const WS_URL = process.env.EXPO_PUBLIC_WS_URL ?? 'ws://192.168.1.50:3000/cable';
+export const SIP_WSS = process.env.EXPO_PUBLIC_SIP_WSS ?? '';
+export const SIP_DOMAIN = process.env.EXPO_PUBLIC_SIP_DOMAIN ?? 'blinkone.local';
+export const SIP_PASS = process.env.EXPO_PUBLIC_SIP_PASS ?? '';
+export const STUN = process.env.EXPO_PUBLIC_STUN ?? 'stun:stun.l.google.com:19302';
+export const SUPPORT_EXT = process.env.EXPO_PUBLIC_SUPPORT_EXT ?? '5000';
+export const SUPPORT_QUEUE = process.env.EXPO_PUBLIC_SUPPORT_QUEUE ?? 'support';
+export const DEFAULT_LANG = process.env.EXPO_PUBLIC_DEFAULT_LANG ?? 'en';

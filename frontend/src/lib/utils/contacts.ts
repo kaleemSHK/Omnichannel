@@ -13,15 +13,32 @@ export function parseContactsList(response: unknown): CWContact[] {
   return [];
 }
 
-export function contactInitials(name: string): string {
-  const parts = name.split(/\s+/).filter(Boolean);
-  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
-  return name.slice(0, 2).toUpperCase();
+/** Fallback label when Chatwoot omits `name` (phone/email-only contacts). */
+export function contactDisplayName(
+  contact: Pick<CWContact, 'name' | 'email' | 'phone_number'> & { identifier?: string },
+): string {
+  const name = contact.name?.trim();
+  if (name) return name;
+  const email = contact.email?.trim();
+  if (email) return email;
+  const phone = contact.phone_number?.trim();
+  if (phone) return phone;
+  const identifier = contact.identifier?.trim();
+  if (identifier) return identifier;
+  return 'Unknown';
 }
 
-export function contactAvatarClass(name: string): string {
+export function contactInitials(name?: string | null): string {
+  const label = name?.trim() || 'Unknown';
+  const parts = label.split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return label.slice(0, 2).toUpperCase();
+}
+
+export function contactAvatarClass(name?: string | null): string {
+  const label = name?.trim() || 'Unknown';
   let hash = 0;
-  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  for (let i = 0; i < label.length; i++) hash = label.charCodeAt(i) + ((hash << 5) - hash);
   const hues = [
     'bg-blue-100 text-blue-700',
     'bg-violet-100 text-violet-700',

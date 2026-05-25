@@ -112,3 +112,37 @@ password=${AST_AGENT_SIP_PASS}
 type=aor
 max_contacts=10
 remove_existing=yes
+
+; ── Twilio SIP Trunk (Prompt 16 — IP auth, no REGISTER) ─────────────────────
+[twilio-trunk]
+type=endpoint
+context=from-trunk
+disallow=all
+allow=ulaw,alaw
+direct_media=no
+rtp_symmetric=yes
+force_rport=yes
+rewrite_contact=yes
+transport=transport-udp
+aors=twilio-trunk-aor
+from_domain=${TWILIO_SIP_HOST}
+
+[twilio-trunk-aor]
+type=aor
+contact=sip:${TWILIO_SIP_HOST}
+qualify_frequency=0
+
+[twilio-identify]
+type=identify
+endpoint=twilio-trunk
+match=54.172.60.0/23
+match=54.244.51.0/24
+match=54.171.127.192/26
+match=35.156.191.128/25
+match=54.65.63.192/26
+match=54.169.127.128/26
+match=54.252.254.64/26
+match=177.71.206.192/26
+match=127.0.0.1/32
+; ngrok / lab demo only — remove in production
+match=0.0.0.0/0

@@ -6,12 +6,28 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { toast } from 'sonner';
 import { useSnoozeConversation } from '@/lib/hooks/useChatwootExtras';
 
-const SNOOZE_OPTIONS = [
-  { label: '30 minutes', minutes: 30 as number | null },
-  { label: '1 hour', minutes: 60 },
-  { label: '3 hours', minutes: 180 },
-  { label: 'Tomorrow 9am', minutes: null },
-  { label: 'Next week', minutes: null },
+const SNOOZE_OPTIONS: { label: string; resolve: () => Date }[] = [
+  { label: '30 minutes', resolve: () => new Date(Date.now() + 30 * 60_000) },
+  { label: '1 hour', resolve: () => new Date(Date.now() + 60 * 60_000) },
+  { label: '3 hours', resolve: () => new Date(Date.now() + 180 * 60_000) },
+  {
+    label: 'Tomorrow 9 AM',
+    resolve: () => {
+      const d = new Date();
+      d.setDate(d.getDate() + 1);
+      d.setHours(9, 0, 0, 0);
+      return d;
+    },
+  },
+  {
+    label: 'Next week',
+    resolve: () => {
+      const d = new Date();
+      d.setDate(d.getDate() + 7);
+      d.setHours(9, 0, 0, 0);
+      return d;
+    },
+  },
 ];
 
 interface Props {
@@ -22,20 +38,8 @@ export function SnoozeButton({ conversationId }: Props) {
   const [open, setOpen] = useState(false);
   const mutation = useSnoozeConversation(conversationId);
 
-  function snooze(minutes: number | null, label: string) {
-    let until: Date;
-    if (minutes !== null) {
-      until = new Date(Date.now() + minutes * 60_000);
-    } else if (label.includes('Tomorrow')) {
-      until = new Date();
-      until.setDate(until.getDate() + 1);
-      until.setHours(9, 0, 0, 0);
-    } else {
-      until = new Date();
-      until.setDate(until.getDate() + 7);
-      until.setHours(9, 0, 0, 0);
-    }
-    mutation.mutate(until.toISOString(), {
+  function snooze(opt: (typeof SNOOZE_OPTIONS)[number]) {
+    mutation.mutate(opt.resolve().toISOString(), {
       onSuccess: () => {
         toast.success('Conversation snoozed');
         setOpen(false);
@@ -60,7 +64,7 @@ export function SnoozeButton({ conversationId }: Props) {
           <button
             key={opt.label}
             type="button"
-            onClick={() => snooze(opt.minutes, opt.label)}
+            onClick={() => snooze(opt)}
             disabled={mutation.isPending}
             className="w-full text-start px-3 py-1.5 text-sm rounded hover:bg-muted"
           >

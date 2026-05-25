@@ -2,14 +2,16 @@
 
 import { Phone, PhoneOff } from 'lucide-react';
 import { toast } from 'sonner';
-import { demoCallerName } from '@/lib/demo/callsFixture';
+import { useCallsStore } from '@/lib/store/calls';
+import { resolveCallerName } from '@/lib/utils/calling';
 import type { CallSession } from '@/types';
 
 export function showIncomingCallToast(
   call: CallSession,
   handlers: { onAnswer: () => void; onDecline: () => void },
 ) {
-  const name = demoCallerName(call);
+  const contactCache = useCallsStore.getState().contactCache;
+  const name = resolveCallerName(call, contactCache);
 
   toast.custom(
     id => (
@@ -26,6 +28,7 @@ export function showIncomingCallToast(
         <div className="flex gap-2">
           <button
             type="button"
+            aria-label="Answer call"
             onClick={() => {
               handlers.onAnswer();
               toast.dismiss(id);
@@ -38,6 +41,7 @@ export function showIncomingCallToast(
           </button>
           <button
             type="button"
+            aria-label="Decline call"
             onClick={() => {
               handlers.onDecline();
               toast.dismiss(id);

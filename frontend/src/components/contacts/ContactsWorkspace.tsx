@@ -1,8 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { useContactsList } from '@/lib/hooks/useContacts';
 import { ContactList } from '@/components/contacts/ContactList';
 import { ContactDetailPanel } from '@/components/contacts/ContactDetailPanel';
 import { ContactForm } from '@/components/contacts/ContactForm';
@@ -14,21 +13,18 @@ export function ContactsWorkspace() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editContact, setEditContact] = useState<CWContact | undefined>();
-  const { data } = useContactsList('');
 
   useEffect(() => {
     const fromUrl = searchParams.get('contact_id');
     if (fromUrl) {
       const id = Number(fromUrl);
-      if (Number.isFinite(id)) setSelectedId(id);
+      if (Number.isFinite(id) && id > 0) setSelectedId(id);
     }
   }, [searchParams]);
 
-  useEffect(() => {
-    if (selectedId != null) return;
-    const first = data?.pages[0]?.contacts[0];
-    if (first) setSelectedId(first.id);
-  }, [data, selectedId]);
+  const handleFirstContact = useCallback((id: number) => {
+    setSelectedId(prev => prev ?? id);
+  }, []);
 
   const openCreate = () => {
     setEditContact(undefined);
@@ -46,6 +42,7 @@ export function ContactsWorkspace() {
         selectedId={selectedId}
         onSelect={setSelectedId}
         onNewContact={openCreate}
+        onFirstContact={handleFirstContact}
       />
       <div className="flex-1 bg-white min-w-0">
         <ContactDetailPanel contactId={selectedId} onEdit={openEdit} />
@@ -56,10 +53,7 @@ export function ContactsWorkspace() {
         onClose={() => setSheetOpen(false)}
         title={editContact ? 'Edit contact' : 'New contact'}
       >
-        <ContactForm
-          contact={editContact}
-          onDone={() => setSheetOpen(false)}
-        />
+        <ContactForm contact={editContact} onDone={() => setSheetOpen(false)} />
       </Sheet>
     </div>
   );

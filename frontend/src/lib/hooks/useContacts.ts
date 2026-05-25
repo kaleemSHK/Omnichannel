@@ -7,11 +7,14 @@ import {
   getContact,
   createContact,
   updateContact,
+  deleteContact,
+  importContactsCsv,
   getContactConversations,
 } from '@/lib/api/contacts';
 import { listTickets } from '@/lib/api/tickets';
-import { isDemoDataEnabled } from '@/lib/demo/config';
+import { isDemoDataEnabled, isGatewayQueryEnabled } from '@/lib/demo/config';
 import { DEMO_CONTACTS, filterDemoContacts } from '@/lib/demo/contactsFixture';
+import { DEMO_CONVERSATIONS } from '@/lib/demo/conversationsFixture';
 import { parseContactsList } from '@/lib/utils/contacts';
 import type { CWContact, Ticket } from '@/types';
 
@@ -24,33 +27,21 @@ export function useContactsList(search: string) {
     queryFn: async ({ pageParam = 1 }) => {
       if (isDemoDataEnabled()) {
         const all = filterDemoContacts(trimmed);
-        const start = (pageParam - 1) * PAGE_SIZE;
+        const start = ((pageParam as number) - 1) * PAGE_SIZE;
         return {
           contacts: all.slice(start, start + PAGE_SIZE),
-          page: pageParam,
+          page: pageParam as number,
         };
       }
-      try {
-        const res = trimmed
-          ? await searchContacts(trimmed, pageParam)
-          : await listContacts(pageParam);
-        const contacts = parseContactsList(res);
-        if (contacts.length) {
-          return { contacts, page: pageParam };
-        }
-      } catch {
-        /* demo fallback */
-      }
-      const all = filterDemoContacts(trimmed);
-      const start = (pageParam - 1) * PAGE_SIZE;
-      return {
-        contacts: all.slice(start, start + PAGE_SIZE),
-        page: pageParam,
-      };
+      const res = trimmed
+        ? await searchContacts(trimmed, pageParam as number)
+        : await listContacts(pageParam as number);
+      const contacts = parseContactsList(res);
+      return { contacts, page: pageParam as number };
     },
     initialPageParam: 1,
     getNextPageParam: (last, _all, lastPage) =>
-      last.contacts.length >= PAGE_SIZE ? lastPage + 1 : undefined,
+      last.contacts.length >= PAGE_SIZE ? (lastPage as number) + 1 : undefined,
   });
 }
 
@@ -80,10 +71,7 @@ export function useContactConversations(contactId: number | null) {
     queryKey: ['contact-conversations', contactId, isDemoDataEnabled()],
     queryFn: async () => {
       if (isDemoDataEnabled()) {
-        return [
-          { id: 42, status: 'open', messages: [{ content: 'Fiber upgrade inquiry' }] },
-          { id: 55, status: 'pending', messages: [{ content: 'Billing question' }] },
-        ];
+        return DEMO_CONVERSATIONS.filter(c => c.meta?.sender?.id === contactId).slice(0, 5);
       }
       try {
         const res = await getContactConversations(contactId!);
@@ -91,8 +79,8 @@ export function useContactConversations(contactId: number | null) {
         return payload.slice(0, 5) as Array<{
           id: number;
           status?: string;
-          messages?: { content?: string }[];
           last_activity_at?: number;
+          messages?: { content?: string }[];
         }>;
       } catch {
         return [];
@@ -131,30 +119,17 @@ export function useContactTickets(contactId: number | null) {
         );
         return filtered.slice(0, 5);
       } catch {
-        const { DEMO_TICKETS } = await import('@/lib/demo/ticketsFixture');
-        return DEMO_TICKETS.filter(t => t.contactId === contactId)
-          .slice(0, 5)
-          .map(t => ({
-            id: t.id,
-            tenantId: 'demo',
-            subject: t.subject,
-            status: 'open' as const,
-            priority:
-              t.priority === 'high' ? ('p1' as const) : t.priority === 'low' ? ('p3' as const) : ('p2' as const),
-            contactId: String(t.contactId),
-            createdAt: t.createdAt,
-            updatedAt: t.updatedAt,
-          }));
+        return [];
       }
     },
-    enabled: contactId != null,
+    enabled: contactId != null && (isDemoDataEnabled() || isGatewayQueryEnabled()),
   });
 }
 
 export function useCreateContact() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: createContact,
+    mutationFn: (data: Parameters<typeof createContact>[0]) => createContact(data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['contacts'] }),
   });
 }
@@ -168,5 +143,21 @@ export function useUpdateContact() {
       qc.invalidateQueries({ queryKey: ['contacts'] });
       qc.invalidateQueries({ queryKey: ['contact', id] });
     },
+  });
+}
+
+export function useDeleteContact() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: deleteContact,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['contacts'] }),
+  });
+}
+
+export function useImportContacts() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: importContactsCsv,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['contacts'] }),
   });
 }

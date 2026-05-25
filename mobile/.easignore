@@ -1,0 +1,13 @@
+node_modules/
+.expo/
+dist/
+.git/
+*.md
+README*
+android/
+ios/
+*.log
+.DS_Store
+**/.gradle/
+**/build/
+-

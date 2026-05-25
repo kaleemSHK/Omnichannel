@@ -1,0 +1,22 @@
+# BlinkOne demo tunnels — copy to ngrok.yml (do not commit ngrok.yml if you add secrets).
+# Authtoken: run once globally:  ngrok config add-authtoken <token>
+# start-demo.ps1 merges this file with %LOCALAPPDATA%\ngrok\ngrok.yml
+
+version: "2"
+
+tunnels:
+  # BlinkOne web UI + nginx (port 80) — optional static domain in ngrok dashboard
+  blinkone-web:
+    proto: http
+    addr: 80
+    # domain: yourname.ngrok-free.app
+
+  # SIP signaling — Twilio origination -> Kamailio :5060
+  sip-signal:
+    proto: tcp
+    addr: 5060
+
+  # Asterisk WSS — JsSIP WebRTC (TCP tunnel to :8089)
+  asterisk-wss:
+    proto: tcp
+    addr: 8089

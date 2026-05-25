@@ -1,0 +1,38 @@
+site_name: BlinkOne Technical Documentation
+site_url: https://docs.blinkone.local
+repo_url: https://github.com/labbik/blinkone
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: blue
+nav:
+  - Home: index.md
+  - Architecture: blinkone/ARCHITECTURE.md
+  - TRD Matrix: blinkone/TRD_MATRIX.md
+  - Event catalog: blinkone/EVENT_CATALOG.md
+  - Deployment:
+      - On-prem: blinkone/deploy/on-prem.md
+      - HA: blinkone/deploy/ha.md
+      - Scale-out: blinkone/deploy/scale-out.md
+      - DR: blinkone/deploy/dr.md
+      - Upgrade: blinkone/deploy/upgrade.md
+  - Runbooks:
+      - Recording bucket: blinkone/runbooks/recording-bucket-full.md
+      - Asterisk: blinkone/runbooks/asterisk-recovery.md
+      - LLM outage: blinkone/runbooks/llm-outage.md
+      - Data export: blinkone/runbooks/tenant-data-export.md
+      - Offboarding: blinkone/runbooks/tenant-offboarding.md
+  - Handover:
+      - Checklist: blinkone/HANDOVER_CHECKLIST.md
+      - KT plan: blinkone/KT_PLAN.md
+      - Security: blinkone/SECURITY_REVIEW.md
+      - Performance: blinkone/PERFORMANCE_BASELINE.md
+  - Sidecars:
+      - Prompt 7 AI: blinkone/PROMPT7.md
+      - Prompt 8 Tenant: blinkone/PROMPT8.md
+      - Prompt 9 Billing: blinkone/PROMPT9.md
+      - Prompt 10 Integration: blinkone/PROMPT10.md
+docs_dir: docs
+plugins:
+  - search

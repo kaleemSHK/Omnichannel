@@ -3,7 +3,7 @@ You are a senior staff engineer working on BlinkOne — a rebranded Chatwoot Com
 # This workspace layout
 
 - Chatwoot CE runs from the official Docker image (`chatwoot/chatwoot` in `docker-compose.yml`), not as Rails/Vue source in this repo. Rebrand and core tweaks that need source live in a separate fork when required; prefer env, installation config, and BlinkOne-prefixed paths here first.
-- BlinkOne sidecars live under `services/`. API gateway lives under `gateway/`. Shared Node libs under `lib/`. Admin UI prototypes under `admin-panels/`.
+- BlinkOne sidecars live under `services/`. API gateway lives under `gateway/`. Shared Node libs under `lib/`. Admin UI in Chatwoot dashboard under `chatwoot-fork-overlay/app/javascript/dashboard/blinkone_components/` (not `admin-panels/`).
 - Operational docs and scripts belong under `docs/blinkone/` and `scripts/blinkone/` when added.
 
 # Codebase facts (do not guess these)

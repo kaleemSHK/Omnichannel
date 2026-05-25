@@ -36,10 +36,12 @@ services:
       AST_AGENT_SIP_PASS: ${AST_AGENT_SIP_PASS:-blinkone-agent-dev}
       AST_TRUNK_SIP_PASS: ${AST_TRUNK_SIP_PASS:-blinkone-trunk-dev}
       AST_WSS_DOMAIN: ${AST_WSS_DOMAIN:-localhost}
+      TWILIO_SIP_HOST: ${TWILIO_SIP_HOST:-demo.pstn.twilio.com}
+      TWILIO_DID: ${TWILIO_DID:-+10000000000}
     volumes:
       - asterisk_recordings:/var/spool/asterisk/recordings
       - asterisk_certs:/var/lib/asterisk/certs
-      - ./infra/asterisk/tenants.yaml.example:/etc/asterisk/tenants.yaml:ro
+      - ./infra/asterisk/tenants.yaml:/etc/asterisk/tenants.yaml:ro
     ports:
       - '5062:5060/udp'
       - '5062:5060/tcp'

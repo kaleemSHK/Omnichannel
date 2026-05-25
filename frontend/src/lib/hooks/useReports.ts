@@ -13,91 +13,301 @@ import { useAuthStore } from '@/lib/store/auth';
 
 export type ReportRange = 'today' | '7d' | '30d';
 
+export type AgentReportRow = {
+  id?: number;
+  name: string;
+  open: number;
+  resolved: number;
+  avg_first_response: string;
+  avg_resolution: string;
+  online_time: string;
+};
+
+export type InboxReportRow = {
+  id?: number;
+  name: string;
+  open: number;
+  resolved: number;
+  avg_first_response: string;
+  avg_resolution: string;
+};
+
+export type TeamReportRow = InboxReportRow;
+
+interface CWSummaryRaw {
+  conversations_count?: number;
+  resolved_conversations_count?: number;
+  resolutions_count?: number;
+  avg_first_response_time?: number | string | null;
+  avg_resolution_time?: number | string | null;
+}
+
+interface CWSummaryReportRow {
+  id: number;
+  conversations_count?: number;
+  resolved_conversations_count?: number;
+  avg_first_response_time?: number | null;
+  avg_resolution_time?: number | null;
+}
+
+interface CWNamedEntity {
+  id: number;
+  name: string;
+}
+
 function accountId() {
   return useAuthStore.getState().user?.chatwootAccountId ?? 1;
 }
 
-function sinceDate(range: ReportRange): string {
-  if (range === 'today') return new Date().toISOString().slice(0, 10);
+/** Returns Unix timestamps for since/until (Chatwoot expects integers) */
+function sinceUntil(range: ReportRange): { since: number; until: number } {
+  const now = Math.floor(Date.now() / 1000);
+  if (range === 'today') {
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+    return { since: Math.floor(startOfDay.getTime() / 1000), until: now };
+  }
   const days = range === '7d' ? 7 : 30;
-  return new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
+  return { since: now - days * 86_400, until: now };
+}
+
+function dayLabel(timestamp: number): string {
+  return new Date(timestamp * 1000).toLocaleDateString('en-US', { weekday: 'short' });
+}
+
+function reportQuery(since: number, until: number): string {
+  return `since=${since}&until=${until}`;
+}
+
+async function fetchNameMap(path: string): Promise<Map<number, string>> {
+  const res = await cwFetch<CWNamedEntity[] | { payload?: CWNamedEntity[] }>(path);
+  const rows = Array.isArray(res) ? res : (res.payload ?? []);
+  return new Map(rows.map(row => [row.id, row.name]));
+}
+
+function normalizeDuration(value: unknown): string {
+  if (typeof value === 'number') return formatSeconds(value);
+  if (typeof value === 'string' && value.trim()) return value;
+  return '—';
+}
+
+function mapSummaryRow(
+  row: CWSummaryReportRow,
+  name: string,
+): AgentReportRow {
+  const total = row.conversations_count ?? 0;
+  const resolved = row.resolved_conversations_count ?? 0;
+  return {
+    id: row.id,
+    name,
+    open: Math.max(0, total - resolved),
+    resolved,
+    avg_first_response: normalizeDuration(row.avg_first_response_time),
+    avg_resolution: normalizeDuration(row.avg_resolution_time),
+    online_time: '—',
+  };
+}
+
+/** Format seconds duration to human string */
+export function formatSeconds(seconds: number): string {
+  if (!seconds || Number.isNaN(seconds)) return '—';
+  if (seconds < 60) return `${seconds}s`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  return `${h}h ${m}m`;
+}
+
+/** Parse "3m 40s", "1h 55m", "4m 05s" → seconds for sorting */
+export function parseDurationToSeconds(s: string): number {
+  if (!s || s === '—') return 0;
+  let total = 0;
+  const h = s.match(/(\d+)h/);
+  const m = s.match(/(\d+)m/);
+  const sec = s.match(/(\d+)s/);
+  if (h) total += parseInt(h[1], 10) * 3600;
+  if (m) total += parseInt(m[1], 10) * 60;
+  if (sec) total += parseInt(sec[1], 10);
+  return total;
 }
 
 export function useReportSummary(range: ReportRange) {
-  const since = sinceDate(range);
-  const until = new Date().toISOString().slice(0, 10);
-
+  const { since, until } = sinceUntil(range);
   return useQuery({
     queryKey: ['reportSummary', range, isDemoDataEnabled()],
     queryFn: async () => {
       if (isDemoDataEnabled()) return DEMO_REPORT_SUMMARY;
-      try {
-        return await cwFetch<typeof DEMO_REPORT_SUMMARY>(
-          `/accounts/${accountId()}/reports/summary?since=${since}&until=${until}`,
-        );
-      } catch {
-        return DEMO_REPORT_SUMMARY;
-      }
+      const raw = await cwFetch<CWSummaryRaw>(
+        `/accounts/${accountId()}/reports/summary?type=account&${reportQuery(since, until)}`,
+        {},
+        'v2',
+      );
+      return {
+        account: {
+          conversations_count: raw.conversations_count ?? 0,
+          resolved_conversations_count:
+            raw.resolved_conversations_count ?? raw.resolutions_count ?? 0,
+          avg_first_response_time: normalizeDuration(raw.avg_first_response_time),
+          avg_resolution_time: normalizeDuration(raw.avg_resolution_time),
+        },
+        chartData: [] as typeof DEMO_REPORT_SUMMARY.chartData,
+        byAgent: [] as typeof DEMO_REPORT_SUMMARY.byAgent,
+        byInbox: [] as typeof DEMO_REPORT_SUMMARY.byInbox,
+      };
+    },
+  });
+}
+
+interface CWReportPoint {
+  timestamp: number;
+  value: number;
+}
+
+export function useReportChart(range: ReportRange) {
+  const { since, until } = sinceUntil(range);
+  return useQuery({
+    queryKey: ['reportChart', range, isDemoDataEnabled()],
+    queryFn: async () => {
+      if (isDemoDataEnabled()) return DEMO_REPORT_SUMMARY.chartData;
+      const q = reportQuery(since, until);
+      const [openRes, resolvedRes] = await Promise.all([
+        cwFetch<{ payload: CWReportPoint[] }>(
+          `/accounts/${accountId()}/reports?metric=conversations_count&type=account&${q}&group_by=day`,
+          {},
+          'v2',
+        ),
+        cwFetch<{ payload: CWReportPoint[] }>(
+          `/accounts/${accountId()}/reports?metric=resolutions_count&type=account&${q}&group_by=day`,
+          {},
+          'v2',
+        ),
+      ]);
+      const openMap = new Map(
+        (openRes.payload ?? []).map(p => [dayLabel(p.timestamp), p.value]),
+      );
+      const resolvedPoints = resolvedRes.payload ?? [];
+      const openPoints = openRes.payload ?? [];
+      const timestamps = new Set([
+        ...resolvedPoints.map(p => p.timestamp),
+        ...openPoints.map(p => p.timestamp),
+      ]);
+      return [...timestamps]
+        .sort((a, b) => a - b)
+        .map(ts => {
+          const label = dayLabel(ts);
+          return {
+            date: label,
+            open: openMap.get(label) ?? 0,
+            resolved: resolvedPoints.find(p => p.timestamp === ts)?.value ?? 0,
+          };
+        });
+    },
+  });
+}
+
+export function useOverviewAgents(range: ReportRange) {
+  const { since, until } = sinceUntil(range);
+  return useQuery({
+    queryKey: ['reportOverviewAgents', range, isDemoDataEnabled()],
+    queryFn: async () => {
+      if (isDemoDataEnabled()) return DEMO_REPORT_SUMMARY.byAgent;
+      const q = reportQuery(since, until);
+      const [rows, nameMap] = await Promise.all([
+        cwFetch<CWSummaryReportRow[]>(
+          `/accounts/${accountId()}/summary_reports/agent?${q}`,
+          {},
+          'v2',
+        ),
+        fetchNameMap(`/accounts/${accountId()}/agents`),
+      ]);
+      return (Array.isArray(rows) ? rows : [])
+        .map(row => ({
+          name: nameMap.get(row.id) ?? `Agent ${row.id}`,
+          count: row.conversations_count ?? 0,
+        }))
+        .sort((a, b) => b.count - a.count);
     },
   });
 }
 
 export function useAgentReport(range: ReportRange) {
-  const since = sinceDate(range);
-  const until = new Date().toISOString().slice(0, 10);
-
+  const { since, until } = sinceUntil(range);
   return useQuery({
     queryKey: ['reportAgents', range, isDemoDataEnabled()],
     queryFn: async () => {
-      if (isDemoDataEnabled()) return DEMO_AGENT_REPORT;
-      try {
-        const res = await cwFetch<{ payload?: typeof DEMO_AGENT_REPORT }>(
-          `/accounts/${accountId()}/reports/agents/conversations?since=${since}&until=${until}`,
-        );
-        return res.payload ?? DEMO_AGENT_REPORT;
-      } catch {
-        return DEMO_AGENT_REPORT;
-      }
+      if (isDemoDataEnabled()) return DEMO_AGENT_REPORT as AgentReportRow[];
+      const q = reportQuery(since, until);
+      const [rows, nameMap] = await Promise.all([
+        cwFetch<CWSummaryReportRow[]>(
+          `/accounts/${accountId()}/summary_reports/agent?${q}`,
+          {},
+          'v2',
+        ),
+        fetchNameMap(`/accounts/${accountId()}/agents`),
+      ]);
+      return (Array.isArray(rows) ? rows : []).map(row =>
+        mapSummaryRow(row, nameMap.get(row.id) ?? `Agent ${row.id}`),
+      );
     },
   });
 }
 
 export function useInboxReport(range: ReportRange) {
-  const since = sinceDate(range);
-  const until = new Date().toISOString().slice(0, 10);
-
+  const { since, until } = sinceUntil(range);
   return useQuery({
     queryKey: ['reportInboxes', range, isDemoDataEnabled()],
     queryFn: async () => {
-      if (isDemoDataEnabled()) return DEMO_INBOX_REPORT;
-      try {
-        const res = await cwFetch<{ payload?: typeof DEMO_INBOX_REPORT }>(
-          `/accounts/${accountId()}/reports/inboxes/conversations?since=${since}&until=${until}`,
-        );
-        return res.payload ?? DEMO_INBOX_REPORT;
-      } catch {
-        return DEMO_INBOX_REPORT;
-      }
+      if (isDemoDataEnabled()) return DEMO_INBOX_REPORT as InboxReportRow[];
+      const q = reportQuery(since, until);
+      const [rows, nameMap] = await Promise.all([
+        cwFetch<CWSummaryReportRow[]>(
+          `/accounts/${accountId()}/summary_reports/inbox?${q}`,
+          {},
+          'v2',
+        ),
+        fetchNameMap(`/accounts/${accountId()}/inboxes`),
+      ]);
+      return (Array.isArray(rows) ? rows : []).map(row => {
+        const mapped = mapSummaryRow(row, nameMap.get(row.id) ?? `Inbox ${row.id}`);
+        return {
+          id: mapped.id,
+          name: mapped.name,
+          open: mapped.open,
+          resolved: mapped.resolved,
+          avg_first_response: mapped.avg_first_response,
+          avg_resolution: mapped.avg_resolution,
+        };
+      });
     },
   });
 }
 
 export function useTeamReport(range: ReportRange) {
-  const since = sinceDate(range);
-  const until = new Date().toISOString().slice(0, 10);
-
+  const { since, until } = sinceUntil(range);
   return useQuery({
     queryKey: ['reportTeams', range, isDemoDataEnabled()],
     queryFn: async () => {
-      if (isDemoDataEnabled()) return DEMO_TEAM_REPORT;
-      try {
-        const res = await cwFetch<{ payload?: typeof DEMO_TEAM_REPORT }>(
-          `/accounts/${accountId()}/reports/teams/conversations?since=${since}&until=${until}`,
-        );
-        return res.payload ?? DEMO_TEAM_REPORT;
-      } catch {
-        return DEMO_TEAM_REPORT;
-      }
+      if (isDemoDataEnabled()) return DEMO_TEAM_REPORT as TeamReportRow[];
+      const q = reportQuery(since, until);
+      const [rows, nameMap] = await Promise.all([
+        cwFetch<CWSummaryReportRow[]>(
+          `/accounts/${accountId()}/summary_reports/team?${q}`,
+          {},
+          'v2',
+        ),
+        fetchNameMap(`/accounts/${accountId()}/teams`),
+      ]);
+      return (Array.isArray(rows) ? rows : []).map(row => {
+        const mapped = mapSummaryRow(row, nameMap.get(row.id) ?? `Team ${row.id}`);
+        return {
+          id: mapped.id,
+          name: mapped.name,
+          open: mapped.open,
+          resolved: mapped.resolved,
+          avg_first_response: mapped.avg_first_response,
+          avg_resolution: mapped.avg_resolution,
+        };
+      });
     },
   });
 }

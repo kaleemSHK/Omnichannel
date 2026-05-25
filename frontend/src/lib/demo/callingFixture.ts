@@ -1,5 +1,99 @@
-import { DEMO_CALLS } from '@/lib/demo/callsFixture';
-import type { CDRRecord, IVRFlow, Queue, QueueStats, RoutingAgent } from '@/types';
+import type { CallSession, CDRRecord, IVRFlow, Queue, QueueStats, RoutingAgent } from '@/types';
+
+export const DEMO_CALLS: CallSession[] = [
+  {
+    id: 'demo-1',
+    tenantId: '1',
+    roomId: 'demo-1',
+    channel: 'voice',
+    agentLabel: 'Ahmed Al-Rashidi',
+    customerPhone: '+96891234567',
+    status: 'connected',
+    direction: 'inbound',
+    startedAt: new Date(Date.now() - 120_000).toISOString(),
+    connectedAt: new Date(Date.now() - 115_000).toISOString(),
+    transport: 'pstn',
+  },
+  {
+    id: 'demo-2',
+    tenantId: '1',
+    roomId: 'demo-2',
+    channel: 'voice',
+    agentLabel: 'Mohammed Al-Balushi',
+    customerPhone: '+96899876543',
+    status: 'ringing',
+    direction: 'inbound',
+    startedAt: new Date(Date.now() - 15_000).toISOString(),
+    transport: 'pstn',
+  },
+  {
+    id: 'demo-ring-1',
+    tenantId: '1',
+    roomId: 'demo-ring-1',
+    channel: 'voice',
+    agentLabel: '',
+    customerPhone: '+968 9211 4401',
+    status: 'ringing',
+    direction: 'inbound',
+    startedAt: new Date().toISOString(),
+    transport: 'whatsapp',
+  },
+  {
+    id: 'demo-live-1',
+    tenantId: '1',
+    roomId: 'demo-live-1',
+    channel: 'voice',
+    agentLabel: 'Sarah Al-Hinai',
+    customerPhone: '+968 9244 5512',
+    status: 'connected',
+    direction: 'inbound',
+    startedAt: new Date(Date.now() - 240_000).toISOString(),
+    connectedAt: new Date(Date.now() - 227_000).toISOString(),
+    transport: 'whatsapp',
+  },
+  {
+    id: 'demo-ended-1',
+    tenantId: '1',
+    roomId: 'demo-ended-1',
+    channel: 'voice',
+    agentLabel: '',
+    customerPhone: '+968 9900 2211',
+    status: 'ended',
+    direction: 'inbound',
+    startedAt: new Date(Date.now() - 1_200_000).toISOString(),
+    endedAt: new Date(Date.now() - 720_000).toISOString(),
+    durationMs: 151_000,
+    transport: 'pstn',
+  },
+  {
+    id: 'demo-missed-1',
+    tenantId: '1',
+    roomId: 'demo-missed-1',
+    channel: 'voice',
+    agentLabel: '',
+    customerPhone: '+968 9211 xxxx',
+    status: 'missed',
+    direction: 'inbound',
+    startedAt: new Date(Date.now() - 600_000).toISOString(),
+    endedAt: new Date(Date.now() - 480_000).toISOString(),
+    transport: 'pstn',
+  },
+];
+
+const CALLER_NAMES: Record<string, string> = {
+  'demo-1': 'Ahmed Al-Rashidi',
+  'demo-2': 'Mohammed Al-Balushi',
+  'demo-ring-1': 'Mohammed Al-Rashidi',
+  'demo-live-1': 'Fatima Al-Zahraa',
+  'demo-missed-1': 'Samir Al-Oman',
+  'demo-ended-1': 'Khalid Hassan',
+};
+
+/** Display name for a CallSession in demo / UI. */
+export function demoCallerName(session: Partial<CallSession>): string {
+  if (session.id && CALLER_NAMES[session.id]) return CALLER_NAMES[session.id];
+  return session.agentLabel || session.customerPhone || 'Unknown';
+}
 
 export const DEMO_AGENTS: RoutingAgent[] = [
   {
@@ -70,19 +164,41 @@ export function demoQueueStats(): QueueStats {
   );
 }
 
-export const DEMO_CDR: CDRRecord[] = DEMO_CALLS.filter(c => c.status === 'ended' || c.status === 'missed').map(
-  (c, i) => ({
-    id: `cdr-${c.id}`,
-    tenantId: c.tenantId,
-    callSessionId: c.id,
+export const DEMO_CDR: CDRRecord[] = [
+  {
+    id: 'cdr-1',
+    tenantId: '1',
+    callSessionId: 'demo-ended-1',
     agentId: '2',
-    direction: c.direction,
-    transport: c.transport,
-    duration: Math.round((c.durationMs ?? 120_000) / 1000),
-    outcome: c.status === 'missed' ? 'missed' : 'completed',
-    startedAt: c.startedAt,
-  }),
-);
+    direction: 'inbound',
+    transport: 'pstn',
+    duration: 245,
+    outcome: 'answered',
+    startedAt: new Date(Date.now() - 3_600_000).toISOString(),
+  },
+  {
+    id: 'cdr-2',
+    tenantId: '1',
+    callSessionId: 'demo-1',
+    agentId: '2',
+    direction: 'outbound',
+    transport: 'pstn',
+    duration: 132,
+    outcome: 'completed',
+    startedAt: new Date(Date.now() - 7_200_000).toISOString(),
+  },
+  {
+    id: 'cdr-3',
+    tenantId: '1',
+    callSessionId: 'demo-missed-1',
+    agentId: '2',
+    direction: 'inbound',
+    transport: 'whatsapp',
+    duration: 0,
+    outcome: 'missed',
+    startedAt: new Date(Date.now() - 10_800_000).toISOString(),
+  },
+];
 
 export const DEMO_IVR_FLOW: IVRFlow = {
   id: 'flow-demo-1',

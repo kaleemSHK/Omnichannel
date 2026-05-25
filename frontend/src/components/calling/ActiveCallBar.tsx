@@ -1,65 +1,59 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import { Mic, MicOff, PauseCircle, PhoneOff } from 'lucide-react';
 import { endCall } from '@/lib/api/calls';
-import { demoCallerName } from '@/lib/demo/callsFixture';
-import { useJsSip } from '@/lib/hooks/useJsSip';
+import { CallTimer } from '@/components/calling/CallTimer';
 import { useCallsStore } from '@/lib/store/calls';
+import { resolveCallerName } from '@/lib/utils/calling';
 import { cn } from '@/lib/utils/cn';
+import { isDemoDataEnabled } from '@/lib/demo/config';
 
-function CallTimer({ startTime, className }: { startTime: string; className?: string }) {
-  const [elapsed, setElapsed] = useState(0);
-  useEffect(() => {
-    const start = new Date(startTime).getTime();
-    const id = setInterval(() => setElapsed(Math.floor((Date.now() - start) / 1000)), 1000);
-    return () => clearInterval(id);
-  }, [startTime]);
-  const mm = String(Math.floor(elapsed / 60)).padStart(2, '0');
-  const ss = String(elapsed % 60).padStart(2, '0');
-  return (
-    <span className={className}>
-      {mm}:{ss}
-    </span>
-  );
-}
-
-/** Top bar when a call is active — reads from calls store. */
 export function ActiveCallBar() {
   const activeCall = useCallsStore(s => s.activeCall);
   const setActiveCall = useCallsStore(s => s.setActiveCall);
-  const { hangup, mute, unmute, hold } = useJsSip();
-  const [muted, setMuted] = useState(false);
+  const muted = useCallsStore(s => s.muted);
+  const held = useCallsStore(s => s.held);
+  const contactCache = useCallsStore(s => s.contactCache);
+  const sipControls = useCallsStore(s => s.sipControls);
 
   if (!activeCall || activeCall.status !== 'connected') return null;
 
-  const name = demoCallerName(activeCall);
-  const number = activeCall.customerPhone;
+  const displayName = resolveCallerName(activeCall, contactCache);
 
   const handleHangup = () => {
-    hangup();
-    void endCall(activeCall.id).catch(() => undefined);
+    sipControls?.hangup();
+    if (!isDemoDataEnabled()) {
+      void endCall(activeCall.id).catch(() => undefined);
+    }
     setActiveCall(null);
   };
 
   return (
-    <div className="h-10 bg-green-600 text-white flex items-center gap-4 px-4 text-sm shrink-0">
-      <div className="w-2 h-2 rounded-full bg-white animate-pulse shrink-0" />
-      <span className="font-medium truncate">{name}</span>
-      <span className="text-green-100 text-xs hidden sm:inline">{number}</span>
+    <div
+      role="status"
+      aria-live="polite"
+      aria-label="Active call"
+      className={cn(
+        'h-10 text-white flex items-center gap-4 px-4 text-sm shrink-0 transition-colors',
+        held ? 'bg-amber-600' : 'bg-green-600',
+      )}
+    >
+      <div className="w-2 h-2 rounded-full bg-white animate-pulse shrink-0" aria-hidden />
+      <span className="font-medium truncate">{displayName}</span>
+      <span className="text-white/70 text-xs hidden sm:inline">{activeCall.customerPhone}</span>
       <CallTimer
         startTime={activeCall.connectedAt ?? activeCall.startedAt}
-        className="font-mono tabular-nums"
+        className="font-mono tabular-nums text-xs"
       />
+      {held && (
+        <span className="text-xs font-medium bg-white/20 px-2 py-0.5 rounded">On Hold</span>
+      )}
       <div className="ms-auto flex gap-1.5 shrink-0">
         <button
           type="button"
-          title="Mute"
-          onClick={() => {
-            if (muted) unmute();
-            else mute();
-            setMuted(m => !m);
-          }}
+          aria-label={muted ? 'Unmute microphone' : 'Mute microphone'}
+          aria-pressed={muted}
+          onClick={() => sipControls?.toggleMute()}
           className={cn(
             'w-7 h-7 rounded-full flex items-center justify-center',
             muted ? 'bg-white/30' : 'bg-white/10 hover:bg-white/20',
@@ -69,15 +63,19 @@ export function ActiveCallBar() {
         </button>
         <button
           type="button"
-          title="Hold"
-          onClick={() => hold()}
-          className="w-7 h-7 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center"
+          aria-label={held ? 'Resume call' : 'Hold call'}
+          aria-pressed={held}
+          onClick={() => sipControls?.toggleHold()}
+          className={cn(
+            'w-7 h-7 rounded-full flex items-center justify-center',
+            held ? 'bg-white/30' : 'bg-white/10 hover:bg-white/20',
+          )}
         >
           <PauseCircle className="w-3.5 h-3.5" />
         </button>
         <button
           type="button"
-          title="End call"
+          aria-label="End call"
           onClick={handleHangup}
           className="w-7 h-7 rounded-full bg-red-500 hover:bg-red-600 flex items-center justify-center"
         >

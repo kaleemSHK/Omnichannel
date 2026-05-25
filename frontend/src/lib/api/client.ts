@@ -10,6 +10,7 @@
  */
 
 import { useAuthStore } from '@/lib/store/auth';
+import { shouldSkipGatewayFetch } from '@/lib/demo/config';
 import { CHATWOOT_URL, GATEWAY_URL } from '@/lib/env';
 import type { ApiError } from '@/types';
 
@@ -31,18 +32,33 @@ async function handleResponse<T>(res: Response): Promise<T> {
     return res.json() as Promise<T>;
   }
 
-  let errBody: Partial<ApiError> = {};
+  let errBody: Partial<ApiError> & { error?: string } = {};
   try {
     errBody = await res.json();
   } catch {
     /* ignore */
   }
 
-  throw new BlinkoneApiError(
-    errBody.code ?? 'HTTP_ERROR',
-    errBody.message ?? `Request failed with status ${res.status}`,
-    res.status,
-  );
+  const message =
+    errBody.message ??
+    (typeof errBody.error === 'string' ? errBody.error : undefined) ??
+    `Request failed with status ${res.status}`;
+
+  throw new BlinkoneApiError(errBody.code ?? 'HTTP_ERROR', message, res.status);
+}
+
+function buildHeaders(
+  init: RequestInit,
+  authHeaders: Record<string, string>,
+): HeadersInit {
+  const isFormData =
+    typeof FormData !== 'undefined' && init.body instanceof FormData;
+
+  return {
+    ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
+    ...authHeaders,
+    ...(init.headers ?? {}),
+  };
 }
 
 // ─── Chatwoot REST client ──────────────────────────────────────────────────────
@@ -57,11 +73,9 @@ export async function cwFetch<T>(
 
   const res = await fetch(url, {
     ...init,
-    headers: {
-      'Content-Type': 'application/json',
+    headers: buildHeaders(init, {
       ...(tokens?.accessToken ? { api_access_token: tokens.accessToken } : {}),
-      ...(init.headers ?? {}),
-    },
+    }),
   });
 
   return handleResponse<T>(res);
@@ -74,19 +88,30 @@ export async function bnFetch<T>(
   path: string,
   init: RequestInit = {},
 ): Promise<T> {
+  if (shouldSkipGatewayFetch()) {
+    throw new BlinkoneApiError(
+      'SKIP_GATEWAY',
+      'Gateway fetch skipped (demo mode or missing JWT)',
+      0,
+    );
+  }
+
   const { tokens } = useAuthStore.getState();
   const url = `${GATEWAY_URL}/api/${service}${path}`;
 
   const res = await fetch(url, {
     ...init,
-    headers: {
-      'Content-Type': 'application/json',
+    headers: buildHeaders(init, {
       ...(tokens?.gatewayJwt
         ? { Authorization: `Bearer ${tokens.gatewayJwt}` }
         : {}),
-      ...(init.headers ?? {}),
-    },
+    }),
   });
+
+  if (res.status === 401 || res.status === 403) {
+    const { markGatewayAuthFailed } = await import('@/lib/demo/config');
+    markGatewayAuthFailed();
+  }
 
   return handleResponse<T>(res);
 }

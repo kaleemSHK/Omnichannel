@@ -1,0 +1,45 @@
+{
+  "nav": {
+    "conversations": "المحادثات",
+    "calling": "المكالمات",
+    "contacts": "جهات الاتصال",
+    "sla": "اتفاقية مستوى الخدمة",
+    "escalation": "التصعيد",
+    "ai": "مساعد الذكاء الاصطناعي",
+    "billing": "الفواتير",
+    "platform": "إدارة المنصة",
+    "settings": "الإعدادات"
+  },
+  "calling": {
+    "available": "متاح",
+    "busy": "مشغول",
+    "break": "استراحة",
+    "offline": "غير متصل",
+    "incomingCall": "مكالمة واردة",
+    "answer": "رد",
+    "decline": "رفض",
+    "hold": "تعليق",
+    "transfer": "تحويل",
+    "mute": "كتم الصوت",
+    "endCall": "إنهاء المكالمة",
+    "pstn": "مكالمة هاتفية",
+    "whatsapp": "مكالمة واتساب"
+  },
+  "sla": {
+    "breached": "منتهكة",
+    "atRisk": "في خطر",
+    "active": "نشطة",
+    "met": "محققة",
+    "policies": "السياسات"
+  },
+  "common": {
+    "loading": "جاري التحميل…",
+    "error": "حدث خطأ ما",
+    "save": "حفظ",
+    "cancel": "إلغاء",
+    "delete": "حذف",
+    "edit": "تعديل",
+    "create": "إنشاء",
+    "search": "بحث"
+  }
+}

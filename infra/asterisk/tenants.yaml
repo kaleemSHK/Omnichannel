@@ -1,0 +1,20 @@
+# infra/asterisk/tenants.yaml
+# Per-tenant trunk + DID mapping for BlinkOne demo
+
+tenants:
+  default:
+    tenant_id: default
+    chatwoot_account_id: 1
+    trunks:
+      - name: twilio-pstn
+        host: ${TWILIO_SIP_HOST}
+        port: 5060
+        transport: udp
+        username: blinkone-demo
+    dids:
+      - "${TWILIO_DID}"
+    outbound:
+      default_trunk: twilio-pstn
+      caller_id: "${TWILIO_DID}"
+    recording:
+      prefix: "recordings/default"

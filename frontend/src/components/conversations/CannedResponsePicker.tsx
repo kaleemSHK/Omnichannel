@@ -9,9 +9,25 @@ interface Props {
 }
 
 export function CannedResponsePicker({ query, onSelect, onClose }: Props) {
-  const { data = [] } = useCannedResponses(query);
+  const { data = [], isLoading, isFetching } = useCannedResponses(query);
 
-  if (data.length === 0) return null;
+  if (isLoading || isFetching) {
+    return (
+      <div className="absolute bottom-full left-0 w-full mb-1 bg-white border rounded-lg shadow-lg z-50 px-3 py-2 text-xs text-muted-foreground">
+        Loading canned responses…
+      </div>
+    );
+  }
+
+  if (data.length === 0) {
+    return (
+      <div className="absolute bottom-full left-0 w-full mb-1 bg-white border rounded-lg shadow-lg z-50 px-3 py-2 text-xs text-muted-foreground">
+        {query.trim()
+          ? `No canned responses matching "/${query}"`
+          : 'Type a short code after / (e.g. /greet)'}
+      </div>
+    );
+  }
 
   return (
     <div className="absolute bottom-full left-0 w-full mb-1 bg-white border rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto">
@@ -19,6 +35,7 @@ export function CannedResponsePicker({ query, onSelect, onClose }: Props) {
         <button
           key={cr.id}
           type="button"
+          onMouseDown={e => e.preventDefault()}
           onClick={() => {
             onSelect(cr.content);
             onClose();

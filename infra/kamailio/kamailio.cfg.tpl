@@ -72,6 +72,15 @@ request_route {
     }
   }
 
+  # Inbound from Twilio / trusted carriers (IP ranges — Prompt 16)
+  if ($rp == 5060 && !($si == "${KAM_AST_HOST}" || $si =~ "blinkone-asterisk")) {
+    if (!($si =~ "^54\\.172\\." || $si =~ "^54\\.244\\." || $si =~ "^54\\.171\\.127" || $si =~ "^35\\.156\\.191" || $si =~ "^54\\.65\\.63" || $si =~ "^54\\.169\\.127" || $si =~ "^54\\.252\\.254" || $si =~ "^177\\.71\\.206" || $si == "127.0.0.1" || $si =~ "^172\\." || $si =~ "^192\\.168\\.")) {
+      xlog("L_WARN", "Rejected untrusted SIP source $si:$sp\n");
+      sl_send_reply("403", "Forbidden");
+      exit;
+    }
+  }
+
   # Inbound from carrier / softphone → Asterisk
   if ($rp == 5060 && $fd != "${KAM_SIP_DOMAIN}") {
     $ru = "sip:" + $rU + "@" + "${KAM_AST_HOST}" + ":" + "${KAM_AST_PORT}";

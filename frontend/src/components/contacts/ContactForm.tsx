@@ -70,24 +70,26 @@ export function ContactForm({ contact, onDone }: Props) {
   }, [contact, reset]);
 
   const onSubmit = async (values: FormValues) => {
-    const payload = {
-      name: values.name,
-      email: values.email || undefined,
-      phone_number: values.phone_number || undefined,
-      custom_attributes: {
-        sla_tier: values.sla_tier,
-        company: values.company || undefined,
-      },
-    } as Partial<CWContact>;
     try {
       if (isEdit && contact) {
-        await update.mutateAsync({ id: contact.id, data: payload });
+        await update.mutateAsync({
+          id: contact.id,
+          data: {
+            name: values.name,
+            email: values.email || undefined,
+            phone_number: values.phone_number || undefined,
+            company_name: values.company || undefined,
+            custom_attributes: { sla_tier: values.sla_tier },
+          },
+        });
         toast.success('Contact updated');
       } else {
         await create.mutateAsync({
           name: values.name,
           email: values.email || undefined,
           phone_number: values.phone_number || undefined,
+          company_name: values.company || undefined,
+          custom_attributes: { sla_tier: values.sla_tier },
         });
         toast.success('Contact created');
       }
@@ -140,10 +142,12 @@ export function ContactForm({ contact, onDone }: Props) {
       </div>
       <Button
         type="submit"
-        disabled={isSubmitting}
+        disabled={isSubmitting || create.isPending || update.isPending}
         className="w-full bg-brand-primary hover:bg-brand-primary/90"
       >
-        {isSubmitting && <Loader2 size={16} className="animate-spin me-2" />}
+        {(isSubmitting || create.isPending || update.isPending) && (
+          <Loader2 size={16} className="animate-spin me-2" />
+        )}
         {isEdit ? 'Save changes' : 'Create contact'}
       </Button>
     </form>
