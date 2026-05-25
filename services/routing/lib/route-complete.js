@@ -1,4 +1,4 @@
-import { forwardUsageToBilling } from '../../_shared/lib/billing-forward.js';
+import { forwardUsageToBilling } from '../_shared/lib/billing-forward.js';
 import { setAgentState, getAgentState } from './redis-state.js';
 import { getCallMeta } from './call-meta.js';
 import * as queueRepo from './queue-repo.js';

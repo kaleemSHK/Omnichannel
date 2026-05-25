@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useLayoutEffect, useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { useAuthStore } from '@/lib/store/auth';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { NextIntlClientProvider, type AbstractIntlMessages } from 'next-intl';
 import { Toaster } from 'sonner';
@@ -23,6 +24,11 @@ export function Providers({
         },
       }),
   );
+
+  const hydrateFromSession = useAuthStore(s => s.hydrateFromSession);
+  useLayoutEffect(() => {
+    hydrateFromSession();
+  }, [hydrateFromSession]);
 
   return (
     <QueryClientProvider client={queryClient}>

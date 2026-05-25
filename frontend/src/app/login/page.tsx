@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useLayoutEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -31,6 +31,18 @@ const FEATURES = [
 export default function LoginPage() {
   const router = useRouter();
   const [showPassword, setShowPassword] = useState(false);
+  const hydrated = useAuthStore(s => s.hydrated);
+  const user = useAuthStore(s => s.user);
+  const hydrateFromSession = useAuthStore(s => s.hydrateFromSession);
+
+  useLayoutEffect(() => {
+    hydrateFromSession();
+  }, [hydrateFromSession]);
+
+  useEffect(() => {
+    if (!hydrated || !user) return;
+    router.replace(user.role === 'platform_admin' ? '/platform' : '/conversations');
+  }, [hydrated, user, router]);
 
   const {
     register,

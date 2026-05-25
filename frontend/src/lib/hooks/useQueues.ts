@@ -6,11 +6,11 @@ import { DEMO_QUEUES } from '@/lib/demo/callingFixture';
 import { isDemoDataEnabled, isGatewayQueryEnabled } from '@/lib/demo/config';
 
 export function useQueues() {
-  const enabled = isGatewayQueryEnabled();
+  const live = isGatewayQueryEnabled();
   return useQuery({
-    queryKey: ['queues', isDemoDataEnabled()],
+    queryKey: ['queues', isDemoDataEnabled(), live],
     queryFn: async () => {
-      if (isDemoDataEnabled()) return DEMO_QUEUES;
+      if (isDemoDataEnabled() || !live) return DEMO_QUEUES;
       try {
         const rows = await listQueues();
         return rows.length ? rows : DEMO_QUEUES;
@@ -18,8 +18,7 @@ export function useQueues() {
         return DEMO_QUEUES;
       }
     },
-    enabled,
-    refetchInterval: enabled ? 10_000 : false,
+    refetchInterval: live ? 10_000 : false,
     staleTime: 5_000,
   });
 }

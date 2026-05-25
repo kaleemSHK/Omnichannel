@@ -1,30 +1,73 @@
 /**
- * Auth store — Zustand.
- * Persists tokens in memory only (never localStorage — security).
- * On page refresh user must re-login (or implement httpOnly cookie flow).
+ * Auth store — Zustand with sessionStorage persistence (survives page refresh).
+ * Uses sessionStorage (not localStorage): cleared when the browser tab closes.
  */
 
 import { create } from 'zustand';
 import type { BlinkoneUser, AuthTokens } from '@/types';
 import { resolveRoleFromAuth } from '@/lib/roles';
 import { resetGatewayAuthFailed } from '@/lib/demo/config';
+import {
+  clearAuthSession,
+  loadAuthSession,
+  saveAuthSession,
+} from '@/lib/store/auth-persist';
 
 interface AuthState {
   user: BlinkoneUser | null;
   tokens: AuthTokens | null;
+  /** False until client has read sessionStorage (avoids refresh → login flash). */
+  hydrated: boolean;
+  hydrateFromSession: () => void;
   setAuth: (user: BlinkoneUser, tokens: AuthTokens) => void;
   clearAuth: () => void;
   updateTokens: (tokens: AuthTokens) => void;
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
+function readSessionIntoState(): Pick<AuthState, 'user' | 'tokens' | 'hydrated'> {
+  const stored = loadAuthSession();
+  if (stored) {
+    const role = resolveRoleFromAuth(
+      stored.user.role,
+      stored.tokens.gatewayJwt,
+      stored.user.email,
+    );
+    resetGatewayAuthFailed();
+    return {
+      user: { ...stored.user, role },
+      tokens: stored.tokens,
+      hydrated: true,
+    };
+  }
+  return { user: null, tokens: null, hydrated: true };
+}
+
+export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   tokens: null,
+  hydrated: false,
+
+  hydrateFromSession: () => {
+    if (get().hydrated) return;
+    set(readSessionIntoState());
+  },
+
   setAuth: (user, tokens) => {
     resetGatewayAuthFailed();
     const role = resolveRoleFromAuth(user.role, tokens.gatewayJwt, user.email);
-    set({ user: { ...user, role }, tokens });
+    const nextUser = { ...user, role };
+    set({ user: nextUser, tokens, hydrated: true });
+    saveAuthSession({ user: nextUser, tokens });
   },
-  clearAuth: () => set({ user: null, tokens: null }),
-  updateTokens: (tokens) => set((s) => ({ ...s, tokens })),
+
+  clearAuth: () => {
+    clearAuthSession();
+    set({ user: null, tokens: null, hydrated: true });
+  },
+
+  updateTokens: tokens => {
+    const user = get().user;
+    set({ tokens });
+    if (user) saveAuthSession({ user, tokens });
+  },
 }));

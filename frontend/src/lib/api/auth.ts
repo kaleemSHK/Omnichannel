@@ -40,7 +40,7 @@ async function authFetch(url: string, init?: RequestInit): Promise<Response> {
   } catch (e) {
     if (e instanceof TypeError) {
       throw new Error(
-        'Cannot reach the API. Ensure Chatwoot (:3000) and the API gateway (:8080) are running.',
+        'Cannot reach the API. Start Docker services (Chatwoot :3000, gateway :8787) or check CHATWOOT_UPSTREAM / GATEWAY_UPSTREAM in frontend/.env.local.',
       );
     }
     throw e;
@@ -79,11 +79,20 @@ export async function loginWithPassword(payload: LoginPayload): Promise<{
 
   if (!gwRes.ok) {
     const err = await gwRes.json().catch(() => ({}));
+    const nested = (err as { error?: { message?: string; code?: string } })?.error;
     const msg =
-      (err as { error?: { message?: string } })?.error?.message ??
+      nested?.message ??
       (err as { message?: string })?.message ??
-      'Gateway token exchange failed';
-    throw new Error(msg);
+      `Gateway token exchange failed (HTTP ${gwRes.status})`;
+    if (gwRes.status === 401) {
+      throw new Error(msg);
+    }
+    if (nested?.code === 'CONFIG_ERROR') {
+      throw new Error('Gateway misconfigured: set JWT_SECRET in the root .env and restart the gateway container.');
+    }
+    throw new Error(
+      `${msg}. Is the gateway running? Start it with: docker compose up -d gateway chatwoot (port 8787).`,
+    );
   }
 
   const gw: GatewayTokenResponse = await gwRes.json();

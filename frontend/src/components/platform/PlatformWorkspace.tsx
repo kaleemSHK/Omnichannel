@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Loader2, Plus, Search } from 'lucide-react';
 import { PlatformKPICards } from '@/components/platform/PlatformKPICards';
@@ -31,6 +31,8 @@ export function PlatformWorkspace() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const user = useAuthStore(s => s.user);
+  const hydrated = useAuthStore(s => s.hydrated);
+  const hydrateFromSession = useAuthStore(s => s.hydrateFromSession);
   const tab = (searchParams.get('tab') as PlatformTab) || 'tenants';
 
   const { data: tenants = [], isLoading } = usePlatformTenants();
@@ -39,7 +41,12 @@ export function PlatformWorkspace() {
   const [wizardOpen, setWizardOpen] = useState(false);
   const demoMode = isDemoDataEnabled();
 
+  useLayoutEffect(() => {
+    hydrateFromSession();
+  }, [hydrateFromSession]);
+
   useEffect(() => {
+    if (!hydrated) return;
     if (!user) {
       router.replace('/login');
       return;
@@ -47,7 +54,7 @@ export function PlatformWorkspace() {
     if (user.role !== 'platform_admin' && !demoMode) {
       router.replace('/conversations');
     }
-  }, [user, router, demoMode]);
+  }, [hydrated, user, router, demoMode]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();

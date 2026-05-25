@@ -1,9 +1,10 @@
 ﻿FROM node:20-alpine
 WORKDIR /app
-COPY package.json .
+COPY calls/package.json .
 RUN npm install --production
-COPY lib/ ./lib/
-COPY db/ ./db/
-COPY src/ ./src/
+COPY _shared/lib ./_shared/lib/
+COPY calls/lib/ ./lib/
+COPY calls/db/ ./db/
+COPY calls/src/ ./src/
 ENV NODE_ENV=production
 CMD ["node", "src/server.js"]

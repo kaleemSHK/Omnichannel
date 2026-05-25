@@ -167,6 +167,8 @@ services:
       WHATSAPP_CALLS_TOKEN: ${WHATSAPP_CALLS_TOKEN:-${CALLS_TOKEN}}
     networks: [blinkone]
     expose: ["8787"]
+    ports:
+      - "127.0.0.1:8787:8787"
 
   platform:
     build: { context: ./services/platform }
@@ -225,9 +227,11 @@ services:
       postgres_app: { condition: service_healthy }
     networks: [blinkone]
     expose: ["8791"]
+    ports:
+      - "127.0.0.1:8791:8791"
 
   calls:
-    build: { context: ./services/calls }
+    build: { context: ./services, dockerfile: calls/Dockerfile }
     restart: unless-stopped
     environment:
       PORT:                  "8792"
@@ -353,7 +357,7 @@ services:
       - '127.0.0.1:8797:8797'
 
   routing:
-    build: { context: ./services/routing }
+    build: { context: ./services, dockerfile: routing/Dockerfile }
     restart: unless-stopped
     environment:
       TENANT_URL:              http://tenant:8802

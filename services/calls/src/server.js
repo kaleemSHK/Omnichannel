@@ -5,7 +5,7 @@ import { createStore } from '../lib/store.js';
 import { ok, fail, bearerAuth, requestId, errorHandler, healthRouter, gracefulShutdown } from '../lib/http.js';
 import { dbEnabled, runMigrations, closePool, getPool } from '../lib/db.js';
 import * as cdrRepo from '../lib/cdr-repo.js';
-import { requireFeature } from '../../_shared/lib/features.js';
+import { requireFeature } from '../_shared/lib/features.js';
 import { broadcastCallEvent } from '../lib/chatwoot-broadcast.js';
 
 const log = createLogger('calls');

@@ -7,7 +7,7 @@ Connect the Next.js agent UI (`http://127.0.0.1:3001`) to real backends.
 ```
 Browser http://127.0.0.1:3001
   ├─ /_cw/*  →  Chatwoot  http://127.0.0.1:3000
-  └─ /_gw/*  →  Gateway   http://127.0.0.1:8080  (nginx → gateway:8787)
+  └─ /_gw/*  →  Gateway   http://127.0.0.1:8787  (docker `gateway` service)
 ```
 
 Auth flow: Chatwoot `POST /auth/sign_in` → gateway `POST /api/auth/token` → store both tokens.
@@ -44,7 +44,7 @@ curl -I http://127.0.0.1:8080/api/auth/token
 |----------|------------------|
 | `NEXT_PUBLIC_USE_DEMO_DATA` | `false` |
 | `CHATWOOT_UPSTREAM` | `http://127.0.0.1:3000` |
-| `GATEWAY_UPSTREAM` | `http://127.0.0.1:8080` |
+| `GATEWAY_UPSTREAM` | `http://127.0.0.1:8787` |
 | `NEXT_PUBLIC_WS_URL` | `ws://127.0.0.1:3000/cable` |
 
 Demo mode: set `NEXT_PUBLIC_USE_DEMO_DATA=true` — no backends required.
@@ -85,3 +85,4 @@ Login at http://127.0.0.1:3001/login
 | CORS errors | Use `/_cw` and `/_gw` proxy paths, not raw `:3000` URLs in browser |
 | WS connection fails | Use `ws://127.0.0.1:3000/cable` (or `ws://127.0.0.1:8080/cable` via nginx) |
 | Chatwoot unreachable | Publish `ports: ["3000:3000"]` on the chatwoot service |
+| Gateway token exchange failed | Run `docker compose up -d gateway chatwoot`; gateway must listen on `127.0.0.1:8787` (`GATEWAY_UPSTREAM` in `.env.local`) |

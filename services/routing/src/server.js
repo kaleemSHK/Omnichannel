@@ -5,7 +5,7 @@ import { ok, fail, bearerAuth, requestId, errorHandler, healthRouter, gracefulSh
 import { dbEnabled, runMigrations, closePool, getPool } from '../lib/db.js';
 import { redisEnabled, connectRedis, closeRedis } from '../lib/redis-state.js';
 import { resolveTenantId } from '../lib/tenant.js';
-import { requireFeature } from '../../_shared/lib/features.js';
+import { requireFeature } from '../_shared/lib/features.js';
 import { tenantSuspendedMiddleware } from '../lib/tenant-guard.js';
 import * as queueRepo from '../lib/queue-repo.js';
 import * as agentRepo from '../lib/agent-repo.js';

@@ -15,11 +15,11 @@ import { DEMO_CALLS } from '@/lib/demo/callsFixture';
 import type { CallSession, CDRFilters, CDRRecord } from '@/types';
 
 export function useActiveSessions() {
-  const gwEnabled = isGatewayQueryEnabled();
+  const live = isGatewayQueryEnabled();
   return useQuery({
-    queryKey: ['activeSessions', isDemoDataEnabled()],
+    queryKey: ['activeSessions', isDemoDataEnabled(), live],
     queryFn: async () => {
-      if (isDemoDataEnabled()) {
+      if (isDemoDataEnabled() || !live) {
         return DEMO_CALLS.filter(c => c.status === 'connected' || c.status === 'ringing');
       }
       try {
@@ -29,27 +29,26 @@ export function useActiveSessions() {
         return [];
       }
     },
-    enabled: gwEnabled,
-    refetchInterval: gwEnabled ? 5_000 : false,
+    refetchInterval: live ? 5_000 : false,
   });
 }
 
 export function useCDR(filters?: CDRFilters) {
   const limit = filters?.limit ?? 20;
   const page = filters?.page ?? 1;
-  const gwEnabled = isGatewayQueryEnabled();
+  const live = isGatewayQueryEnabled();
   return useQuery({
-    queryKey: ['cdr', page, limit, isDemoDataEnabled()],
+    queryKey: ['cdr', page, limit, isDemoDataEnabled(), live],
     queryFn: async () => {
-      if (isDemoDataEnabled()) return DEMO_CDR.slice(0, limit * page);
+      if (isDemoDataEnabled() || !live) return DEMO_CDR.slice(0, limit * page);
       try {
         const res = await listCDR({ page, ...filters });
-        return (res as { data?: CDRRecord[] }).data ?? [];
+        const rows = (res as { data?: CDRRecord[] }).data ?? [];
+        return rows.length ? rows : DEMO_CDR.slice(0, limit * page);
       } catch {
-        return [];
+        return DEMO_CDR.slice(0, limit * page);
       }
     },
-    enabled: gwEnabled,
     placeholderData: keepPreviousData,
   });
 }

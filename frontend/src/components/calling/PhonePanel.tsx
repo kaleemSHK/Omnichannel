@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
+import { usePathname } from 'next/navigation';
 import { Mic, MicOff, PauseCircle, Phone, PhoneOff } from 'lucide-react';
 import { searchContacts } from '@/lib/api/contacts';
 import { CallTimer } from '@/components/calling/CallTimer';
@@ -62,6 +63,8 @@ function CallControls() {
 }
 
 export function PhonePanel() {
+  const pathname = usePathname();
+  const onCallingPage = pathname.startsWith('/calling');
   const { user } = useAuthStore();
   const activeCall = useCallsStore(s => s.activeCall);
   const setActiveCall = useCallsStore(s => s.setActiveCall);
@@ -176,6 +179,7 @@ export function PhonePanel() {
   }, [calls, activeCall, setActiveCall]);
 
   if (!activeCall) {
+    if (onCallingPage) return null;
     return (
       <div className="fixed bottom-4 end-4 z-50">
         <button

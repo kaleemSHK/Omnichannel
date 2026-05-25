@@ -7,9 +7,9 @@ import { DEMO_AGENTS, DEMO_QUEUES } from '@/lib/demo/callingFixture';
 import type { AgentState } from '@/types';
 
 export function useAgents() {
-  const gwEnabled = !shouldSkipGatewayFetch() || isDemoDataEnabled();
+  const live = !shouldSkipGatewayFetch() || isDemoDataEnabled();
   return useQuery({
-    queryKey: ['agents', isDemoDataEnabled()],
+    queryKey: ['agents', isDemoDataEnabled(), live],
     queryFn: async () => {
       if (shouldSkipGatewayFetch()) return DEMO_AGENTS;
       try {
@@ -19,15 +19,14 @@ export function useAgents() {
         return DEMO_AGENTS;
       }
     },
-    enabled: gwEnabled,
-    refetchInterval: gwEnabled ? 5_000 : false,
+    refetchInterval: live ? 5_000 : false,
   });
 }
 
 export function useQueues() {
-  const gwEnabled = !shouldSkipGatewayFetch() || isDemoDataEnabled();
+  const live = !shouldSkipGatewayFetch() || isDemoDataEnabled();
   return useQuery({
-    queryKey: ['queues', isDemoDataEnabled()],
+    queryKey: ['queues', isDemoDataEnabled(), live],
     queryFn: async () => {
       if (shouldSkipGatewayFetch()) return DEMO_QUEUES;
       try {
@@ -37,8 +36,7 @@ export function useQueues() {
         return DEMO_QUEUES;
       }
     },
-    enabled: gwEnabled,
-    refetchInterval: gwEnabled ? 5_000 : false,
+    refetchInterval: live ? 10_000 : false,
   });
 }
 

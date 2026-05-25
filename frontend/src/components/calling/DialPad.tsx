@@ -20,9 +20,10 @@ interface Props {
   transport?: 'pstn' | 'whatsapp';
   onCall?: (number: string, transport: 'pstn' | 'whatsapp') => void;
   disabled?: boolean;
+  className?: string;
 }
 
-export function DialPad({ transport: transportProp, onCall, disabled }: Props) {
+export function DialPad({ transport: transportProp, onCall, disabled, className }: Props) {
   const [number, setNumber] = useState('');
   const [tab, setTab] = useState<'pstn' | 'whatsapp'>('pstn');
   const [calling, setCalling] = useState(false);
@@ -97,7 +98,7 @@ export function DialPad({ transport: transportProp, onCall, disabled }: Props) {
   }
 
   return (
-    <div className="p-4 space-y-3 h-full flex flex-col">
+    <div className={cn('p-4 space-y-3 h-full flex flex-col min-h-0', className)}>
       {!transportProp && (
         <div className="flex border border-gray-200 rounded-md overflow-hidden text-xs">
           {(['pstn', 'whatsapp'] as const).map(t => (

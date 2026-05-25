@@ -16,6 +16,8 @@ backups/
 
 # Runtime / OS
 node_modules/
+frontend/.next/
+frontend/node_modules/
 dist/
 .pnpm-store/
 chatwoot-fork-overlay/node_modules/
