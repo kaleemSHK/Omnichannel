@@ -15,6 +15,7 @@ import {
   TrendingUp,
   Users,
 } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
 import {
   Tooltip,
   TooltipContent,
@@ -24,6 +25,7 @@ import {
 import { useAuthStore } from '@/lib/store/auth';
 import { canAccessRoute } from '@/lib/rbac';
 import { cn } from '@/lib/utils/cn';
+import { getTenantBranding } from '@/lib/api/branding';
 
 const navItems = [
   { icon: MessageSquare, label: 'Conversations', href: '/conversations' },
@@ -40,7 +42,24 @@ const navItems = [
 
 export function IconSidebar() {
   const pathname = usePathname();
-  const role = useAuthStore(s => s.user?.role);
+  const user  = useAuthStore(s => s.user);
+  const role  = useAuthStore(s => s.user?.role);
+  const tokens = useAuthStore(s => s.tokens);
+
+  const tenantId = user ? String(user.chatwootAccountId ?? user.tenantId ?? '1') : null;
+
+  // Re-use the same query key as BrandingProvider — served from cache, no extra request
+  const { data: branding } = useQuery({
+    queryKey: ['tenant-branding', tenantId],
+    queryFn: () => getTenantBranding(tenantId!),
+    enabled: !!(tenantId && tokens?.gatewayJwt),
+    staleTime: 10 * 60 * 1_000,
+    retry: false,
+  });
+
+  const markUrl  = typeof branding?.logoUrl === 'object' ? branding.logoUrl?.mark : undefined;
+  const fullName = branding?.productName ?? branding?.companyName ?? 'BlinkOne';
+  const monogram = fullName.charAt(0).toUpperCase();
 
   const visibleNavItems = navItems.filter(item => canAccessRoute(role, item.href));
   const showPlatform = canAccessRoute(role, '/platform');
@@ -48,14 +67,29 @@ export function IconSidebar() {
   return (
     <TooltipProvider delayDuration={200}>
       <aside className="w-[52px] h-screen bg-white border-r border-gray-100 flex flex-col items-center py-3 gap-1 z-20 shrink-0">
-        <Link
-          href="/conversations"
-          className="w-9 h-9 flex items-center justify-center mb-1 rounded-lg"
-        >
-          <div className="w-7 h-7 rounded-md bg-brand-primary flex items-center justify-center">
-            <span className="text-white text-xs font-bold">B1</span>
-          </div>
-        </Link>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Link
+              href="/conversations"
+              className="w-9 h-9 flex items-center justify-center mb-1 rounded-lg"
+              aria-label={fullName}
+            >
+              {markUrl ? (
+                <img
+                  src={markUrl}
+                  alt={fullName}
+                  className="w-7 h-7 object-contain rounded-md"
+                  onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                />
+              ) : (
+                <div className="w-7 h-7 rounded-md bg-brand-primary flex items-center justify-center">
+                  <span className="text-white text-xs font-bold">{monogram}</span>
+                </div>
+              )}
+            </Link>
+          </TooltipTrigger>
+          <TooltipContent side="right">{fullName}</TooltipContent>
+        </Tooltip>
 
         {visibleNavItems.map(({ icon: Icon, label, href }) => {
           const active = pathname.startsWith(href);

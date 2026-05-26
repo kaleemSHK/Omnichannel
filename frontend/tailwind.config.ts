@@ -20,7 +20,11 @@ const config: Config = {
           foreground: 'hsl(var(--destructive-foreground))',
         },
         brand: {
-          primary:   '#0B5FFF',
+          // --brand-primary-rgb is injected at runtime by BrandingProvider;
+          // falls back to #0B5FFF (11 95 255).  The <alpha-value> placeholder
+          // makes `bg-brand-primary/90` etc. work correctly with Tailwind JIT.
+          primary:   'rgb(var(--brand-primary-rgb, 11 95 255) / <alpha-value>)',
+          accent:    'rgb(var(--brand-accent-rgb, 14 165 233) / <alpha-value>)',
           ink:       '#0A0F1C',
           50:        '#EEF3FF',
           100:       '#D4E2FF',
