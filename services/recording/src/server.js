@@ -4,6 +4,7 @@ import multer from 'multer';
 import { createLogger } from '../lib/logger.js';
 import { createStore } from '../lib/store.js';
 import { ok, fail, bearerAuth, requestId, errorHandler, healthRouter, gracefulShutdown } from '../lib/http.js';
+import { mountMetrics } from '../_shared/lib/metrics-middleware.js';
 import {
   putObject,
   recordingKey,
@@ -104,6 +105,7 @@ app.disable('x-powered-by');
 app.use(express.json({ limit: '2mb' }));
 app.use(requestId);
 healthRouter(app, 'recording');
+mountMetrics(app, 'recording');
 
 app.get('/v1/recordings', auth, (req, res) => {
   const tenantId = resolveTenantId(req);

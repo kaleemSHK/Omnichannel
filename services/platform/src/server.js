@@ -6,6 +6,7 @@ import multer from 'multer';
 import { createLogger } from '../lib/logger.js';
 import { createStore } from '../lib/store.js';
 import { ok, fail, bearerAuth, requestId, errorHandler, healthRouter, gracefulShutdown } from '../lib/http.js';
+import { mountMetrics } from '../_shared/lib/metrics-middleware.js';
 import {
   publicBrandingPayload,
   patchToYamlOverride,
@@ -53,6 +54,7 @@ app.disable('x-powered-by');
 app.use(express.json({ limit: '256kb' }));
 app.use(requestId);
 healthRouter(app, 'platform');
+mountMetrics(app, 'platform');
 
 // Tenants
 app.get('/v1/tenants', (_, res) => ok(res, store.load().tenants));

@@ -7,6 +7,7 @@ import pino from 'pino';
 import { tenantHasFeature } from './tenant-features.js';
 import { piiSerializer, pinoMixin, PII_REDACT, maskString } from '../../services/_shared/lib/pii-masker.js';
 import { rateLimitMiddleware, authRateLimitMiddleware } from './rate-limiter.js';
+import { mountMetrics } from '../../services/_shared/lib/metrics-middleware.js';
 
 const log = pino({
   name: 'gateway',
@@ -200,6 +201,7 @@ const WEBHOOK_SECRET = (process.env.CHATWOOT_WEBHOOK_SECRET || '').trim();
 // ─── App ──────────────────────────────────────────────────────────────────────
 const app = express();
 app.disable('x-powered-by');
+mountMetrics(app, 'gateway');
 
 // Correlation ID + request logger
 app.use((req, res, next) => {

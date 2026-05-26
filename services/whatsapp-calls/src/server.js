@@ -1,6 +1,7 @@
 import express from 'express';
 import { createLogger } from '../lib/logger.js';
 import { ok, fail, bearerAuth, requestId, errorHandler, healthRouter, gracefulShutdown } from '../lib/http.js';
+import { mountMetrics } from '../_shared/lib/metrics-middleware.js';
 import { verifyWebhook, verifySignature, parseWebhookEvents } from '../lib/meta-webhook.js';
 import { storeOffer, setAnswer, getSession } from '../lib/sdp-relay.js';
 import { bridgeToChat, handleChatwootOutbound } from '../lib/chatwoot-bridge.js';
@@ -17,6 +18,7 @@ const app = express();
 app.disable('x-powered-by');
 app.use(requestId);
 healthRouter(app, 'whatsapp-calls');
+mountMetrics(app, 'whatsapp-calls');
 
 // ─── Meta webhook — GET (verification handshake) ────────────────────────────
 

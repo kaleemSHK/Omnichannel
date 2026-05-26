@@ -2,6 +2,7 @@ import express from 'express';
 import { createLogger } from '../lib/logger.js';
 import { createStore } from '../lib/store.js';
 import { ok, fail, bearerAuth, requestId, errorHandler, healthRouter, gracefulShutdown } from '../lib/http.js';
+import { mountMetrics } from '../_shared/lib/metrics-middleware.js';
 import { dbEnabled, runMigrations, closePool, getPool } from '../lib/db.js';
 import { resolveTenantId } from '../lib/tenant.js';
 import { tenantSuspendedMiddleware } from '../lib/tenant-guard.js';
@@ -28,6 +29,7 @@ app.use(express.json({ limit: '512kb' }));
 app.use(requestId);
 app.use(tenantSuspendedMiddleware(resolveTenantId, fail));
 healthRouter(app, 'sla');
+mountMetrics(app, 'sla');
 
 app.get('/readyz', async (_req, res) => {
   if (!dbEnabled()) return res.json({ status: 'ready', db: false });

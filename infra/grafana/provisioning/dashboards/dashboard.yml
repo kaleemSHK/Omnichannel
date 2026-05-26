@@ -3,5 +3,8 @@ providers:
   - name: BlinkOne
     folder: BlinkOne
     type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
     options:
-      path: /etc/grafana/provisioning/dashboards/json
+      path: /var/lib/grafana/dashboards

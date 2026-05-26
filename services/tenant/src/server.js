@@ -1,6 +1,7 @@
 import express from 'express';
 import { createLogger } from '../lib/logger.js';
 import { ok, fail, bearerAuth, platformAdminOnly, requestId, errorHandler, healthRouter, gracefulShutdown } from '../lib/http.js';
+import { mountMetrics } from '../_shared/lib/metrics-middleware.js';
 import { dbEnabled, runMigrations, closePool, getPool } from '../lib/db.js';
 import * as repo from '../lib/repo.js';
 import { provisionTenant } from '../lib/provision.js';
@@ -20,6 +21,7 @@ app.disable('x-powered-by');
 app.use(express.json({ limit: '512kb' }));
 app.use(requestId);
 healthRouter(app, 'tenant');
+mountMetrics(app, 'tenant');
 
 app.get('/readyz', async (_req, res) => {
   if (!dbEnabled()) return res.status(503).json({ status: 'not_ready', db: false });

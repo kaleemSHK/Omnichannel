@@ -2,14 +2,16 @@ import express from 'express';
 import { createLogger } from '../lib/logger.js';
 import { createStore } from '../lib/store.js';
 import { ok, fail, bearerAuth, requestId, errorHandler, healthRouter, gracefulShutdown } from '../lib/http.js';
+import { mountMetrics } from '../_shared/lib/metrics-middleware.js';
 import { callState, startAriApp } from './ari-app.js';
 import { bridgeCallToAgent } from './bridge.js';
 import { applySuperviseMode } from './supervise.js';
 import { dbEnabled, runMigrations, closePool, getPool } from '../lib/db.js';
 import { resolveTenantId } from '../lib/tenant.js';
-import { requireFeature } from '../../_shared/lib/features.js';
+import { requireFeature } from '../_shared/lib/features.js';
 import { validateGraph } from '../lib/graph.js';
 import * as flowRepo from '../lib/flow-repo.js';
+import { twilioVoicebotRouter } from '../lib/twilio-voicebot.js';
 
 const log   = createLogger('ivr');
 const PORT  = parseInt(process.env.PORT || '8795', 10);
@@ -37,6 +39,9 @@ app.disable('x-powered-by');
 app.use(express.json({ limit: '2mb' }));
 app.use(requestId);
 healthRouter(app, 'ivr');
+mountMetrics(app, 'ivr');
+
+app.use(twilioVoicebotRouter);
 
 app.get('/readyz', async (_req, res) => {
   if (!dbEnabled()) return res.json({ status: 'ready', db: false });

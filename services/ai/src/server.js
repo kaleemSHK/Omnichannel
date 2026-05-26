@@ -2,6 +2,7 @@ import express from 'express';
 import { randomUUID } from 'node:crypto';
 import { createLogger } from '../lib/logger.js';
 import { ok, fail, bearerAuth, requestId, errorHandler, healthRouter, gracefulShutdown } from '../lib/http.js';
+import { mountMetrics, registry } from '../_shared/lib/metrics-middleware.js';
 import { dbEnabled, runMigrations, closePool, getPool } from '../lib/db.js';
 import { resolveTenantId } from '../lib/tenant.js';
 import { tenantSuspendedMiddleware } from '../lib/tenant-guard.js';
@@ -31,6 +32,11 @@ app.use(express.json({ limit: '2mb' }));
 app.use(requestId);
 app.use(tenantSuspendedMiddleware(resolveTenantId, fail));
 healthRouter(app, 'ai');
+mountMetrics(app, 'ai');
+
+// ─── Domain metrics ──────────────────────────────────────────────────────────
+const aiTokensTotal = registry.counter('blinkone_ai_tokens_total', 'Total LLM tokens consumed', ['tenant']);
+const voicebotSessionsActive = registry.gauge('blinkone_voicebot_sessions_active', 'Active voicebot sessions', ['tenant']);
 
 const quota = new Map();
 
@@ -95,7 +101,9 @@ app.post('/v1/chat/completions', auth, agentAssist, async (req, res) => {
       maxTokens: req.body?.max_tokens ?? 1000,
       stream: !!req.body?.stream,
     });
-    await meterAiUsage(tenantId, 'ai_token', result?.usage?.total_tokens ?? 1);
+    const tokens = result?.usage?.total_tokens ?? 1;
+    await meterAiUsage(tenantId, 'ai_token', tokens);
+    aiTokensTotal.inc({ tenant: String(tenantId) }, tokens);
     return ok(res, result);
   } catch (e) {
     log.error({ err: e.message }, 'chat completions');
@@ -275,8 +283,11 @@ app.post('/v1/voice/sessions', auth, voiceFeature, async (req, res) => {
   if (!dbEnabled()) return fail(res, 'NOT_CONFIGURED', 'Postgres required', 501);
   const { call_id, inbox_id, collection_id, language, max_misunderstandings } = req.body ?? {};
   if (!call_id || !inbox_id) return fail(res, 'VALIDATION_ERROR', 'call_id and inbox_id required');
+  const tenantId = resolveTenantId(req);
   try {
-    return ok(res, await voice.createSession(resolveTenantId(req), req.body), 201);
+    const session = await voice.createSession(tenantId, req.body);
+    voicebotSessionsActive.inc({ tenant: String(tenantId) });
+    return ok(res, session, 201);
   } catch (e) {
     return fail(res, 'VOICE_ERROR', e.message, 500);
   }
@@ -290,11 +301,13 @@ app.get('/v1/voice/sessions/by-call/:callId', auth, voiceFeature, async (req, re
 
 app.post('/v1/voice/sessions/:sessionId/turn', auth, voiceFeature, async (req, res) => {
   if (!dbEnabled()) return fail(res, 'NOT_CONFIGURED', 'Postgres required', 501);
+  const tenantId = resolveTenantId(req);
   try {
-    return ok(
-      res,
-      await voice.processTurn(resolveTenantId(req), req.params.sessionId, req.body ?? {}),
-    );
+    const result = await voice.processTurn(tenantId, req.params.sessionId, req.body ?? {});
+    if (result?.state === 'transferring' || result?.state === 'ended') {
+      voicebotSessionsActive.dec({ tenant: String(tenantId) });
+    }
+    return ok(res, result);
   } catch (e) {
     if (e.code === 'NOT_FOUND') return fail(res, 'NOT_FOUND', e.message, 404);
     return fail(res, 'VOICE_ERROR', e.message, 500);

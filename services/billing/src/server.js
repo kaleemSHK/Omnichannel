@@ -2,6 +2,7 @@ import express from 'express';
 import { createLogger } from '../lib/logger.js';
 import { ok, fail, bearerAuth, requestId, errorHandler, healthRouter, gracefulShutdown } from '../lib/http.js';
 import { dbEnabled, runMigrations, closePool, getPool } from '../lib/db.js';
+import { mountMetrics } from '../_shared/lib/metrics-middleware.js';
 import { resolveTenantId } from '../lib/tenant.js';
 import * as repo from '../lib/billing-repo.js';
 import { startBillingWorkers } from '../lib/workers.js';
@@ -29,6 +30,7 @@ const app = express();
 app.disable('x-powered-by');
 app.use(requestId);
 healthRouter(app, 'billing');
+mountMetrics(app, 'billing');
 
 app.post('/v1/webhooks/psp', express.raw({ type: 'application/json' }), async (req, res) => {
   let body = req.body;

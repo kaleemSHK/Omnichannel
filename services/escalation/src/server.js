@@ -3,6 +3,7 @@ import { createLogger } from '../lib/logger.js';
 import { createStore } from '../lib/store.js';
 import { ok, fail, bearerAuth, requestId, errorHandler, healthRouter, gracefulShutdown } from '../lib/http.js';
 import { dbEnabled, runMigrations, closePool, getPool } from '../lib/db.js';
+import { mountMetrics } from '../_shared/lib/metrics-middleware.js';
 import { requireFeature } from '../_shared/lib/features.js';
 import * as repo from '../lib/escalation-repo.js';
 import { simulateRule } from '../lib/json-logic-safe.js';
@@ -25,6 +26,7 @@ app.disable('x-powered-by');
 app.use(express.json({ limit: '512kb' }));
 app.use(requestId);
 healthRouter(app, 'escalation');
+mountMetrics(app, 'escalation');
 
 app.get('/readyz', async (_req, res) => {
   if (!dbEnabled()) return res.json({ status: 'ready', db: false });

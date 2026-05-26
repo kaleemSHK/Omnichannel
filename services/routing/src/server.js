@@ -2,6 +2,7 @@ import express from 'express';
 import { createLogger } from '../lib/logger.js';
 import { createStore } from '../lib/store.js';
 import { ok, fail, bearerAuth, requestId, errorHandler, healthRouter, gracefulShutdown } from '../lib/http.js';
+import { mountMetrics, registry } from '../_shared/lib/metrics-middleware.js';
 import { dbEnabled, runMigrations, closePool, getPool } from '../lib/db.js';
 import { redisEnabled, connectRedis, closeRedis } from '../lib/redis-state.js';
 import { resolveTenantId } from '../lib/tenant.js';
@@ -32,7 +33,11 @@ app.disable('x-powered-by');
 app.use(express.json({ limit: '512kb' }));
 app.use(requestId);
 healthRouter(app, 'routing');
+mountMetrics(app, 'routing');
 app.use(tenantSuspendedMiddleware(resolveTenantId, fail));
+
+// ─── Domain metrics ──────────────────────────────────────────────────────────
+const queueDepth = registry.gauge('blinkone_queue_depth', 'Current depth of each routing queue', ['queue_key', 'tenant']);
 
 const telephonyFeature = requireFeature('telephony', resolveTenantId, fail);
 function telephonyWrite(req, res, next) {
@@ -128,6 +133,7 @@ app.get('/v1/queues/:id/stats', auth, async (req, res) => {
     const q = await queueRepo.getQueue(tenantId, req.params.id);
     if (!q) return fail(res, 'NOT_FOUND', 'Queue not found', 404);
     const live = redisEnabled() ? await getQueueStats(tenantId, q.queueKey) : { waiting: 0, calls: [] };
+    queueDepth.set({ queue_key: q.queueKey, tenant: String(tenantId) }, live.waiting ?? 0);
     const agents = redisEnabled() ? await listAgentStates(tenantId) : [];
     const forQueue = agents.filter(
       (a) => a.queueKeys?.includes(q.queueKey) || !a.queueKeys?.length,

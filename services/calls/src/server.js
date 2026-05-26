@@ -3,6 +3,7 @@ import express from 'express';
 import { createLogger } from '../lib/logger.js';
 import { createStore } from '../lib/store.js';
 import { ok, fail, bearerAuth, requestId, errorHandler, healthRouter, gracefulShutdown } from '../lib/http.js';
+import { mountMetrics, registry } from '../_shared/lib/metrics-middleware.js';
 import { scoreFromRtpStats } from '../lib/mos-scoring.js';
 import { dbEnabled, runMigrations, closePool, getPool } from '../lib/db.js';
 import * as cdrRepo from '../lib/cdr-repo.js';
@@ -66,6 +67,11 @@ app.disable('x-powered-by');
 app.use(express.json({ limit: '256kb' }));
 app.use(requestId);
 healthRouter(app, 'calls');
+mountMetrics(app, 'calls');
+
+// ─── Domain metrics ──────────────────────────────────────────────────────────
+const callsActive = registry.gauge('blinkone_calls_active', 'Active calls currently in progress', ['tenant']);
+const callsTotal = registry.counter('blinkone_calls_total', 'Total calls processed', ['tenant', 'direction', 'outcome']);
 
 function notifyRecording(session) {
   if (process.env.NOTIFY_RECORDING !== '1') return;
@@ -327,6 +333,7 @@ app.post('/v1/internal/calls/inbound', auth, async (req, res) => {
       chatwootAccountId: tenantId,
       metadata: { ...(metadata ?? {}), externalCallId: callId },
     });
+    callsActive.inc({ tenant: String(tenantId) });
     await broadcastCallRinging(session);
     log.info({ callId, sessionId: session.id }, 'inbound call ringing');
     return ok(res, session, 201);
@@ -363,6 +370,10 @@ async function callAction(req, res, status, eventType) {
     if (!session) return fail(res, 'NOT_FOUND', 'Call not found', 404);
     if (status === 'connected' && session.conversationId) {
       await tryAssignConversation(session.chatwootAccountId, session.conversationId, agentId);
+    }
+    if (status === 'ended' || status === 'missed') {
+      callsActive.dec({ tenant: String(tenantId) });
+      callsTotal.inc({ tenant: String(tenantId), direction: session.direction ?? 'inbound', outcome: status === 'ended' ? (session.outcome ?? 'completed') : 'missed' });
     }
     if (status === 'ended') {
       notifyRecording(session);

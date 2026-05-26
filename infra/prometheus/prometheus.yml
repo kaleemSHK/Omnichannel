@@ -1,8 +1,95 @@
 global:
   scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    env: blinkone
+
+alerting:
+  alertmanagers: []
+
+rule_files: []
 
 scrape_configs:
-  - job_name: blinkone-gateway
+  - job_name: gateway
     static_configs:
-      - targets: ['blinkone-gateway:8080']
-    metrics_path: /blinkone/api/v1/metrics
+      - targets: ['gateway:8787']
+        labels:
+          service: gateway
+
+  - job_name: platform
+    static_configs:
+      - targets: ['platform:8790']
+        labels:
+          service: platform
+
+  - job_name: tickets
+    static_configs:
+      - targets: ['tickets:8791']
+        labels:
+          service: tickets
+
+  - job_name: calls
+    static_configs:
+      - targets: ['calls:8792']
+        labels:
+          service: calls
+
+  - job_name: ai
+    static_configs:
+      - targets: ['ai:8793']
+        labels:
+          service: ai
+
+  - job_name: billing
+    static_configs:
+      - targets: ['billing:8794']
+        labels:
+          service: billing
+
+  - job_name: ivr
+    static_configs:
+      - targets: ['ivr:8795']
+        labels:
+          service: ivr
+
+  - job_name: sla
+    static_configs:
+      - targets: ['sla:8796']
+        labels:
+          service: sla
+
+  - job_name: escalation
+    static_configs:
+      - targets: ['escalation:8797']
+        labels:
+          service: escalation
+
+  - job_name: routing
+    static_configs:
+      - targets: ['routing:8798']
+        labels:
+          service: routing
+
+  - job_name: recording
+    static_configs:
+      - targets: ['recording:8799']
+        labels:
+          service: recording
+
+  - job_name: integration
+    static_configs:
+      - targets: ['integration:8800']
+        labels:
+          service: integration
+
+  - job_name: tenant
+    static_configs:
+      - targets: ['tenant:8802']
+        labels:
+          service: tenant
+
+  - job_name: whatsapp-calls
+    static_configs:
+      - targets: ['whatsapp-calls:8803']
+        labels:
+          service: whatsapp-calls

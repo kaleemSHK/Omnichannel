@@ -11,6 +11,7 @@ import { startIntegrationWorkers } from '../lib/workers.js';
 import { provisionRealm } from '../lib/keycloak.js';
 import { loadAggregatedOpenApi, docsHtml } from '../lib/docs-portal.js';
 import { listConnectorTypes } from '../lib/connectors/framework.js';
+import { mountMetrics } from '../_shared/lib/metrics-middleware.js';
 import { requireFeature } from '../_shared/lib/features.js';
 import { forwardChatwootToSla } from '../lib/sla-forward.js';
 
@@ -27,6 +28,7 @@ const app = express();
 app.disable('x-powered-by');
 app.use(requestId);
 healthRouter(app, 'integration');
+mountMetrics(app, 'integration');
 
 function tenantId(req) {
   return String(

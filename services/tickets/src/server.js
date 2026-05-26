@@ -2,6 +2,7 @@ import express from 'express';
 import { createLogger } from '../lib/logger.js';
 import { createStore } from '../lib/store.js';
 import { ok, fail, bearerAuth, requestId, errorHandler, healthRouter, gracefulShutdown } from '../lib/http.js';
+import { mountMetrics, registry } from '../_shared/lib/metrics-middleware.js';
 import { dbEnabled, runMigrations, closePool, getPool } from '../lib/db.js';
 import * as ticketRepo from '../lib/ticket-repo.js';
 import * as fieldDefRepo from '../lib/field-def-repo.js';
@@ -26,6 +27,10 @@ app.disable('x-powered-by');
 app.use(express.json({ limit: '512kb' }));
 app.use(requestId);
 healthRouter(app, 'tickets');
+mountMetrics(app, 'tickets');
+
+// ─── Domain metrics ──────────────────────────────────────────────────────────
+const ticketsTotal = registry.counter('blinkone_tickets_total', 'Total tickets created', ['tenant', 'status']);
 
 const STATUS = ['open', 'pending', 'in-progress', 'resolved'];
 const PRIORITY = ['low', 'medium', 'high', 'urgent'];
@@ -146,6 +151,7 @@ app.post('/v1/tickets', auth, async (req, res) => {
         customFields,
       });
       tryCreateSla(ticket);
+      ticketsTotal.inc({ tenant: String(accountId), status: ticket.status ?? 'open' });
       // T01: mirror ticket creation to Chatwoot conversation
       setImmediate(() => onTicketCreated(ticket));
       return ok(res, ticket, 201);
@@ -184,6 +190,7 @@ app.post('/v1/tickets', auth, async (req, res) => {
       return { ticket: t };
     });
     tryCreateSla(ticket);
+    ticketsTotal.inc({ tenant: String(accountId), status: ticket.status ?? 'open' });
     ok(res, mapTicket(ticket, store.load()), 201);
   } catch (e) {
     log.error(e);
