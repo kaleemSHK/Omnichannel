@@ -6,6 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import { TicketReplyBox } from '@/components/tickets/TicketReplyBox';
 import { TicketThread } from '@/components/tickets/TicketThread';
 import { ConversationLink } from '@/components/tickets/ConversationLink';
+import { EmailReplyForm } from '@/components/tickets/EmailReplyForm';
 import {
   useTicketAgents,
   useTicketsList,
@@ -125,6 +126,13 @@ export function TicketDetail({ ticketId }: Props) {
       {rawTicket && (
         <div className="shrink-0 px-5 py-3 border-b border-gray-50">
           <ConversationLink ticket={rawTicket} />
+        </div>
+      )}
+
+      {/* Email thread + reply form (E01) — shown only for Email-channel tickets */}
+      {rawTicket?.channel?.toLowerCase() === 'email' && (
+        <div className="shrink-0 px-5 py-4 border-b border-gray-100">
+          <EmailReplyForm ticket={rawTicket} />
         </div>
       )}
 

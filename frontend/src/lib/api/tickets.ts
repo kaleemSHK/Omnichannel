@@ -188,3 +188,53 @@ export async function linkTicketToConversation(
   );
   return res.data;
 }
+
+// ─── Email threading — Sprint 2 E01 ─────────────────────────────────────────
+
+export interface EmailThread {
+  id: number;
+  ticketId: number;
+  messageId: string;
+  inReplyTo: string | null;
+  references: string[];
+  direction: 'inbound' | 'outbound';
+  subject: string | null;
+  fromEmail: string | null;
+  fromName: string | null;
+  toEmail: string | null;
+  bodyText: string | null;
+  createdAt: string;
+}
+
+export interface EmailReplyResponse {
+  sent: boolean;
+  messageId: string;
+  provider: string;
+  thread: EmailThread;
+}
+
+/**
+ * List all email thread entries (inbound + outbound) for a ticket.
+ */
+export async function getEmailThreads(ticketId: string): Promise<EmailThread[]> {
+  const res = await bnFetch<{ data: EmailThread[] }>(
+    SVC,
+    `/v1/tickets/${encodeURIComponent(ticketId)}/email-threads`,
+  );
+  return res.data ?? [];
+}
+
+/**
+ * Send an email reply to the customer on the ticket thread.
+ */
+export async function sendTicketEmailReply(
+  ticketId: string,
+  payload: { text: string; html?: string; subject?: string; to?: string },
+): Promise<EmailReplyResponse> {
+  const res = await bnFetch<{ data: EmailReplyResponse }>(
+    SVC,
+    `/v1/tickets/${encodeURIComponent(ticketId)}/reply-email`,
+    { method: 'POST', body: JSON.stringify(payload) },
+  );
+  return res.data;
+}

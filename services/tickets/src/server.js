@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import express from 'express';
 import { createLogger } from '../lib/logger.js';
 import { createStore } from '../lib/store.js';
@@ -13,12 +14,17 @@ import {
   onTicketReplied,
   mapChatwootMessageType,
 } from '../lib/chatwoot-sync.js';
+import { handleInboundEmail } from '../lib/email-inbound.js';
+import * as emailRepo from '../lib/email-repo.js';
+import { sendEmail, emailProvider } from '../lib/email-sender.js';
 
 const log = createLogger('tickets');
 const PORT = parseInt(process.env.PORT || '8791', 10);
 const TOKEN = (process.env.TOKEN || '').trim();
 const SLA_URL = (process.env.SLA_URL || 'http://sla:8796').replace(/\/$/, '');
 const SLA_TOKEN = (process.env.SLA_TOKEN || '').trim();
+const EMAIL_INBOUND_SECRET = (process.env.EMAIL_INBOUND_SECRET || '').trim();
+const EMAIL_DOMAIN = (process.env.EMAIL_DOMAIN || 'blinkone.io').trim();
 
 const store = createStore(process.env.DATA_DIR || './data', () => ({ tickets: [], events: [], fields: [], seq: { next: 1 } }));
 const auth = bearerAuth(TOKEN);
@@ -489,6 +495,151 @@ app.delete('/v1/fields/:id', auth, async (req, res) => {
     log.error({ err: e.message }, 'delete field');
     return fail(res, 'INTERNAL_ERROR', 'Failed to delete field', 500);
   }
+});
+
+// ─── Email threading — Sprint 2 E01 ──────────────────────────────────────────
+
+/**
+ * POST /v1/webhooks/email
+ * Inbound email webhook — receives messages from Mailgun/SendGrid/Resend/etc.
+ * Protected by EMAIL_INBOUND_SECRET bearer token (skip check if not set — dev).
+ * Always responds 200 immediately; processing is synchronous but logged on error.
+ */
+app.post('/v1/webhooks/email', express.json({ limit: '2mb' }), express.urlencoded({ extended: true, limit: '2mb' }), async (req, res) => {
+  // Verify inbound secret (best-effort — skip in dev if not configured)
+  if (EMAIL_INBOUND_SECRET) {
+    const auth = (req.headers.authorization ?? '').replace(/^bearer\s+/i, '');
+    if (auth !== EMAIL_INBOUND_SECRET) {
+      return fail(res, 'UNAUTHORIZED', 'Invalid inbound secret', 401);
+    }
+  }
+
+  const tenantId = resolveTenantId(req);
+  try {
+    const result = await handleInboundEmail(tenantId, req.body ?? {});
+    return ok(res, {
+      ticketId: result.ticketId,
+      action:   result.action,
+      messageId: result.thread?.messageId,
+    });
+  } catch (e) {
+    log.error({ err: e.message }, 'email inbound failed');
+    return fail(res, 'INTERNAL_ERROR', e.message, 500);
+  }
+});
+
+/**
+ * GET /v1/tickets/:id/email-threads
+ * Returns all email thread entries for a ticket (inbound + outbound), oldest first.
+ */
+app.get('/v1/tickets/:id/email-threads', auth, async (req, res) => {
+  const id = Number(req.params.id);
+  try {
+    const threads = await emailRepo.listForTicket(id);
+    return ok(res, threads);
+  } catch (e) {
+    log.error({ err: e.message }, 'list email threads');
+    return fail(res, 'INTERNAL_ERROR', 'Failed', 500);
+  }
+});
+
+/**
+ * POST /v1/tickets/:id/reply-email
+ * Agent sends an email reply to the customer on the ticket thread.
+ *
+ * Body:
+ *   text     {string}  — plain-text reply body (required)
+ *   html     {string?} — HTML body (optional)
+ *   subject  {string?} — overrides auto-generated subject
+ *   to       {string?} — override recipient (defaults to ticket.customerEmail)
+ */
+app.post('/v1/tickets/:id/reply-email', auth, async (req, res) => {
+  const id = Number(req.params.id);
+  const { text, html, subject: subjectOverride, to: toOverride } = req.body ?? {};
+  if (!text?.trim()) return fail(res, 'VALIDATION_ERROR', 'text required');
+
+  // Load ticket
+  let ticket = null;
+  if (dbEnabled()) {
+    ticket = await ticketRepo.getTicket(id);
+  } else {
+    const s = store.load();
+    const t = s.tickets.find((x) => x.id === id);
+    if (t) ticket = mapTicket(t, s);
+  }
+  if (!ticket) return fail(res, 'NOT_FOUND', 'Ticket not found', 404);
+
+  const toEmail = (toOverride ?? ticket.customerEmail ?? '').trim();
+  if (!toEmail) return fail(res, 'VALIDATION_ERROR', 'No recipient email — set ticket.customerEmail or pass to in body');
+
+  // Build RFC 2822 headers for threading
+  const threads = await emailRepo.listForTicket(id);
+  const lastInbound = [...threads].reverse().find((t) => t.direction === 'inbound');
+  const lastMsg     = threads[threads.length - 1];
+
+  const inReplyTo = lastMsg?.messageId ?? null;
+  // Build References: chain of all prior message IDs (max 10) + the direct in-reply-to
+  const refIds = threads.map((t) => t.messageId).filter(Boolean).slice(-10);
+  const references = refIds.length ? refIds.join(' ') : null;
+
+  const subject = subjectOverride
+    ?? (lastInbound?.subject ? `Re: ${lastInbound.subject.replace(/^Re:\s*/i, '')}` : `Re: ${ticket.title}`);
+  const newMessageId = `<ticket-${id}-reply-${randomUUID()}@${EMAIL_DOMAIN}>`;
+
+  try {
+    await sendEmail({
+      to:          toEmail,
+      toName:      ticket.customerName ?? '',
+      subject,
+      text:        text.trim(),
+      html:        html ?? undefined,
+      messageId:   newMessageId,
+      inReplyTo:   inReplyTo ?? undefined,
+      references:  references ?? undefined,
+    });
+  } catch (e) {
+    log.error({ err: e.message, ticketId: id }, 'email reply send failed');
+    return fail(res, 'EMAIL_SEND_ERROR', e.message, 502);
+  }
+
+  // Record in thread table
+  const thread = await emailRepo.insertThread({
+    ticketId:   id,
+    messageId:  newMessageId,
+    inReplyTo,
+    references: refIds,
+    direction:  'outbound',
+    subject,
+    fromEmail:  process.env.SMTP_FROM ?? process.env.EMAIL_FROM ?? null,
+    toEmail,
+    bodyText:   text.trim().slice(0, 8192),
+  });
+
+  // Add timeline entry
+  const actor = req.headers['x-blinkone-user-id'] ?? 'agent';
+  const timelineEntry = {
+    type:    'email_reply',
+    message: `[${actor}]: ${text.trim().slice(0, 500)}`,
+    actor:   String(actor),
+  };
+  if (dbEnabled()) {
+    await ticketRepo.addTimeline(id, timelineEntry);
+  } else {
+    await store.withStore((s) => {
+      s.events = s.events ?? [];
+      s.events.push({ ticketId: id, at: new Date().toISOString(), ...timelineEntry });
+    });
+  }
+
+  // Mirror to Chatwoot if linked
+  setImmediate(() => onTicketReplied(ticket, text.trim(), actor));
+
+  return ok(res, {
+    sent:      true,
+    messageId: newMessageId,
+    provider:  emailProvider,
+    thread,
+  });
 });
 
 app.use(errorHandler(log));

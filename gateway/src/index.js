@@ -524,6 +524,37 @@ app.post('/api/webhooks/chatwoot', (req, res) => {
   }
 });
 
+// ─── Email Inbound Webhook — Sprint 2 E01 ────────────────────────────────────
+// Forwards inbound email webhook payloads to the tickets service.
+// Public URL: POST /api/webhooks/email?tenant_id=<tenantId>
+// The EMAIL_INBOUND_SECRET bearer token is forwarded as-is so the tickets
+// service can verify it.
+app.use('/api/webhooks/email', express.json({ limit: '2mb' }), express.urlencoded({ extended: true, limit: '2mb' }));
+
+app.post('/api/webhooks/email', (req, res) => {
+  if (!U.tickets) return res.status(503).json({ error: { code: 'NOT_CONFIGURED', message: 'Tickets service unavailable' } });
+  // Forward to tickets service including original auth header and tenant_id
+  const qs = req.query?.tenant_id ? `?tenant_id=${encodeURIComponent(req.query.tenant_id)}` : '';
+  const headers = {
+    'Content-Type': 'application/json',
+    ...(req.headers.authorization ? { Authorization: req.headers.authorization } : {}),
+    ...(req.requestId ? { 'X-Request-Id': req.requestId } : {}),
+  };
+  fetch(`${U.tickets}/v1/webhooks/email${qs}`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(req.body ?? {}),
+  })
+    .then(async (r) => {
+      const body = await r.json().catch(() => ({}));
+      res.status(r.ok ? 200 : r.status).json(body);
+    })
+    .catch((e) => {
+      log.error({ err: e.message }, 'email webhook forward failed');
+      res.status(502).json({ error: { code: 'UPSTREAM_ERROR', message: e.message } });
+    });
+});
+
 // ─── 404 ──────────────────────────────────────────────────────────────────────
 app.use((_req, res) => res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Route not found' } }));
 
