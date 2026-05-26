@@ -68,27 +68,34 @@ export async function executeFlow({ client, channel, graph, flowId, setState, lo
         node = node.next ? nodeById(graph, node.next) : null;
         break;
       }
+      case 'transfer':  // frontend canvas alias
       case 'enqueue': {
-        const queueKey = node.queue ?? 'default';
-        setState({ phase: 'enqueue', queue: queueKey });
+        // Support both direct graph format (node.queue) and frontend canvas format (node.config.queueKey)
+        const queueKey = node.queue ?? node.config?.queueKey ?? 'default';
+        // IVR1: skill requirements from node config — both formats supported
+        const skillOverride = node.skillRequirements ?? node.config?.skillRequirements ?? null;
+        setState({ phase: 'enqueue', queue: queueKey, skillOverride: skillOverride ?? undefined });
         try {
           const route = await requestRoute({
             tenantId: meta.tenantId || 'default',
             queue: queueKey,
             callId: channel.id,
             callerId: meta.callerId,
-            priority: node.priority ?? 0,
+            priority: node.priority ?? node.config?.priority ?? 0,
+            skillOverride: Array.isArray(skillOverride) && skillOverride.length
+              ? skillOverride
+              : undefined,
           });
           setState({ phase: route.status, routing: route });
           if (route.status === 'assigned') {
             log.info({ queue: queueKey, agentId: route.agentId }, 'call assigned to agent');
-            const connectMedia = node.connectMedia || 'sound:beep';
+            const connectMedia = node.connectMedia ?? node.config?.connectMedia ?? 'sound:beep';
             await playMedia(client, channel, connectMedia, log);
             setState({ phase: 'bridged', agentId: route.agentId });
             return;
           }
           log.info({ queue: queueKey, position: route.position }, 'call queued');
-          const holdMedia = node.holdMedia || process.env.IVR_HOLD_MEDIA || 'sound:please-hold';
+          const holdMedia = node.holdMedia ?? node.config?.holdMedia ?? process.env.IVR_HOLD_MEDIA ?? 'sound:please-hold';
           setState({ phase: 'holding', media: holdMedia });
           await playMedia(client, channel, holdMedia, log);
           setState({ phase: 'waiting_for_agent' });

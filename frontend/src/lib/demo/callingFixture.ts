@@ -226,7 +226,11 @@ export const DEMO_IVR_FLOW: IVRFlow = {
       id: 'n3',
       type: 'transfer',
       label: 'Route to Support',
-      config: { queueKey: 'support' },
+      config: {
+        queueKey: 'support',
+        // IVR1: demo skill requirement — route only to agents with arabic skill
+        skillRequirements: [{ skill: 'arabic', required: true }],
+      },
       position: { x: 480, y: 40 },
     },
     {

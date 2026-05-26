@@ -15,6 +15,8 @@ export function IVRBuilder() {
     DEMO_IVR_FLOW.nodes[0]?.id ?? null,
   );
   const [label, setLabel] = useState('');
+  // IVR1: draft config for the selected node (includes queueKey, skillRequirements, etc.)
+  const [draftConfig, setDraftConfig] = useState<Record<string, unknown>>({});
 
   const { data: flows = [] } = useQuery({
     queryKey: ['ivr-flows'],
@@ -38,11 +40,28 @@ export function IVRBuilder() {
     },
   });
 
-  const selected = flow.nodes.find(n => n.id === selectedNodeId) ?? null;
+  const selected = flow.nodes.find((n) => n.id === selectedNodeId) ?? null;
+
+  const handleSelectNode = (id: string) => {
+    setSelectedNodeId(id);
+    const node = flow.nodes.find((n) => n.id === id);
+    setLabel(node?.label ?? '');
+    // Initialise draft config from the node's current config
+    setDraftConfig({ ...(node?.config ?? {}) });
+  };
 
   const saveNode = () => {
     if (!selected || !label.trim()) return;
-    const nodes = flow.nodes.map(n => (n.id === selected.id ? { ...n, label: label.trim() } : n));
+    const nodes = flow.nodes.map((n) =>
+      n.id === selected.id
+        ? {
+            ...n,
+            label: label.trim(),
+            // IVR1: persist config changes (queueKey, skillRequirements, etc.)
+            config: { ...(n.config ?? {}), ...draftConfig },
+          }
+        : n,
+    );
     void updateFlow(flow.id, { nodes }).catch(() => undefined);
   };
 
@@ -53,11 +72,12 @@ export function IVRBuilder() {
   return (
     <div className="flex h-full min-h-[calc(100vh-3rem)] overflow-hidden bg-surface-tertiary">
       <IVRNodePalette
-        flows={(flows.length ? flows : [DEMO_IVR_FLOW]).map(f => ({ id: f.id, name: f.name }))}
+        flows={(flows.length ? flows : [DEMO_IVR_FLOW]).map((f) => ({ id: f.id, name: f.name }))}
         activeFlowId={flowId}
-        onSelectFlow={id => {
+        onSelectFlow={(id) => {
           setFlowId(id);
           setSelectedNodeId(null);
+          setDraftConfig({});
         }}
       />
 
@@ -80,11 +100,7 @@ export function IVRBuilder() {
         <IVRFlowCanvas
           flow={flow}
           selectedId={selectedNodeId}
-          onSelect={id => {
-            setSelectedNodeId(id);
-            const node = flow.nodes.find(n => n.id === id);
-            setLabel(node?.label ?? '');
-          }}
+          onSelect={handleSelectNode}
         />
       </div>
 
@@ -92,6 +108,8 @@ export function IVRBuilder() {
         selected={selected}
         label={label || selected?.label || ''}
         onLabelChange={setLabel}
+        nodeConfig={draftConfig}
+        onConfigChange={setDraftConfig}
         onSave={saveNode}
       />
     </div>

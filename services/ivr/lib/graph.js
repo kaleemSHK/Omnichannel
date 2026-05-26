@@ -1,3 +1,9 @@
+/**
+ * Valid node types (both backend-native and frontend-canvas aliases).
+ * IVR1: 'transfer' is the frontend canvas alias for 'enqueue'.
+ */
+const VALID_TYPES = new Set(['play', 'enqueue', 'transfer', 'voicebot', 'dtmf', 'hangup', 'condition']);
+
 /** Validate IVR flow DAG shape. */
 export function validateGraph(g) {
   if (!g?.entry || !Array.isArray(g.nodes) || !g.nodes.length) {
@@ -11,6 +17,18 @@ export function validateGraph(g) {
     if (n.digit != null) {
       const dup = g.nodes.filter((x) => x.digit === String(n.digit) && x.id !== n.id);
       if (dup.length) return `duplicate digit "${n.digit}"`;
+    }
+    // IVR1: validate skillRequirements on transfer/enqueue nodes
+    const skillReqs = n.skillRequirements ?? n.config?.skillRequirements;
+    if (skillReqs != null) {
+      if (!Array.isArray(skillReqs)) {
+        return `node "${n.id}" skillRequirements must be an array`;
+      }
+      for (const sr of skillReqs) {
+        if (!sr?.skill || typeof sr.skill !== 'string') {
+          return `node "${n.id}" skillRequirements entries must have a skill string`;
+        }
+      }
     }
   }
   return null;

@@ -225,9 +225,16 @@ export interface IVRFlow {
   isActive: boolean;
 }
 
+/** IVR skill requirement — IVR1 */
+export interface IVRSkillRequirement {
+  skill: string;
+  required: boolean;
+}
+
 export interface IVRNode {
   id: string;
-  type: 'play' | 'voicebot' | 'dtmf' | 'transfer' | 'hangup' | 'condition';
+  /** 'transfer' is the frontend-canvas alias for the backend 'enqueue' node type */
+  type: 'play' | 'voicebot' | 'dtmf' | 'transfer' | 'enqueue' | 'hangup' | 'condition';
   label: string;
   config: Record<string, unknown>;
   position: { x: number; y: number };
