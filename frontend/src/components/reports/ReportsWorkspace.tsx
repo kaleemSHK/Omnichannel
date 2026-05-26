@@ -1,20 +1,22 @@
 'use client';
 
 import { useState } from 'react';
-import { BarChart2, Inbox, ShieldOff, Users, Users2 } from 'lucide-react';
+import { BarChart2, BrainCircuit, Inbox, ShieldOff, Users, Users2 } from 'lucide-react';
 import { OverviewReport } from '@/components/reports/OverviewReport';
 import { AgentReport } from '@/components/reports/AgentReport';
 import { InboxReport } from '@/components/reports/InboxReport';
 import { TeamReport } from '@/components/reports/TeamReport';
+import { AnalyticsDashboard } from '@/components/reports/AnalyticsDashboard';
 import { can } from '@/lib/rbac';
 import { useAuthStore } from '@/lib/store/auth';
 import { cn } from '@/lib/utils/cn';
 
 const NAV = [
-  { id: 'overview', label: 'Overview', icon: BarChart2 },
-  { id: 'agents', label: 'Agent reports', icon: Users },
-  { id: 'inboxes', label: 'Inbox reports', icon: Inbox },
-  { id: 'teams', label: 'Team reports', icon: Users2 },
+  { id: 'overview',   label: 'Overview',         icon: BarChart2 },
+  { id: 'analytics',  label: 'Analytics',         icon: BrainCircuit },
+  { id: 'agents',     label: 'Agent reports',     icon: Users },
+  { id: 'inboxes',    label: 'Inbox reports',     icon: Inbox },
+  { id: 'teams',      label: 'Team reports',      icon: Users2 },
 ] as const;
 
 type ReportView = (typeof NAV)[number]['id'];
@@ -36,6 +38,8 @@ export function ReportsWorkspace() {
     switch (view) {
       case 'overview':
         return <OverviewReport />;
+      case 'analytics':
+        return <AnalyticsDashboard />;
       case 'agents':
         return <AgentReport />;
       case 'inboxes':
