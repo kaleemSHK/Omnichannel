@@ -294,15 +294,34 @@ export interface Invoice {
 }
 
 // ─── Tickets sidecar ──────────────────────────────────────────────────────────
+export interface TicketTimelineEntry {
+  at: string;
+  type: string;
+  message: string;
+  actor: string;
+}
+
 export interface Ticket {
   id: string;
   tenantId: string;
   subject: string;
-  status: 'open' | 'pending' | 'resolved' | 'closed';
-  priority: 'p1' | 'p2' | 'p3' | 'p4';
+  title?: string;
+  status: 'open' | 'pending' | 'resolved' | 'closed' | 'in-progress';
+  priority: 'p1' | 'p2' | 'p3' | 'p4' | 'low' | 'medium' | 'high' | 'urgent';
   assigneeId?: string;
+  assignedTo?: string;
   contactId?: string;
   conversationId?: string;
+  /** Chatwoot conversation ID linked to this ticket (T01) */
+  chatwootConversationId?: number;
+  /** Chatwoot account ID this ticket belongs to */
+  chatwootAccountId?: number;
+  customerName?: string;
+  customerEmail?: string;
+  department?: string;
+  channel?: string;
+  customFields?: Record<string, string | number | boolean>;
+  timeline?: TicketTimelineEntry[];
   createdAt: string;
   updatedAt: string;
   slaInstanceId?: string;

@@ -2,13 +2,16 @@
 
 import Link from 'next/link';
 import { useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { TicketReplyBox } from '@/components/tickets/TicketReplyBox';
 import { TicketThread } from '@/components/tickets/TicketThread';
+import { ConversationLink } from '@/components/tickets/ConversationLink';
 import {
   useTicketAgents,
   useTicketsList,
   useUpdateTicketMeta,
 } from '@/lib/hooks/useTickets';
+import { getTicket } from '@/lib/api/tickets';
 import {
   formatDateTime,
   isSlaBreached,
@@ -16,6 +19,7 @@ import {
   type TicketView,
 } from '@/lib/utils/tickets';
 import { cn } from '@/lib/utils/cn';
+import type { Ticket } from '@/types';
 
 interface Props {
   ticketId: string | null;
@@ -38,6 +42,14 @@ export function TicketDetail({ ticketId }: Props) {
     () => tickets.find((t: TicketView) => t.id === ticketId) ?? null,
     [tickets, ticketId],
   );
+
+  // Raw Ticket for ConversationLink (needs chatwootConversationId, timeline, etc.)
+  const { data: rawTicket } = useQuery<Ticket>({
+    queryKey: ['ticket', ticketId],
+    queryFn: () => getTicket(ticketId!),
+    enabled: Boolean(ticketId),
+    staleTime: 30_000,
+  });
 
   if (!ticket) {
     return (
@@ -107,15 +119,14 @@ export function TicketDetail({ ticketId }: Props) {
           value={ticket.contactName}
           href={ticket.contactId != null ? `/contacts?id=${ticket.contactId}` : undefined}
         />
-        {ticket.conversationId != null && (
-          <InfoCard
-            label="Related conversation"
-            value={`#${ticket.conversationId}`}
-            href={`/conversations?id=${ticket.conversationId}`}
-            className="col-span-2"
-          />
-        )}
       </div>
+
+      {/* Chatwoot conversation link (T01) */}
+      {rawTicket && (
+        <div className="shrink-0 px-5 py-3 border-b border-gray-50">
+          <ConversationLink ticket={rawTicket} />
+        </div>
+      )}
 
       <TicketThread ticketId={ticketId} />
       <TicketReplyBox ticketId={ticketId} />

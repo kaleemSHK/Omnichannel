@@ -29,6 +29,7 @@ export function NewTicketModal({ open, onClose }: Props) {
   const [selectedContact, setSelectedContact] = useState<CWContact | null>(null);
   const [searching, setSearching] = useState(false);
   const [customFieldValues, setCustomFieldValues] = useState<CustomFieldValues>({});
+  const [conversationId, setConversationId] = useState('');
 
   useEffect(() => {
     if (!open) return;
@@ -69,6 +70,7 @@ export function NewTicketModal({ open, onClose }: Props) {
     setSelectedContact(null);
     setContactResults([]);
     setCustomFieldValues({});
+    setConversationId('');
   };
 
   const handleSave = async () => {
@@ -83,6 +85,7 @@ export function NewTicketModal({ open, onClose }: Props) {
       customerEmail: selectedContact?.email,
       team,
       customFields: customFieldValues,
+      conversationId: conversationId.trim() ? Number(conversationId) : undefined,
     });
     reset();
     onClose();
@@ -182,6 +185,16 @@ export function NewTicketModal({ open, onClose }: Props) {
             value={description}
             onChange={e => setDescription(e.target.value)}
             className="w-full px-3 py-2 text-sm border border-gray-200 rounded-md outline-none focus:border-[#0B5FFF] resize-none"
+          />
+        </Field>
+
+        <Field label="Chatwoot Conversation ID (optional)">
+          <input
+            type="number"
+            value={conversationId}
+            onChange={e => setConversationId(e.target.value)}
+            placeholder="e.g. 1234 — link to an existing conversation"
+            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-md outline-none focus:border-[#0B5FFF]"
           />
         </Field>
 

@@ -128,6 +128,7 @@ export function useCreateTicket() {
       customerEmail?: string;
       team: TicketTeam;
       customFields?: Record<string, string | number | boolean>;
+      conversationId?: number;
     }) => {
       const assignee = DEMO_TICKET_AGENTS.find(a => a.id === input.assigneeId);
       if (isDemoDataEnabled()) {
@@ -173,6 +174,7 @@ export function useCreateTicket() {
         customerEmail: input.customerEmail,
         team: input.team,
         customFields: input.customFields,
+        conversationId: input.conversationId != null ? String(input.conversationId) : undefined,
       });
       return mapApiTicket(created as unknown as Record<string, unknown>);
     },

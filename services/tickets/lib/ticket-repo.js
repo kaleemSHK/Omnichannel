@@ -133,6 +133,35 @@ export async function updateTicket(id, body) {
   return getTicket(id);
 }
 
+/**
+ * Find a ticket by Chatwoot conversation ID (Sprint 2 T01).
+ * Returns the latest ticket for the given conversation, or null if none.
+ */
+export async function getTicketByConversationId(accountId, conversationId) {
+  const p = getPool();
+  const { rows } = await p.query(
+    `SELECT * FROM tickets
+     WHERE chatwoot_account_id = $1 AND chatwoot_conversation_id = $2
+     ORDER BY updated_at DESC LIMIT 1`,
+    [accountId, conversationId],
+  );
+  if (!rows.length) return null;
+  const { events, fields } = await loadExtras(rows[0].id);
+  return mapRow(rows[0], events, fields);
+}
+
+/**
+ * Link (or re-link) a ticket to a Chatwoot conversation (Sprint 2 T01).
+ */
+export async function setConversationLink(ticketId, conversationId) {
+  const p = getPool();
+  await p.query(
+    `UPDATE tickets SET chatwoot_conversation_id = $1, updated_at = now() WHERE id = $2`,
+    [conversationId, ticketId],
+  );
+  return getTicket(ticketId);
+}
+
 export async function addTimeline(id, { type, message, actor }) {
   const p = getPool();
   const t = await getTicket(id);

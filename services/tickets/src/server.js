@@ -4,6 +4,14 @@ import { createStore } from '../lib/store.js';
 import { ok, fail, bearerAuth, requestId, errorHandler, healthRouter, gracefulShutdown } from '../lib/http.js';
 import { dbEnabled, runMigrations, closePool, getPool } from '../lib/db.js';
 import * as ticketRepo from '../lib/ticket-repo.js';
+import * as fieldDefRepo from '../lib/field-def-repo.js';
+import { resolveTenantId, resolveAccountId } from '../lib/tenant.js';
+import {
+  onTicketCreated,
+  onTicketStatusChanged,
+  onTicketReplied,
+  mapChatwootMessageType,
+} from '../lib/chatwoot-sync.js';
 
 const log = createLogger('tickets');
 const PORT = parseInt(process.env.PORT || '8791', 10);
@@ -76,7 +84,7 @@ app.get('/readyz', async (_req, res) => {
 });
 
 app.get('/v1/tickets', async (req, res) => {
-  const accountId = Number(req.query.chatwoot_account_id);
+  const accountId = resolveAccountId(req);
   if (!Number.isFinite(accountId)) return fail(res, 'VALIDATION_ERROR', 'chatwoot_account_id required');
   if (dbEnabled()) {
     try {
@@ -118,13 +126,16 @@ app.post('/v1/tickets', auth, async (req, res) => {
     customFields,
   } = req.body ?? {};
   if (!title?.trim()) return fail(res, 'VALIDATION_ERROR', 'title is required');
-  if (!Number.isFinite(Number(chatwootAccountId))) return fail(res, 'VALIDATION_ERROR', 'chatwootAccountId is required');
+  const accountId = Number.isFinite(Number(chatwootAccountId))
+    ? Number(chatwootAccountId)
+    : resolveAccountId(req);
+  if (!Number.isFinite(accountId)) return fail(res, 'VALIDATION_ERROR', 'chatwootAccountId is required');
 
   if (dbEnabled()) {
     try {
       const ticket = await ticketRepo.createTicket({
         title: title.trim(),
-        chatwootAccountId: Number(chatwootAccountId),
+        chatwootAccountId: accountId,
         chatwootConversationId: chatwootConversationId ? Number(chatwootConversationId) : null,
         channel: (channel || 'Chat').slice(0, 80),
         customerName: (customerName || 'Unknown').slice(0, 200),
@@ -135,6 +146,8 @@ app.post('/v1/tickets', auth, async (req, res) => {
         customFields,
       });
       tryCreateSla(ticket);
+      // T01: mirror ticket creation to Chatwoot conversation
+      setImmediate(() => onTicketCreated(ticket));
       return ok(res, ticket, 201);
     } catch (e) {
       log.error({ err: e.message }, 'create ticket');
@@ -155,9 +168,9 @@ app.post('/v1/tickets', auth, async (req, res) => {
         customerName: (customerName || 'Unknown').slice(0, 200),
         customerEmail: (customerEmail || '').slice(0, 320),
         department: (department || 'Support').slice(0, 120),
-        chatwootAccountId: Number(chatwootAccountId),
+        chatwootAccountId: accountId,
         chatwootConversationId: chatwootConversationId ? Number(chatwootConversationId) : null,
-        tenantId: null,
+        tenantId: resolveTenantId(req),
         createdAt: now,
         updatedAt: now,
       };
@@ -182,8 +195,15 @@ app.patch('/v1/tickets/:id', auth, async (req, res) => {
   const id = Number(req.params.id);
   if (dbEnabled()) {
     try {
+      const existing = await ticketRepo.getTicket(id);
       const t = await ticketRepo.updateTicket(id, req.body ?? {});
-      return t ? ok(res, t) : fail(res, 'NOT_FOUND', 'Ticket not found', 404);
+      if (!t) return fail(res, 'NOT_FOUND', 'Ticket not found', 404);
+      // T01: sync status change to Chatwoot conversation
+      if (req.body?.status && existing?.status !== req.body.status) {
+        const actor = req.headers['x-blinkone-user-id'] ?? 'agent';
+        setImmediate(() => onTicketStatusChanged(t, t.status, actor));
+      }
+      return ok(res, t);
     } catch (e) {
       log.error({ err: e.message }, 'patch ticket');
       return fail(res, 'INTERNAL_ERROR', 'Failed', 500);
@@ -230,7 +250,12 @@ app.post('/v1/tickets/:id/timeline', auth, async (req, res) => {
         message: message.trim().slice(0, 2000),
         actor: actor.slice(0, 120),
       });
-      return t ? ok(res, t, 201) : fail(res, 'NOT_FOUND', 'Ticket not found', 404);
+      if (!t) return fail(res, 'NOT_FOUND', 'Ticket not found', 404);
+      // T01: mirror agent replies to Chatwoot conversation (private note)
+      if (type === 'comment' || type === 'reply') {
+        setImmediate(() => onTicketReplied(t, message.trim(), actor));
+      }
+      return ok(res, t, 201);
     } catch (e) {
       log.error({ err: e.message }, 'timeline');
       return fail(res, 'INTERNAL_ERROR', 'Failed', 500);
@@ -254,6 +279,208 @@ app.post('/v1/tickets/:id/timeline', auth, async (req, res) => {
     if (e.code === 404) return fail(res, 'NOT_FOUND', 'Ticket not found', 404);
     log.error(e);
     fail(res, 'INTERNAL_ERROR', 'Failed', 500);
+  }
+});
+
+// ─── Conversation Link — Sprint 2 T01 ─────────────────────────────────────────
+
+/**
+ * GET /v1/tickets/by-conversation/:conversationId
+ * Find the ticket linked to a given Chatwoot conversation.
+ * Used by the frontend to surface tickets inside the conversation view.
+ */
+app.get('/v1/tickets/by-conversation/:conversationId', auth, async (req, res) => {
+  const accountId = resolveAccountId(req);
+  const conversationId = Number(req.params.conversationId);
+  if (!Number.isFinite(conversationId)) return fail(res, 'VALIDATION_ERROR', 'conversationId must be a number');
+
+  if (dbEnabled()) {
+    try {
+      const t = await ticketRepo.getTicketByConversationId(accountId, conversationId);
+      return t ? ok(res, t) : fail(res, 'NOT_FOUND', 'No ticket linked to this conversation', 404);
+    } catch (e) {
+      log.error({ err: e.message }, 'by-conversation');
+      return fail(res, 'INTERNAL_ERROR', 'Failed', 500);
+    }
+  }
+
+  // File-store fallback
+  const s = store.load();
+  const t = s.tickets.find(
+    (x) => x.chatwootAccountId === accountId && Number(x.chatwootConversationId) === conversationId,
+  );
+  return t ? ok(res, mapTicket(t, s)) : fail(res, 'NOT_FOUND', 'No ticket linked to this conversation', 404);
+});
+
+/**
+ * PATCH /v1/tickets/:id/link-conversation
+ * Body: { conversationId: number }
+ * Link (or re-link) a ticket to a Chatwoot conversation and post a sync note.
+ */
+app.patch('/v1/tickets/:id/link-conversation', auth, async (req, res) => {
+  const id = Number(req.params.id);
+  const conversationId = Number(req.body?.conversationId);
+  if (!Number.isFinite(conversationId)) return fail(res, 'VALIDATION_ERROR', 'conversationId required');
+
+  if (dbEnabled()) {
+    try {
+      const t = await ticketRepo.setConversationLink(id, conversationId);
+      if (!t) return fail(res, 'NOT_FOUND', 'Ticket not found', 404);
+      setImmediate(() => onTicketCreated(t)); // post link note to conversation
+      return ok(res, t);
+    } catch (e) {
+      log.error({ err: e.message }, 'link-conversation');
+      return fail(res, 'INTERNAL_ERROR', 'Failed', 500);
+    }
+  }
+
+  // File-store fallback
+  try {
+    let ticket = null;
+    await store.withStore((s) => {
+      const t = s.tickets.find((x) => x.id === id);
+      if (!t) throw Object.assign(new Error(), { code: 404 });
+      t.chatwootConversationId = conversationId;
+      t.updatedAt = new Date().toISOString();
+      ticket = t;
+    });
+    const s = store.load();
+    const t = s.tickets.find((x) => x.id === id);
+    const mapped = mapTicket(t, s);
+    if (ticket) setImmediate(() => onTicketCreated(mapped));
+    return ok(res, mapped);
+  } catch (e) {
+    if (e.code === 404) return fail(res, 'NOT_FOUND', 'Ticket not found', 404);
+    return fail(res, 'INTERNAL_ERROR', 'Failed', 500);
+  }
+});
+
+/**
+ * POST /v1/webhooks/chatwoot
+ * Receives fan-out events from the gateway for conversation-linked tickets.
+ * Events handled:
+ *   - message_created (incoming customer message → append to ticket timeline)
+ *   - conversation_status_changed → resolved (mark linked ticket resolved)
+ */
+app.post('/v1/webhooks/chatwoot', express.json({ limit: '512kb' }), async (req, res) => {
+  // Always respond 200 immediately — process async
+  res.status(200).json({ ok: true });
+
+  const body = req.body ?? {};
+  const event = body.event;
+  const accountId = Number(body.account?.id ?? body.chatwootAccountId ?? 0);
+  const conversationId = Number(body.conversation?.id ?? body.conversationId ?? 0);
+
+  if (!accountId || !conversationId) return;
+
+  setImmediate(async () => {
+    try {
+      // Find linked ticket
+      let ticket = null;
+      if (dbEnabled()) {
+        ticket = await ticketRepo.getTicketByConversationId(accountId, conversationId);
+      } else {
+        const s = store.load();
+        const t = s.tickets.find(
+          (x) => x.chatwootAccountId === accountId && Number(x.chatwootConversationId) === conversationId,
+        );
+        ticket = t ? mapTicket(t, s) : null;
+      }
+      if (!ticket) return; // no linked ticket — nothing to do
+
+      // message_created: mirror incoming customer message to ticket timeline
+      if (event === 'message_created') {
+        const msg = body.message ?? body;
+        const msgType = msg.message_type;
+        // Only mirror incoming customer messages (type 0) — outgoing we already handle via reply mirror
+        if (msgType !== 0) return;
+        const content = String(msg.content ?? '').slice(0, 2000);
+        const senderName = msg.sender?.name ?? msg.sender_name ?? 'Customer';
+        if (!content) return;
+
+        const timelineEntry = {
+          type: mapChatwootMessageType(msg),
+          message: `[${senderName}]: ${content}`,
+          actor: 'customer',
+        };
+
+        if (dbEnabled()) {
+          await ticketRepo.addTimeline(ticket.id, timelineEntry);
+        } else {
+          await store.withStore((s) => {
+            s.events = s.events ?? [];
+            s.events.push({ ticketId: ticket.id, at: new Date().toISOString(), ...timelineEntry });
+          });
+        }
+        log.info({ ticketId: ticket.id, conversationId }, 'customer message mirrored to ticket');
+      }
+
+      // conversation_status_changed → resolved: close the ticket
+      if (event === 'conversation_status_changed' && (body.status === 'resolved' || body.conversation?.status === 'resolved')) {
+        if (ticket.status === 'resolved') return; // already resolved
+
+        if (dbEnabled()) {
+          await ticketRepo.updateTicket(ticket.id, { status: 'resolved' });
+        } else {
+          await store.withStore((s) => {
+            const t = s.tickets.find((x) => x.id === ticket.id);
+            if (t) { t.status = 'resolved'; t.updatedAt = new Date().toISOString(); }
+          });
+        }
+        log.info({ ticketId: ticket.id, conversationId }, 'ticket auto-resolved via conversation');
+      }
+    } catch (e) {
+      log.warn({ err: e.message, event, accountId, conversationId }, 'webhook processing failed');
+    }
+  });
+});
+
+// ─── Custom field definitions (tenant-scoped) ─────────────────────────────────
+app.get('/v1/fields', auth, async (req, res) => {
+  if (!dbEnabled()) return ok(res, []);
+  const tenantId = resolveTenantId(req);
+  try {
+    const rows = await fieldDefRepo.listFieldDefinitions(tenantId);
+    return ok(res, rows);
+  } catch (e) {
+    log.error({ err: e.message }, 'list fields');
+    return fail(res, 'INTERNAL_ERROR', 'Failed to list fields', 500);
+  }
+});
+
+app.post('/v1/fields', auth, async (req, res) => {
+  if (!dbEnabled()) return fail(res, 'NOT_CONFIGURED', 'Postgres not configured', 503);
+  const tenantId = resolveTenantId(req);
+  const { field_key, label, field_type, options, required, sort_order } = req.body ?? {};
+  if (!field_key || !label || !field_type) {
+    return fail(res, 'VALIDATION_ERROR', 'field_key, label, and field_type are required');
+  }
+  try {
+    const row = await fieldDefRepo.createFieldDefinition(tenantId, {
+      field_key: String(field_key).trim().slice(0, 120),
+      label: String(label).trim().slice(0, 200),
+      field_type: String(field_type),
+      options: options ?? null,
+      required: required ?? false,
+      sort_order: sort_order ?? 0,
+    });
+    return ok(res, row, 201);
+  } catch (e) {
+    if (e.code === '23505') return fail(res, 'CONFLICT', 'Field key already exists', 409);
+    log.error({ err: e.message }, 'create field');
+    return fail(res, 'INTERNAL_ERROR', 'Failed to create field', 500);
+  }
+});
+
+app.delete('/v1/fields/:id', auth, async (req, res) => {
+  if (!dbEnabled()) return fail(res, 'NOT_CONFIGURED', 'Postgres not configured', 503);
+  const tenantId = resolveTenantId(req);
+  try {
+    await fieldDefRepo.deleteFieldDefinition(tenantId, req.params.id);
+    return ok(res, { deleted: true });
+  } catch (e) {
+    log.error({ err: e.message }, 'delete field');
+    return fail(res, 'INTERNAL_ERROR', 'Failed to delete field', 500);
   }
 });
 

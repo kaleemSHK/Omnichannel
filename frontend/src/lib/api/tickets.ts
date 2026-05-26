@@ -152,3 +152,39 @@ export async function getTicketTimeline(id: string): Promise<unknown[]> {
   const res = await bnFetch<{ data: unknown[] }>(SVC, `/v1/tickets/${id}/timeline`);
   return res.data;
 }
+
+// ─── Conversation Link — Sprint 2 T01 ────────────────────────────────────────
+
+/**
+ * Find the ticket linked to a specific Chatwoot conversation ID.
+ * Returns null if no ticket is linked.
+ */
+export async function getTicketByConversation(conversationId: number): Promise<Ticket | null> {
+  const accountId = useAuthStore.getState().user?.chatwootAccountId;
+  if (!accountId) return null;
+  try {
+    const res = await bnFetch<{ data: Ticket }>(
+      SVC,
+      `/v1/tickets/by-conversation/${conversationId}?chatwoot_account_id=${accountId}`,
+    );
+    return res.data ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Link an existing ticket to a Chatwoot conversation.
+ * Posts an activity note to the conversation announcing the link.
+ */
+export async function linkTicketToConversation(
+  ticketId: string,
+  conversationId: number,
+): Promise<Ticket> {
+  const res = await bnFetch<{ data: Ticket }>(
+    SVC,
+    `/v1/tickets/${encodeURIComponent(ticketId)}/link-conversation`,
+    { method: 'PATCH', body: JSON.stringify({ conversationId }) },
+  );
+  return res.data;
+}

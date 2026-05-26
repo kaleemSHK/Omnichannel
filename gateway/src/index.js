@@ -474,6 +474,17 @@ app.post('/api/webhooks/chatwoot', (req, res) => {
 
   if (event === 'message_created') {
     fanout(`${U.sla}/v1/events`, slaPayload({ event: 'message_created' }), TOKENS.sla, { feature: 'sla' });
+    // T01: mirror inbound customer messages to linked ticket timeline
+    if (body.message?.message_type === 0 && U.tickets) {
+      fanout(`${U.tickets}/v1/webhooks/chatwoot`, {
+        event: 'message_created',
+        account: body.account,
+        conversation: body.conversation,
+        message: body.message,
+        chatwootAccountId: isId(accountId) ? accountId : 0,
+        conversationId: isId(convId) ? convId : null,
+      }, TOKENS.ticket);
+    }
   }
 
   if (event === 'conversation_status_changed') {
@@ -481,6 +492,17 @@ app.post('/api/webhooks/chatwoot', (req, res) => {
       ? { event: 'conversation_resolved', status: 'resolved' }
       : {};
     fanout(`${U.sla}/v1/events`, slaPayload({ event: 'conversation_status_changed', ...slaExtra }), TOKENS.sla, { feature: 'sla' });
+    // T01: auto-resolve linked ticket when conversation is resolved
+    if (U.tickets) {
+      fanout(`${U.tickets}/v1/webhooks/chatwoot`, {
+        event: 'conversation_status_changed',
+        status: body.status,
+        account: body.account,
+        conversation: body.conversation,
+        chatwootAccountId: isId(accountId) ? accountId : 0,
+        conversationId: isId(convId) ? convId : null,
+      }, TOKENS.ticket);
+    }
     if (body.status === 'resolved') {
       fanout(`${U.sla}/v1/events`, slaPayload({ event: 'conversation_resolved', status: 'resolved' }), TOKENS.sla, { feature: 'sla' });
       fanout(`${U.integration}/v1/webhooks/dispatch`, {
