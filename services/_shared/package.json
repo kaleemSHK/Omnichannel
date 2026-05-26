@@ -1,0 +1,10 @@
+{
+  "name": "@blinkone/shared",
+  "version": "1.0.0",
+  "description": "Shared utilities for BlinkOne microservices",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "test": "node services/_shared/lib/pii-masker.test.js"
+  }
+}

@@ -5,8 +5,16 @@ import { createProxyMiddleware } from 'http-proxy-middleware';
 import jwt from 'jsonwebtoken';
 import pino from 'pino';
 import { tenantHasFeature } from './tenant-features.js';
+import { piiSerializer, pinoMixin, PII_REDACT, maskString } from '../../services/_shared/lib/pii-masker.js';
 
-const log  = pino({ name: 'gateway', level: process.env.LOG_LEVEL || 'info', base: { service: 'gateway' } });
+const log = pino({
+  name: 'gateway',
+  level: process.env.LOG_LEVEL || 'info',
+  base: { service: 'gateway' },
+  serializers: piiSerializer,
+  mixin: pinoMixin,
+  redact: PII_REDACT,
+});
 const PORT = parseInt(process.env.PORT || '8787', 10);
 const STARTED = Date.now();
 
@@ -34,11 +42,155 @@ const U = {
 const TOKENS = {
   ai:          (process.env.AI_TOKEN || '').trim(),
   ticket:      (process.env.TICKET_TOKEN || '').trim(),
+  calls:       (process.env.CALLS_TOKEN || '').trim(),
+  routing:     (process.env.ROUTING_TOKEN || '').trim(),
   sla:         (process.env.SLA_TOKEN || '').trim(),
   escalation:  (process.env.ESCALATION_TOKEN || '').trim(),
   integration: (process.env.INTEGRATION_TOKEN || '').trim(),
   billing:     (process.env.BILLING_TOKEN || '').trim(),
+  ivr:         (process.env.IVR_TOKEN || '').trim(),
+  recording:   (process.env.RECORDING_TOKEN || '').trim(),
+  platform:    (process.env.PLATFORM_TOKEN || '').trim(),
+  tenant:      (process.env.TENANT_TOKEN || process.env.PLATFORM_TOKEN || '').trim(),
 };
+
+const PLATFORM_ADMIN_EMAILS = (process.env.PLATFORM_ADMIN_EMAILS
+  || 'admin@blinkone.ai,admin@labbik.om,admin@blinksone.com')
+  .split(',')
+  .map((e) => e.trim().toLowerCase())
+  .filter(Boolean);
+
+const IVR_DEFAULT_TENANT = (process.env.IVR_DEFAULT_TENANT || '1').trim();
+
+function isTwilioVoiceWebhook(path) {
+  return (
+    path === '/api/ivr/v1/ivr/inbound' ||
+    path.startsWith('/api/ivr/v1/ivr/respond/')
+  );
+}
+
+const JWT_SECRET = (process.env.JWT_SECRET || '').trim();
+
+/** Paths where browser sends gateway JWT; upstream expects service TOKEN + tenant headers. */
+const JWT_PROXY_PREFIXES = [
+  ['/api/calls', 'calls'],
+  ['/api/routing', 'routing'],
+  ['/api/tickets', 'ticket'],
+  ['/api/platform', 'platform'],
+  ['/api/billing', 'billing'],
+  ['/api/ivr', 'ivr'],
+  ['/api/sla', 'sla'],
+  ['/api/escalations', 'escalation'],
+  ['/api/recordings', 'recording'],
+  ['/api/integrations', 'integration'],
+  ['/api/tenant', 'tenant'],
+];
+
+function signTenantHeaders(payload) {
+  const tenantId = String(payload.tenant_id ?? '');
+  const userId = String(payload.sub ?? '');
+  const roles = Array.isArray(payload.roles) ? payload.roles.join(',') : '';
+  const sig = createHmac('sha256', JWT_SECRET)
+    .update(`${tenantId}:${userId}:${roles}`)
+    .digest('hex');
+  const headers = {
+    'x-blinkone-tenant-id': tenantId,
+    'x-blinkone-user-id': userId,
+    'x-blinkone-roles': roles,
+    'x-blinkone-context-sig': sig,
+    ...(payload.account_id ? { 'x-blinkone-account-id': String(payload.account_id) } : {}),
+  };
+  if ((payload.roles || []).includes('platform_admin')) {
+    headers['x-blinkone-platform-role'] = 'platform_admin';
+  }
+  return headers;
+}
+
+function isPlatformAdminPayload(payload) {
+  return (payload?.roles || []).includes('platform_admin');
+}
+
+function requirePlatformAdmin(req, res, next) {
+  const path = (req.originalUrl || req.url).split('?')[0];
+  const tenantRoute =
+    path.startsWith('/api/tenant') && path !== '/api/tenant/v1/health';
+  const platformMutate =
+    path.startsWith('/api/platform') && ['POST', 'PATCH', 'PUT', 'DELETE'].includes(req.method);
+  if (!tenantRoute && !platformMutate) return next();
+  if (isPlatformAdminPayload(req.gatewayAuth?.payload)) return next();
+  return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Platform admin required' } });
+}
+
+function tenantIdFromJwt(req) {
+  const auth = String(req.headers.authorization || '');
+  if (!auth.startsWith('Bearer ') || !JWT_SECRET) return '';
+  const bearer = auth.slice(7).trim();
+  for (const [, key] of JWT_PROXY_PREFIXES) {
+    const svc = key ? TOKENS[key] : '';
+    if (svc && bearer === svc) return req.headers['x-blinkone-tenant-id'] || '';
+  }
+  try {
+    const payload = jwt.verify(bearer, JWT_SECRET);
+    return String(payload.tenant_id ?? '');
+  } catch {
+    return '';
+  }
+}
+
+function authenticateGatewayJwt(req, res, next) {
+  const path = (req.originalUrl || req.url).split('?')[0];
+  const entry = JWT_PROXY_PREFIXES.find(([prefix]) => path.startsWith(prefix));
+  if (!entry) return next();
+
+  const [, tokenKey] = entry;
+  const serviceToken = tokenKey ? TOKENS[tokenKey] : '';
+
+  if (isTwilioVoiceWebhook(path) && serviceToken) {
+    req.gatewayAuth = { serviceToken };
+    if (!req.headers['x-blinkone-tenant-id']) {
+      req.headers['x-blinkone-tenant-id'] = IVR_DEFAULT_TENANT;
+    }
+    return next();
+  }
+
+  const auth = String(req.headers.authorization || '');
+  if (!auth.startsWith('Bearer ')) {
+    return res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Bearer token required' } });
+  }
+  const bearer = auth.slice(7).trim();
+
+  if (serviceToken && bearer === serviceToken) {
+    req.gatewayAuth = { service: true };
+    return next();
+  }
+
+  if (!JWT_SECRET) {
+    return res.status(500).json({ error: { code: 'CONFIG_ERROR', message: 'JWT_SECRET not configured' } });
+  }
+
+  try {
+    const payload = jwt.verify(bearer, JWT_SECRET);
+    const headerTenant = req.headers['x-blinkone-tenant-id'];
+    const jwtTenant = String(payload.tenant_id ?? '');
+    if (
+      typeof headerTenant === 'string' &&
+      headerTenant &&
+      jwtTenant &&
+      headerTenant !== jwtTenant &&
+      !(payload.roles || []).includes('platform_admin')
+    ) {
+      return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Cross-tenant access denied' } });
+    }
+    req.gatewayAuth = { payload, serviceToken };
+    const signed = signTenantHeaders(payload);
+    for (const [k, v] of Object.entries(signed)) {
+      req.headers[k] = v;
+    }
+    next();
+  } catch {
+    return res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Invalid or expired token' } });
+  }
+}
 
 const LIMIT_CHECK_PREFIXES = ['/api/ai', '/api/calls', '/api/routing', '/api/sla', '/api/escalations'];
 
@@ -54,7 +206,7 @@ app.use((req, res, next) => {
   res.setHeader('X-Request-Id', req.requestId);
   res.setHeader('X-Content-Type-Options', 'nosniff');
   const t = Date.now();
-  res.on('finish', () => log.info({ method: req.method, url: req.originalUrl, status: res.statusCode, ms: Date.now() - t }, 'req'));
+  res.on('finish', () => log.info({ method: req.method, url: maskString(req.originalUrl), status: res.statusCode, ms: Date.now() - t }, 'req'));
   next();
 });
 
@@ -69,7 +221,14 @@ function proxy(target, prefix, overrideToken) {
     on: {
       proxyReq: (pr, req) => {
         pr.setHeader('X-Request-Id', req.requestId || '');
-        if (overrideToken) pr.setHeader('Authorization', `Bearer ${overrideToken}`);
+        const svcToken = req.gatewayAuth?.serviceToken || overrideToken;
+        if (svcToken) pr.setHeader('Authorization', `Bearer ${svcToken}`);
+        else if (overrideToken) pr.setHeader('Authorization', `Bearer ${overrideToken}`);
+        if (req.gatewayAuth?.payload) {
+          for (const [k, v] of Object.entries(signTenantHeaders(req.gatewayAuth.payload))) {
+            pr.setHeader(k, v);
+          }
+        }
       },
       proxyRes: (_pr, req, res) => res.setHeader('X-Request-Id', req.requestId || ''),
       error: (e, req, res) => {
@@ -104,7 +263,7 @@ function notImpl(name) {
 async function usageLimitGuard(req, res, next) {
   const path = req.originalUrl || req.url;
   if (!LIMIT_CHECK_PREFIXES.some((p) => path.startsWith(p))) return next();
-  const tenantId = req.headers['x-blinkone-tenant-id'];
+  const tenantId = req.headers['x-blinkone-tenant-id'] || tenantIdFromJwt(req);
   if (!tenantId || !U.billing || !TOKENS.billing) return next();
   try {
     const r = await fetch(`${U.billing}/v1/tenants/${encodeURIComponent(tenantId)}/usage/limits`, {
@@ -125,6 +284,8 @@ async function usageLimitGuard(req, res, next) {
   next();
 }
 
+app.use(authenticateGatewayJwt);
+app.use(requirePlatformAdmin);
 app.use(usageLimitGuard);
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
@@ -168,6 +329,10 @@ app.post('/api/auth/token', express.json(), async (req, res) => {
     const accountId = user.account_id ?? user.active_account_id ?? userId;
     const tenantId = String(accountId);
     const roles = mapChatwootRoles(user.role);
+    const email = String(user.email || '').trim().toLowerCase();
+    if (email && PLATFORM_ADMIN_EMAILS.includes(email)) {
+      roles.push('platform_admin');
+    }
     const expiresIn = 12 * 60 * 60;
 
     const token = jwt.sign(
@@ -214,7 +379,7 @@ route('/api/ivr',         U.ivr);
 route('/api/sla',         U.sla);
 route('/api/escalations', U.escalation);
 route('/api/routing',     U.routing);
-route('/api/recordings',  U.recording);
+route('/api/recordings',  U.recording, TOKENS.recording);
 route('/api/integrations',U.integration);
 route('/api/tenant',       U.tenant);
 
