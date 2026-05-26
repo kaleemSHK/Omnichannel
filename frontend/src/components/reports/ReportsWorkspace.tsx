@@ -1,12 +1,13 @@
 'use client';
 
 import { useState } from 'react';
-import { BarChart2, BrainCircuit, Inbox, ShieldOff, Users, Users2 } from 'lucide-react';
+import { BarChart2, Bot, BrainCircuit, Inbox, ShieldOff, Users, Users2 } from 'lucide-react';
 import { OverviewReport } from '@/components/reports/OverviewReport';
 import { AgentReport } from '@/components/reports/AgentReport';
 import { InboxReport } from '@/components/reports/InboxReport';
 import { TeamReport } from '@/components/reports/TeamReport';
 import { AnalyticsDashboard } from '@/components/reports/AnalyticsDashboard';
+import { VoicebotAnalyticsPanel } from '@/components/reports/VoicebotAnalyticsPanel';
 import { can } from '@/lib/rbac';
 import { useAuthStore } from '@/lib/store/auth';
 import { cn } from '@/lib/utils/cn';
@@ -14,6 +15,7 @@ import { cn } from '@/lib/utils/cn';
 const NAV = [
   { id: 'overview',   label: 'Overview',         icon: BarChart2 },
   { id: 'analytics',  label: 'Analytics',         icon: BrainCircuit },
+  { id: 'voicebot',   label: 'Voicebot',          icon: Bot },
   { id: 'agents',     label: 'Agent reports',     icon: Users },
   { id: 'inboxes',    label: 'Inbox reports',     icon: Inbox },
   { id: 'teams',      label: 'Team reports',      icon: Users2 },
@@ -40,6 +42,8 @@ export function ReportsWorkspace() {
         return <OverviewReport />;
       case 'analytics':
         return <AnalyticsDashboard />;
+      case 'voicebot':
+        return <VoicebotAnalyticsPanel />;
       case 'agents':
         return <AgentReport />;
       case 'inboxes':

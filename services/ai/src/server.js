@@ -332,6 +332,44 @@ app.get('/v1/voicebot/status', auth, async (req, res) => {
   });
 });
 
+// ─── V1: Voicebot analytics + session transcript ─────────────────────────────
+
+/**
+ * GET /v1/voicebot/analytics?since=<unix_sec>&until=<unix_sec>
+ * Returns aggregated voicebot KPIs for a time window (default: last 7 days).
+ */
+app.get('/v1/voicebot/analytics', auth, voiceFeature, async (req, res) => {
+  if (!dbEnabled()) return fail(res, 'NOT_CONFIGURED', 'Postgres required', 501);
+  const tenantId = resolveTenantId(req);
+  const since = req.query.since
+    ? new Date(Number(req.query.since) * 1000).toISOString()
+    : new Date(Date.now() - 7 * 86_400_000).toISOString();
+  const until = req.query.until
+    ? new Date(Number(req.query.until) * 1000).toISOString()
+    : new Date().toISOString();
+  try {
+    const data = await voice.getVoicebotAnalytics(tenantId, since, until);
+    return data ? ok(res, data) : fail(res, 'NOT_CONFIGURED', 'Analytics unavailable', 503);
+  } catch (e) {
+    return fail(res, 'VOICE_ERROR', e.message, 500);
+  }
+});
+
+/**
+ * GET /v1/voice/sessions/:sessionId/transcript
+ * Returns the ordered turn-by-turn transcript for a completed or active session.
+ */
+app.get('/v1/voice/sessions/:sessionId/transcript', auth, voiceFeature, async (req, res) => {
+  if (!dbEnabled()) return fail(res, 'NOT_CONFIGURED', 'Postgres required', 501);
+  const tenantId = resolveTenantId(req);
+  try {
+    const data = await voice.getSessionTranscript(tenantId, req.params.sessionId);
+    return data ? ok(res, data) : fail(res, 'NOT_FOUND', 'Session not found', 404);
+  } catch (e) {
+    return fail(res, 'VOICE_ERROR', e.message, 500);
+  }
+});
+
 // ─── Bot routing rules (A01) ─────────────────────────────────────────────────
 
 /**
