@@ -8,11 +8,12 @@ import { tenantSuspendedMiddleware } from '../lib/tenant-guard.js';
 import { fetchUsageLimits } from '../_shared/lib/billing-limits.js';
 import { requireFeature } from '../_shared/lib/features.js';
 import { chatCompletions } from '../lib/llm/gateway.js';
-import { startSttWorker } from '../lib/stt/adapter.js';
+import { startSttWorker, sttModeLabel } from '../lib/stt/adapter.js';
 import * as rag from '../lib/rag/service.js';
 import * as assist from '../lib/assist/service.js';
 import * as voice from '../lib/voicebot/fsm.js';
 import { synthesize } from '../lib/tts/piper.js';
+import * as botRouting from '../lib/bot-routing.js';
 
 const log = createLogger('ai');
 const PORT = parseInt(process.env.PORT || '8793', 10);
@@ -161,6 +162,13 @@ app.post('/v1/rag/collections', auth, ragFeature, async (req, res) => {
   return ok(res, await rag.createCollection(resolveTenantId(req), { name, language }), 201);
 });
 
+app.get('/v1/rag/collections/:collectionId/documents', auth, ragFeature, async (req, res) => {
+  if (!dbEnabled()) return fail(res, 'NOT_CONFIGURED', 'Postgres required', 501);
+  const tenantId = resolveTenantId(req);
+  const docs = await rag.listDocuments(tenantId, req.params.collectionId);
+  return ok(res, docs);
+});
+
 app.post('/v1/rag/index', auth, ragFeature, async (req, res) => {
   if (!dbEnabled()) return fail(res, 'NOT_CONFIGURED', 'Postgres required', 501);
   const tenantId = resolveTenantId(req);
@@ -274,6 +282,12 @@ app.post('/v1/voice/sessions', auth, voiceFeature, async (req, res) => {
   }
 });
 
+app.get('/v1/voice/sessions/by-call/:callId', auth, voiceFeature, async (req, res) => {
+  if (!dbEnabled()) return fail(res, 'NOT_CONFIGURED', 'Postgres required', 501);
+  const row = await voice.findSessionByCallId(resolveTenantId(req), req.params.callId);
+  return row ? ok(res, { session_id: row.id, call_id: row.call_id, state: row.state }) : fail(res, 'NOT_FOUND', 'Session not found', 404);
+});
+
 app.post('/v1/voice/sessions/:sessionId/turn', auth, voiceFeature, async (req, res) => {
   if (!dbEnabled()) return fail(res, 'NOT_CONFIGURED', 'Postgres required', 501);
   try {
@@ -284,6 +298,94 @@ app.post('/v1/voice/sessions/:sessionId/turn', auth, voiceFeature, async (req, r
   } catch (e) {
     if (e.code === 'NOT_FOUND') return fail(res, 'NOT_FOUND', e.message, 404);
     return fail(res, 'VOICE_ERROR', e.message, 500);
+  }
+});
+
+app.get('/v1/voicebot/status', auth, async (req, res) => {
+  const tenantId = resolveTenantId(req);
+  let activeSessions = 0;
+  try {
+    activeSessions = await voice.countActiveSessions(tenantId);
+  } catch {
+    /* db optional for count */
+  }
+  const ttsStub = process.env.PIPER_STUB === '1';
+  return ok(res, {
+    stt_mode: sttModeLabel(),
+    tts_mode: ttsStub ? 'stub' : 'piper_arabic',
+    language: process.env.VOICEBOT_LANGUAGE ?? 'ar-OM',
+    piper_voice: process.env.PIPER_DEFAULT_VOICE ?? 'ar_JO-kareem-medium',
+    active_sessions: activeSessions,
+  });
+});
+
+// ─── Bot routing rules (A01) ─────────────────────────────────────────────────
+
+/**
+ * GET /v1/bot-routing/rules
+ * Returns the active routing config for the tenant.
+ * Falls back to built-in defaults if no config has been saved.
+ */
+app.get('/v1/bot-routing/rules', auth, async (req, res) => {
+  try {
+    const config = await botRouting.loadConfig(resolveTenantId(req));
+    return ok(res, config);
+  } catch (e) {
+    log.error({ err: e.message }, 'bot-routing get');
+    return fail(res, 'INTERNAL_ERROR', e.message, 500);
+  }
+});
+
+/**
+ * PUT /v1/bot-routing/rules
+ * body: { name?, isActive?, rules: [{id?, name?, enabled?, priority, trigger, action}] }
+ * Replaces the entire ruleset for the tenant.
+ */
+app.put('/v1/bot-routing/rules', auth, async (req, res) => {
+  const { name, isActive, rules } = req.body ?? {};
+  const validErr = botRouting.validateRules(rules);
+  if (validErr) return fail(res, 'VALIDATION_ERROR', validErr, 400);
+  try {
+    const saved = await botRouting.saveConfig(resolveTenantId(req), {
+      name,
+      isActive,
+      rules: botRouting.normaliseRules(rules),
+    });
+    return ok(res, saved);
+  } catch (e) {
+    log.error({ err: e.message }, 'bot-routing put');
+    return fail(res, 'INTERNAL_ERROR', e.message, 500);
+  }
+});
+
+/**
+ * POST /v1/bot-routing/rules/reset
+ * Resets to built-in defaults.
+ */
+app.post('/v1/bot-routing/rules/reset', auth, async (req, res) => {
+  try {
+    const config = await botRouting.resetToDefaults(resolveTenantId(req));
+    return ok(res, config);
+  } catch (e) {
+    return fail(res, 'INTERNAL_ERROR', e.message, 500);
+  }
+});
+
+/**
+ * POST /v1/bot-routing/evaluate
+ * Dry-run evaluation — useful for testing rules without a live call.
+ * body: { intent, transcript, misunderstanding_count, sentiment? }
+ * Returns: { matched, action?, rule? }
+ */
+app.post('/v1/bot-routing/evaluate', auth, async (req, res) => {
+  try {
+    const config = await botRouting.loadConfig(resolveTenantId(req));
+    const turn = req.body ?? {};
+    const mockSession = { max_misunderstandings: 3, misunderstanding_count: 0 };
+    const result = botRouting.evaluateHandoff(mockSession, turn, config.rules);
+    return ok(res, result);
+  } catch (e) {
+    return fail(res, 'INTERNAL_ERROR', e.message, 500);
   }
 });
 

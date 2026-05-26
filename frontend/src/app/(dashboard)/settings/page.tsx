@@ -20,6 +20,7 @@ import { BusinessHoursSection } from '@/components/settings/BusinessHoursSection
 import { TicketFieldsSettings } from '@/components/settings/TicketFieldsSettings';
 import { BrandingSection } from '@/components/settings/BrandingSection';
 import { SkillsManagerSection } from '@/components/settings/SkillsManagerSection';
+import { BotRoutingRules } from '@/components/ai/BotRoutingRules';
 
 export default function SettingsPage() {
   const [view, setView] = useState<SettingsView>('profile');
@@ -36,6 +37,7 @@ export default function SettingsPage() {
     'ticket-fields': <TicketFieldsSettings />,
     automation: <AutomationSection />,
     bots: <BotsSection />,
+    'bot-routing': <BotRoutingRules />,
     macros: <MacrosSection />,
     canned: <CannedSection />,
     branding: <BrandingSection />,

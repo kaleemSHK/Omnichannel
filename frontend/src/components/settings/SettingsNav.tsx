@@ -36,6 +36,7 @@ const NAV_ITEMS = [
   { id: 'skills-manager', label: 'Skills Manager', icon: Star, group: 'Workspace' },
   { id: 'automation', label: 'Automation', icon: Zap, group: 'Automation' },
   { id: 'bots', label: 'Agent Bots', icon: Bot, group: 'Automation' },
+  { id: 'bot-routing', label: 'Bot Routing Rules', icon: Bot, group: 'Automation' },
   { id: 'macros', label: 'Macros', icon: BookOpen, group: 'Automation' },
   { id: 'canned', label: 'Canned Responses', icon: MessageSquare, group: 'Automation' },
   { id: 'branding', label: 'Branding', icon: Palette, group: 'Platform' },
@@ -65,6 +66,7 @@ export function SettingsNav({ active, onChange }: Props) {
     if (item.id === 'skills-manager') return can(role, 'manageTeam');
     if (item.id === 'automation') return can(role, 'manageInboxes');
     if (item.id === 'bots') return can(role, 'manageInboxes');
+    if (item.id === 'bot-routing') return can(role, 'manageInboxes');
     if (item.id === 'macros') return true;
     if (item.id === 'canned') return true;
     if (item.id === 'integrations') return can(role, 'manageInboxes');

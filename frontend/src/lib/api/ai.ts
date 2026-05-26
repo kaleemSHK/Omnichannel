@@ -239,3 +239,71 @@ export async function submitSTTJob(payload: {
   });
   return res.data as { jobId: string; status: string };
 }
+
+// ─── Bot Routing Rules (A01) ─────────────────────────────────────────────────
+
+export type BotTriggerType = 'intent' | 'keyword' | 'misunderstanding_count' | 'sentiment';
+export type BotActionType = 'transfer_to_agent' | 'end_call';
+
+export interface BotRoutingTrigger {
+  type: BotTriggerType;
+  intents?: string[];
+  keywords?: string[];
+  threshold?: number;
+  sentiment?: string;
+}
+
+export interface BotRoutingAction {
+  type: BotActionType;
+  queueKey?: string;
+  message?: string;
+}
+
+export interface BotRoutingRule {
+  id: string;
+  name: string;
+  enabled: boolean;
+  priority: number;
+  trigger: BotRoutingTrigger;
+  action: BotRoutingAction;
+}
+
+export interface BotRoutingConfig {
+  name: string;
+  isActive: boolean;
+  rules: BotRoutingRule[];
+}
+
+export async function getBotRoutingRules(): Promise<BotRoutingConfig> {
+  const res = await bnFetch<{ data: BotRoutingConfig }>(SVC, '/v1/bot-routing/rules');
+  return res.data;
+}
+
+export async function saveBotRoutingRules(config: BotRoutingConfig): Promise<BotRoutingConfig> {
+  const res = await bnFetch<{ data: BotRoutingConfig }>(SVC, '/v1/bot-routing/rules', {
+    method: 'PUT',
+    body: JSON.stringify(config),
+  });
+  return res.data;
+}
+
+export async function resetBotRoutingRules(): Promise<BotRoutingConfig> {
+  const res = await bnFetch<{ data: BotRoutingConfig }>(SVC, '/v1/bot-routing/rules/reset', {
+    method: 'POST',
+    body: '{}',
+  });
+  return res.data;
+}
+
+export async function evaluateBotRoutingRule(turn: {
+  intent?: string;
+  transcript?: string;
+  misunderstanding_count?: number;
+  sentiment?: string;
+}): Promise<{ matched: boolean; action?: BotRoutingAction; rule?: { name: string } }> {
+  const res = await bnFetch<{ data: unknown }>(SVC, '/v1/bot-routing/evaluate', {
+    method: 'POST',
+    body: JSON.stringify(turn),
+  });
+  return res.data as { matched: boolean; action?: BotRoutingAction; rule?: { name: string } };
+}
