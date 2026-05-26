@@ -11,10 +11,13 @@ import { scorePercent } from '@/lib/utils/ai';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/Dialog';
 import { cn } from '@/lib/utils/cn';
+import { CRMLookupCard } from './CRMLookupCard';
 import type { CWMessage } from '@/types';
 
 interface Props {
   conversationId: number;
+  /** Chatwoot sender/contact ID — enables CRM lookup panel */
+  contactId?: number;
 }
 
 function lastInboundText(messages: CWMessage[]): string {
@@ -32,13 +35,14 @@ function toSuggestPayload(messages: CWMessage[]) {
     }));
 }
 
-export function AgentAssistPanel({ conversationId }: Props) {
+export function AgentAssistPanel({ conversationId, contactId }: Props) {
   const { data: messages = [] } = useMessages(conversationId);
   const lastInbound = lastInboundText(messages);
 
   const [suggestOpen, setSuggestOpen] = useState(true);
   const [ragOpen, setRagOpen] = useState(true);
   const [insightsOpen, setInsightsOpen] = useState(true);
+  const [crmOpen, setCrmOpen] = useState(true);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [summaryText, setSummaryText] = useState('');
 
@@ -201,6 +205,12 @@ export function AgentAssistPanel({ conversationId }: Props) {
           {summarize.isPending ? 'Summarizing…' : 'Summarize'}
         </Button>
       </Section>
+
+      {contactId && (
+        <Section title="CRM Contact" open={crmOpen} onToggle={() => setCrmOpen(v => !v)}>
+          <CRMLookupCard contactId={contactId} />
+        </Section>
+      )}
 
       <Dialog open={summaryOpen} onClose={() => setSummaryOpen(false)} title="Conversation summary">
         <p className="text-sm whitespace-pre-wrap">{summaryText}</p>

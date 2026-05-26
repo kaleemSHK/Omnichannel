@@ -22,6 +22,7 @@ import { BrandingSection } from '@/components/settings/BrandingSection';
 import { SkillsManagerSection } from '@/components/settings/SkillsManagerSection';
 import { BotRoutingRules } from '@/components/ai/BotRoutingRules';
 import { MfaSetupPanel } from '@/components/settings/MfaSetupPanel';
+import { CRMConnectorsPanel } from '@/components/settings/CRMConnectorsPanel';
 
 export default function SettingsPage() {
   const [view, setView] = useState<SettingsView>('profile');
@@ -45,6 +46,7 @@ export default function SettingsPage() {
     branding: <BrandingSection />,
     'skills-manager': <SkillsManagerSection />,
     integrations: <IntegrationsSection />,
+    'crm-connectors': <CRMConnectorsPanel />,
     webhooks: <WebhooksSection />,
     'business-hours': <BusinessHoursSection />,
   };

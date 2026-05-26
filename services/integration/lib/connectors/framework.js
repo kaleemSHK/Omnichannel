@@ -18,12 +18,14 @@ import { genericRestConnector } from './generic-rest.js';
 import { sapB1Connector } from './sap-b1.js';
 import { dynamicsConnector } from './dynamics.js';
 import { oracleConnector } from './oracle.js';
+import { salesforceConnector } from './salesforce.js';
 
 const REGISTRY = {
   generic_rest: genericRestConnector,
   sap_b1: sapB1Connector,
   microsoft_dynamics: dynamicsConnector,
   oracle_fusion: oracleConnector,
+  salesforce: salesforceConnector,
   tasdeeq: {
     type: 'tasdeeq',
     async connect() {

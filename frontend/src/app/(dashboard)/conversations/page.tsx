@@ -77,7 +77,10 @@ function ConversationsContent() {
         assistOpen={assistOpen}
       />
       {assistOpen && selectedConversation && (
-        <AgentAssistPanel conversationId={selectedConversation.id} />
+        <AgentAssistPanel
+          conversationId={selectedConversation.id}
+          contactId={selectedConversation.meta?.sender?.id}
+        />
       )}
     </div>
   );

@@ -10,7 +10,7 @@ import { writeAudit, listAudit } from '../lib/audit.js';
 import { startIntegrationWorkers } from '../lib/workers.js';
 import { provisionRealm } from '../lib/keycloak.js';
 import { loadAggregatedOpenApi, docsHtml } from '../lib/docs-portal.js';
-import { listConnectorTypes } from '../lib/connectors/framework.js';
+import { listConnectorTypes, getConnector } from '../lib/connectors/framework.js';
 import { mountMetrics } from '../_shared/lib/metrics-middleware.js';
 import { requireFeature } from '../_shared/lib/features.js';
 import { forwardChatwootToSla } from '../lib/sla-forward.js';
@@ -254,6 +254,65 @@ app.post('/v1/connectors/:type/test', auth, async (req, res) => {
 app.post('/v1/connectors', auth, async (req, res) => {
   if (!dbEnabled()) return fail(res, 'NOT_CONFIGURED', 'Postgres required', 501);
   return ok(res, await repo.upsertConnector(tenantId(req), req.body, actorId(req)), 201);
+});
+
+// ─── CRM contact lookup (TR-53) ───────────────────────────────────────────────
+// Fans out across ALL enabled connectors that support lookupContact().
+// Returns the first non-null hit (or null when no connector finds the contact).
+app.post('/v1/connectors/lookup-all', auth, async (req, res) => {
+  const { phone, email } = req.body ?? {};
+  if (!phone && !email) return fail(res, 'VALIDATION_ERROR', 'phone or email required', 400);
+  const tid = tenantId(req);
+
+  let connectors = [];
+  if (dbEnabled()) {
+    connectors = await repo.listConnectors(tid);
+  } else {
+    connectors = (legacyStore.load().connectors ?? []);
+  }
+
+  const active = connectors.filter(c => c.status === 'connected' || c.status === 'configured');
+
+  for (const c of active) {
+    const impl = getConnector(c.connectorType);
+    if (!impl?.lookupContact) continue;
+    try {
+      const ctx = { tenantId: tid, config: c.config ?? {}, secrets: c.secrets ?? {}, log };
+      const contact = await impl.lookupContact(ctx, { phone, email });
+      if (contact) return ok(res, contact);
+    } catch (e) {
+      log.warn({ err: e.message, type: c.connectorType }, 'lookup-all connector error');
+    }
+  }
+  return ok(res, null);
+});
+
+// Single-connector lookup (for testing / targeted queries)
+app.post('/v1/connectors/:type/lookup', auth, async (req, res) => {
+  const { phone, email } = req.body ?? {};
+  const tid = tenantId(req);
+  const impl = getConnector(req.params.type);
+  if (!impl) return fail(res, 'NOT_FOUND', `Unknown connector type: ${req.params.type}`, 404);
+  if (!impl.lookupContact) return fail(res, 'NOT_SUPPORTED', 'This connector does not support lookupContact', 501);
+
+  let cfg = {};
+  let secrets = {};
+  if (dbEnabled()) {
+    const rows = await getPool().query(
+      'SELECT config, secrets_enc FROM integration_connectors WHERE tenant_id=$1 AND connector_type=$2',
+      [tid, req.params.type],
+    );
+    if (rows.rows.length) {
+      cfg = rows.rows[0].config ?? {};
+      secrets = rows.rows[0].secrets_enc ? JSON.parse(rows.rows[0].secrets_enc) : {};
+    }
+  }
+  try {
+    const contact = await impl.lookupContact({ tenantId: tid, config: cfg, secrets, log }, { phone, email });
+    return ok(res, contact);
+  } catch (e) {
+    return fail(res, 'LOOKUP_ERROR', e.message, 502);
+  }
 });
 
 // ─── Audit (TR-57) ────────────────────────────────────────────────────────────

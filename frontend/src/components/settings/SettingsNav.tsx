@@ -20,6 +20,7 @@ import {
   Palette,
   Star,
   ShieldCheck,
+  Database,
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store/auth';
 import { can } from '@/lib/rbac';
@@ -43,6 +44,7 @@ const NAV_ITEMS = [
   { id: 'mfa', label: 'Two-Factor Auth', icon: ShieldCheck, group: 'Security' },
   { id: 'branding', label: 'Branding', icon: Palette, group: 'Platform' },
   { id: 'integrations', label: 'Integrations', icon: Puzzle, group: 'Integrations' },
+  { id: 'crm-connectors', label: 'CRM & ERP', icon: Database, group: 'Integrations' },
   { id: 'webhooks', label: 'Webhooks', icon: Webhook, group: 'Integrations' },
   { id: 'business-hours', label: 'Business Hours', icon: Clock, group: 'Integrations' },
 ] as const;
@@ -72,6 +74,7 @@ export function SettingsNav({ active, onChange }: Props) {
     if (item.id === 'macros') return true;
     if (item.id === 'canned') return true;
     if (item.id === 'integrations') return can(role, 'manageInboxes');
+    if (item.id === 'crm-connectors') return can(role, 'manageInboxes');
     if (item.id === 'webhooks') return can(role, 'manageWebhooks');
     if (item.id === 'branding') return can(role, 'manageTeam');
     if (item.id === 'mfa') return true; // every user manages their own MFA
