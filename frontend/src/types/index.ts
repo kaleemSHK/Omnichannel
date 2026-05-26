@@ -134,6 +134,7 @@ export interface RoutingAgent {
   name: string;
   state: AgentState;
   skills: string[];
+  queueKeys?: string[];
   currentCallId?: string;
   lastStateChange: string;
 }

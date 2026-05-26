@@ -4,6 +4,7 @@ import { Loader2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Dialog } from '@/components/ui/Dialog';
 import { searchContacts } from '@/lib/api/contacts';
+import { TicketCustomFields, type CustomFieldValues } from '@/components/tickets/TicketCustomFields';
 import { useCreateTicket, useTicketAgents } from '@/lib/hooks/useTickets';
 import { isDemoDataEnabled } from '@/lib/demo/config';
 import type { TicketPriorityUi, TicketTeam } from '@/lib/utils/tickets';
@@ -27,6 +28,7 @@ export function NewTicketModal({ open, onClose }: Props) {
   const [contactResults, setContactResults] = useState<CWContact[]>([]);
   const [selectedContact, setSelectedContact] = useState<CWContact | null>(null);
   const [searching, setSearching] = useState(false);
+  const [customFieldValues, setCustomFieldValues] = useState<CustomFieldValues>({});
 
   useEffect(() => {
     if (!open) return;
@@ -66,6 +68,7 @@ export function NewTicketModal({ open, onClose }: Props) {
     setContactQuery('');
     setSelectedContact(null);
     setContactResults([]);
+    setCustomFieldValues({});
   };
 
   const handleSave = async () => {
@@ -77,7 +80,9 @@ export function NewTicketModal({ open, onClose }: Props) {
       assigneeId: assigneeId || undefined,
       contactId: selectedContact?.id,
       contactName: selectedContact?.name,
+      customerEmail: selectedContact?.email,
       team,
+      customFields: customFieldValues,
     });
     reset();
     onClose();
@@ -179,6 +184,8 @@ export function NewTicketModal({ open, onClose }: Props) {
             className="w-full px-3 py-2 text-sm border border-gray-200 rounded-md outline-none focus:border-[#0B5FFF] resize-none"
           />
         </Field>
+
+        <TicketCustomFields values={customFieldValues} onChange={setCustomFieldValues} />
       </div>
 
       <div className="mt-5 flex justify-end gap-2">

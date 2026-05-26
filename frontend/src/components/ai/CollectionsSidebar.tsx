@@ -34,7 +34,8 @@ export function CollectionsSidebar({ selectedId, onSelect }: Props) {
       setCreating(false);
       return;
     }
-    await create.mutateAsync(name);
+    const row = await create.mutateAsync(name);
+    onSelect(row.id);
     setNewName('');
     setCreating(false);
   };

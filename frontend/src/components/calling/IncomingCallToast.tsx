@@ -4,6 +4,7 @@ import { Phone, PhoneOff } from 'lucide-react';
 import { toast } from 'sonner';
 import { useCallsStore } from '@/lib/store/calls';
 import { resolveCallerName } from '@/lib/utils/calling';
+import { startIncomingRingtone, stopIncomingRingtone } from '@/lib/telephony/ringtone';
 import type { CallSession } from '@/types';
 
 export function showIncomingCallToast(
@@ -12,6 +13,7 @@ export function showIncomingCallToast(
 ) {
   const contactCache = useCallsStore.getState().contactCache;
   const name = resolveCallerName(call, contactCache);
+  void startIncomingRingtone();
 
   toast.custom(
     id => (
@@ -30,6 +32,7 @@ export function showIncomingCallToast(
             type="button"
             aria-label="Answer call"
             onClick={() => {
+              stopIncomingRingtone();
               handlers.onAnswer();
               toast.dismiss(id);
             }}
@@ -43,6 +46,7 @@ export function showIncomingCallToast(
             type="button"
             aria-label="Decline call"
             onClick={() => {
+              stopIncomingRingtone();
               handlers.onDecline();
               toast.dismiss(id);
             }}
@@ -55,6 +59,9 @@ export function showIncomingCallToast(
         </div>
       </div>
     ),
-    { duration: 30_000 },
+    {
+      duration: 30_000,
+      onDismiss: () => stopIncomingRingtone(),
+    },
   );
 }

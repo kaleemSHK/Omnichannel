@@ -17,6 +17,7 @@ import { CannedSection } from '@/components/settings/CannedSection';
 import { IntegrationsSection } from '@/components/settings/IntegrationsSection';
 import { WebhooksSection } from '@/components/settings/WebhooksSection';
 import { BusinessHoursSection } from '@/components/settings/BusinessHoursSection';
+import { TicketFieldsSettings } from '@/components/settings/TicketFieldsSettings';
 
 export default function SettingsPage() {
   const [view, setView] = useState<SettingsView>('profile');
@@ -30,6 +31,7 @@ export default function SettingsPage() {
     inboxes: <InboxSection />,
     labels: <LabelsSection />,
     'custom-attrs': <CustomAttrsSection />,
+    'ticket-fields': <TicketFieldsSettings />,
     automation: <AutomationSection />,
     bots: <BotsSection />,
     macros: <MacrosSection />,

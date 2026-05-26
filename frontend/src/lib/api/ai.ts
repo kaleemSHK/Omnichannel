@@ -215,6 +215,19 @@ export async function listRAGCollections(): Promise<{
   return listCollections();
 }
 
+export type VoicebotStatus = {
+  stt_mode: 'stub' | 'google_chirp_v2' | `whisper_${string}` | string;
+  tts_mode: 'stub' | 'piper_arabic';
+  language: string;
+  piper_voice?: string;
+  active_sessions: number;
+};
+
+export async function getVoicebotStatus(): Promise<VoicebotStatus> {
+  const res = await bnFetch<{ data: VoicebotStatus }>(SVC, '/v1/voicebot/status');
+  return res.data;
+}
+
 export async function submitSTTJob(payload: {
   audioUrl: string;
   language?: string;

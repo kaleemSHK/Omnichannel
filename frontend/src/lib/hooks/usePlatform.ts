@@ -129,9 +129,8 @@ export function useCreatePlatformTenant() {
       const current = qc.getQueryData<PlatformTenantView[]>(key) ?? [];
       return [...current, row];
     },
-    onSuccess: data => {
+    onSuccess: () => {
       const key = [...QUERY_KEY, isDemoDataEnabled()];
-      qc.setQueryData(key, data);
       qc.invalidateQueries({ queryKey: key });
       toast.success('Tenant created');
     },

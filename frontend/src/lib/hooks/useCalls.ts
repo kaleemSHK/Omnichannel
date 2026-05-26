@@ -24,7 +24,14 @@ export function useActiveSessions() {
       }
       try {
         const data = await listActiveSessions();
-        return data.filter(c => c.status === 'connected' || c.status === 'ringing');
+        const maxRingMs = 3 * 60 * 1000;
+        return data.filter(c => {
+          if (c.status === 'connected') return true;
+          if (c.status === 'ringing') {
+            return Date.now() - new Date(c.startedAt).getTime() < maxRingMs;
+          }
+          return false;
+        });
       } catch {
         return [];
       }
@@ -43,10 +50,9 @@ export function useCDR(filters?: CDRFilters) {
       if (isDemoDataEnabled() || !live) return DEMO_CDR.slice(0, limit * page);
       try {
         const res = await listCDR({ page, ...filters });
-        const rows = (res as { data?: CDRRecord[] }).data ?? [];
-        return rows.length ? rows : DEMO_CDR.slice(0, limit * page);
+        return (res as { data?: CDRRecord[] }).data ?? [];
       } catch {
-        return DEMO_CDR.slice(0, limit * page);
+        return [];
       }
     },
     placeholderData: keepPreviousData,

@@ -3,6 +3,7 @@
 import { Loader2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { RAGResultCard } from '@/components/ai/RAGResultCard';
+import { VoiceBotStatus } from '@/components/ai/VoiceBotStatus';
 import { useRagCollections, useRagQuery } from '@/lib/hooks/useAiKnowledge';
 
 interface Props {
@@ -35,6 +36,7 @@ export function QueryTester({ defaultCollectionId }: Props) {
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
+        <VoiceBotStatus />
         <label className="block">
           <span className="text-xs font-medium text-gray-600">Ask a question</span>
           <textarea

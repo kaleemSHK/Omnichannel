@@ -14,6 +14,10 @@ const notoSansArabic = Noto_Sans_Arabic({
 export const metadata: Metadata = {
   title: 'BlinkOne — LABBIK Telecom',
   description: 'BlinkOne Contact Center',
+  icons: {
+    icon: [{ url: '/icon.svg', type: 'image/svg+xml' }],
+    shortcut: '/icon.svg',
+  },
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {

@@ -108,9 +108,20 @@ export async function bnFetch<T>(
     }),
   });
 
-  if (res.status === 401 || res.status === 403) {
+  if (res.status === 401) {
     const { markGatewayAuthFailed } = await import('@/lib/demo/config');
     markGatewayAuthFailed();
+  } else if (res.status === 403) {
+    try {
+      const body = await res.clone().json();
+      const code = (body as { error?: { code?: string } })?.error?.code;
+      if (code === 'UNAUTHORIZED' || code === 'FORBIDDEN') {
+        const { markGatewayAuthFailed } = await import('@/lib/demo/config');
+        markGatewayAuthFailed();
+      }
+    } catch {
+      /* not JSON — leave gateway session intact */
+    }
   }
 
   return handleResponse<T>(res);

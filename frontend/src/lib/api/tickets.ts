@@ -3,9 +3,15 @@
  */
 
 import { bnFetch } from './client';
+import { useAuthStore } from '@/lib/store/auth';
 import type { Ticket, ApiResponse } from '@/types';
 
 const SVC = 'tickets';
+
+function accountQuery(): string {
+  const accountId = useAuthStore.getState().user?.chatwootAccountId;
+  return accountId != null ? `chatwoot_account_id=${accountId}` : '';
+}
 
 export async function listTickets(filters: {
   status?: string;
@@ -26,7 +32,10 @@ export async function listTickets(filters: {
   if (contact != null) params.set('contact_id', String(contact));
   if (filters.team) params.set('team', filters.team);
   if (filters.page) params.set('page', String(filters.page));
-  return bnFetch<ApiResponse<Ticket[]>>(SVC, `/v1/tickets?${params}`);
+  const account = accountQuery();
+  const qs = params.toString();
+  const path = `/v1/tickets?${[qs, account].filter(Boolean).join('&')}`;
+  return bnFetch<ApiResponse<Ticket[]>>(SVC, path);
 }
 
 export async function getTicket(id: string): Promise<Ticket> {
@@ -41,21 +50,36 @@ export async function createTicket(data: {
   priority: Ticket['priority'] | string;
   assigneeId?: string;
   contactId?: string;
+  contactName?: string;
+  customerEmail?: string;
   conversationId?: string;
   team?: string;
   department?: string;
+  customFields?: Record<string, string | number | boolean>;
 }): Promise<Ticket> {
+  const accountId = useAuthStore.getState().user?.chatwootAccountId;
+  const customFields: Record<string, string | number | boolean> = {
+    ...(data.customFields ?? {}),
+  };
+  if (data.description?.trim()) {
+    customFields.description = data.description.trim();
+  }
+
   const res = await bnFetch<{ data: Ticket }>(SVC, '/v1/tickets', {
     method: 'POST',
     body: JSON.stringify({
       title: data.title ?? data.subject,
       subject: data.subject,
+      chatwootAccountId: accountId,
+      chatwootConversationId: data.conversationId ? Number(data.conversationId) : undefined,
       priority: data.priority,
       assigneeId: data.assigneeId,
       contactId: data.contactId,
+      customerName: data.contactName,
+      customerEmail: data.customerEmail,
       conversationId: data.conversationId,
       department: data.department ?? data.team,
-      customFields: data.description ? { description: data.description } : undefined,
+      customFields: Object.keys(customFields).length ? customFields : undefined,
     }),
   });
   return res.data;

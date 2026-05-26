@@ -7,6 +7,7 @@ import { RoleGuard } from '@/components/layout/RoleGuard';
 import { ActiveCallBar } from '@/components/calling/ActiveCallBar';
 import { PhonePanel } from '@/components/calling/PhonePanel';
 import { SipInitializer } from '@/components/calling/SipInitializer';
+import { SipAudioHost } from '@/components/calling/SipAudioHost';
 import { cn } from '@/lib/utils/cn';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -16,6 +17,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   return (
     <RoleGuard>
       <SipInitializer />
+      <SipAudioHost />
       <div className="flex h-screen w-full overflow-hidden bg-background">
         <IconSidebar />
         <div className="flex flex-1 flex-col overflow-hidden min-w-0">

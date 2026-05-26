@@ -107,9 +107,9 @@ export function useCreateRagCollection() {
       return { id: created.id, name: created.name, docCount: 0 } satisfies RagCollection;
     },
     onSuccess: row => {
-      const key = [...COLLECTIONS_KEY, isDemoDataEnabled()];
-      qc.setQueryData<RagCollection[]>(key, old => [...(old ?? []), row]);
+      void qc.invalidateQueries({ queryKey: COLLECTIONS_KEY });
       toast.success(`Collection "${row.name}" created`);
+      return row;
     },
     onError: () => toast.error('Could not create collection'),
   });
@@ -193,14 +193,8 @@ export function useRagQuery() {
           r => !collectionId || r.collectionId === collectionId,
         ).slice(0, topK);
       }
-      try {
-        const sources = await queryRAG({ query, collectionId, topK });
-        const mapped = mapQueryResults(sources, collectionId);
-        if (mapped.length) return mapped;
-      } catch {
-        /* demo fallback */
-      }
-      return DEMO_RAG_RESULTS.slice(0, topK);
+      const sources = await queryRAG({ query, collectionId, topK });
+      return mapQueryResults(sources, collectionId);
     },
   });
 }

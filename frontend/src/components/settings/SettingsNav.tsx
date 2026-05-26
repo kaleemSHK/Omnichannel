@@ -16,6 +16,7 @@ import {
   Building2,
   Webhook,
   Clock,
+  Ticket,
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store/auth';
 import { can } from '@/lib/rbac';
@@ -29,6 +30,7 @@ const NAV_ITEMS = [
   { id: 'inboxes', label: 'Inboxes', icon: Inbox, group: 'Workspace' },
   { id: 'labels', label: 'Labels', icon: Tag, group: 'Workspace' },
   { id: 'custom-attrs', label: 'Custom Attributes', icon: Sliders, group: 'Workspace' },
+  { id: 'ticket-fields', label: 'Ticket Fields', icon: Ticket, group: 'Workspace' },
   { id: 'automation', label: 'Automation', icon: Zap, group: 'Automation' },
   { id: 'bots', label: 'Agent Bots', icon: Bot, group: 'Automation' },
   { id: 'macros', label: 'Macros', icon: BookOpen, group: 'Automation' },
@@ -55,6 +57,7 @@ export function SettingsNav({ active, onChange }: Props) {
     if (item.id === 'inboxes') return can(role, 'manageInboxes');
     if (item.id === 'labels') return can(role, 'manageInboxes');
     if (item.id === 'custom-attrs') return can(role, 'manageInboxes');
+    if (item.id === 'ticket-fields') return can(role, 'manageInboxes');
     if (item.id === 'automation') return can(role, 'manageInboxes');
     if (item.id === 'bots') return can(role, 'manageInboxes');
     if (item.id === 'macros') return true;
