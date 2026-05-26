@@ -11,6 +11,8 @@ function rowToQueue(row, skills = []) {
     maxDepth: row.max_depth,
     overflowQueueId: row.overflow_queue_id,
     config: row.config ?? {},
+    // Skill weight multipliers for best_match algorithm: { skillName: multiplier }
+    skillWeights: row.skill_weights ?? {},
     skills,
     createdAt: row.created_at?.toISOString?.() ?? row.created_at,
     updatedAt: row.updated_at?.toISOString?.() ?? row.updated_at,
@@ -141,6 +143,10 @@ export async function patchQueue(tenantId, id, patch) {
   if (patch.config != null) {
     sets.push(`config = $${i++}::jsonb`);
     vals.push(JSON.stringify(patch.config));
+  }
+  if (patch.skillWeights != null) {
+    sets.push(`skill_weights = $${i++}::jsonb`);
+    vals.push(JSON.stringify(patch.skillWeights));
   }
   if (sets.length) {
     sets.push('updated_at = now()');

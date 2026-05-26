@@ -9,6 +9,7 @@ import { requireFeature } from '../_shared/lib/features.js';
 import { tenantSuspendedMiddleware } from '../lib/tenant-guard.js';
 import * as queueRepo from '../lib/queue-repo.js';
 import * as agentRepo from '../lib/agent-repo.js';
+import { listAgentSkills, upsertAgentSkill, deleteAgentSkill, listAgentsWithSkills } from '../lib/agent-repo.js';
 import { handleRouteRequest, processQueue } from '../lib/route-request.js';
 import { assignCall } from '../lib/route-assign.js';
 import { completeCall } from '../lib/route-complete.js';
@@ -328,6 +329,82 @@ app.post('/v1/agents/:agentId/state', auth, telephonyWrite, async (req, res) => 
       return agent;
     }),
   );
+});
+
+// ─── Agent skill proficiency (Sprint 1 G01) ──────────────────────────────────
+
+/** GET /v1/agents/skills — all agents with proficiency skills for tenant */
+app.get('/v1/agents/skills', auth, async (req, res) => {
+  if (!dbEnabled()) return fail(res, 'NOT_CONFIGURED', 'Postgres required', 501);
+  try {
+    return ok(res, await listAgentsWithSkills(resolveTenantId(req)));
+  } catch (e) {
+    log.error({ err: e.message }, 'list agents with skills');
+    return fail(res, 'INTERNAL_ERROR', 'Failed to list agents with skills', 500);
+  }
+});
+
+/** GET /v1/agents/:agentId/skills — skills for one agent */
+app.get('/v1/agents/:agentId/skills', auth, async (req, res) => {
+  if (!dbEnabled()) return fail(res, 'NOT_CONFIGURED', 'Postgres required', 501);
+  try {
+    return ok(res, await listAgentSkills(resolveTenantId(req), req.params.agentId));
+  } catch (e) {
+    return fail(res, 'INTERNAL_ERROR', e.message, 500);
+  }
+});
+
+/** PUT /v1/agents/:agentId/skills/:skill — upsert skill proficiency */
+app.put('/v1/agents/:agentId/skills/:skill', auth, telephonyWrite, async (req, res) => {
+  if (!dbEnabled()) return fail(res, 'NOT_CONFIGURED', 'Postgres required', 501);
+  const proficiency = Number(req.body?.proficiency);
+  if (!Number.isInteger(proficiency) || proficiency < 1 || proficiency > 5) {
+    return fail(res, 'VALIDATION_ERROR', 'proficiency must be an integer 1–5', 400);
+  }
+  try {
+    await upsertAgentSkill(
+      resolveTenantId(req),
+      req.params.agentId,
+      req.params.skill,
+      proficiency,
+    );
+    return ok(res, { agentId: req.params.agentId, skill: req.params.skill, proficiency });
+  } catch (e) {
+    if (e.code === 'VALIDATION_ERROR') return fail(res, 'VALIDATION_ERROR', e.message, 400);
+    return fail(res, 'INTERNAL_ERROR', e.message, 500);
+  }
+});
+
+/** DELETE /v1/agents/:agentId/skills/:skill — remove a skill */
+app.delete('/v1/agents/:agentId/skills/:skill', auth, telephonyWrite, async (req, res) => {
+  if (!dbEnabled()) return fail(res, 'NOT_CONFIGURED', 'Postgres required', 501);
+  try {
+    await deleteAgentSkill(resolveTenantId(req), req.params.agentId, req.params.skill);
+    return ok(res, { deleted: true });
+  } catch (e) {
+    return fail(res, 'INTERNAL_ERROR', e.message, 500);
+  }
+});
+
+/** PATCH /v1/queues/:id/skill-weights — update best_match weight multipliers */
+app.patch('/v1/queues/:id/skill-weights', auth, telephonyWrite, async (req, res) => {
+  if (!dbEnabled()) return fail(res, 'NOT_CONFIGURED', 'Postgres required', 501);
+  const skillWeights = req.body?.skillWeights ?? req.body?.skill_weights;
+  if (!skillWeights || typeof skillWeights !== 'object' || Array.isArray(skillWeights)) {
+    return fail(res, 'VALIDATION_ERROR', 'skillWeights must be an object, e.g. {"spanish": 2.0}', 400);
+  }
+  // Validate all values are positive numbers
+  for (const [k, v] of Object.entries(skillWeights)) {
+    if (typeof v !== 'number' || v <= 0) {
+      return fail(res, 'VALIDATION_ERROR', `Weight for "${k}" must be a positive number`, 400);
+    }
+  }
+  try {
+    const updated = await queueRepo.patchQueue(resolveTenantId(req), req.params.id, { skillWeights });
+    return updated ? ok(res, updated) : fail(res, 'NOT_FOUND', 'Queue not found', 404);
+  } catch (e) {
+    return fail(res, 'INTERNAL_ERROR', e.message, 500);
+  }
 });
 
 // ─── Routing (step 4: enqueue; step 5: assign/select) ─────────────────────────

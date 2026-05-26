@@ -127,13 +127,29 @@ export interface CDRFilters {
 // ─── Routing sidecar ───────────────────────────────────────────────────────────
 export type AgentState = 'available' | 'busy' | 'break' | 'offline';
 
+/** Sprint 1 G01: Proficiency-weighted skill entry */
+export interface AgentSkill {
+  skill: string;
+  proficiency: 1 | 2 | 3 | 4 | 5;
+}
+
+export interface AgentWithSkills {
+  agentId: string;
+  displayName?: string | null;
+  agentSkills: AgentSkill[];
+}
+
 export interface RoutingAgent {
   id: string;
   tenantId: string;
   agentId: string;
   name: string;
+  displayName?: string | null;
   state: AgentState;
+  /** Legacy: plain skill name list (backward compat) */
   skills: string[];
+  /** New: skills with proficiency scores 1–5 */
+  agentSkills?: AgentSkill[];
   queueKeys?: string[];
   currentCallId?: string;
   lastStateChange: string;
@@ -144,8 +160,10 @@ export interface Queue {
   tenantId: string;
   queueKey: string;
   name: string;
-  skills: string[];
-  selectionAlgorithm: string;
+  skills: Array<{ skill: string; required: boolean }>;
+  /** Weight multipliers for best_match algorithm: { skillName: multiplier } */
+  skillWeights?: Record<string, number>;
+  selectionAlgorithm: 'longest_idle' | 'round_robin' | 'best_match';
   maxWaitSec: number;
   maxDepth: number;
   stats?: QueueStats;

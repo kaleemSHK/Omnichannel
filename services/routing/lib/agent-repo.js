@@ -1,27 +1,47 @@
 import { getPool } from './db.js';
 import { setAgentState, getAgentState, listAgentStates } from './redis-state.js';
 
+/**
+ * Map a DB row + skill/queue arrays to the agent shape.
+ *
+ * skills is now [{skill, proficiency}] (new format).
+ * We also expose the legacy `skills: string[]` field so that
+ * selection.js agentMatchesQueue fallback and any existing consumers
+ * continue to work without change.
+ */
 function rowToAgent(row, skills = [], queueKeys = []) {
+  // skills is [{skill, proficiency}] — legacy string[] shape derived from it
+  const agentSkills = skills.map((s) =>
+    typeof s === 'string' ? { skill: s, proficiency: 3 } : s,
+  );
   return {
     id: row.id,
     tenantId: row.tenant_id,
     agentId: row.agent_id,
     displayName: row.display_name,
     chatwootUserId: row.chatwoot_user_id,
-    skills,
+    // New: proficiency-aware skill array
+    agentSkills,
+    // Legacy: plain string array (backward compat)
+    skills: agentSkills.map((s) => s.skill),
     queueKeys,
     createdAt: row.created_at?.toISOString?.() ?? row.created_at,
     updatedAt: row.updated_at?.toISOString?.() ?? row.updated_at,
   };
 }
 
+/**
+ * Load skills for an agent DB row.
+ * Returns [{skill, proficiency}] — new format.
+ * Column proficiency defaults to 3 for rows created before migration 004.
+ */
 async function loadAgentSkills(agentDbId) {
   const p = getPool();
   const { rows } = await p.query(
-    'SELECT skill FROM routing_agent_skills WHERE agent_id = $1 ORDER BY skill',
+    'SELECT skill, COALESCE(proficiency, 3) AS proficiency FROM routing_agent_skills WHERE agent_id = $1 ORDER BY skill',
     [agentDbId],
   );
-  return rows.map((r) => r.skill);
+  return rows.map((r) => ({ skill: r.skill, proficiency: Number(r.proficiency) }));
 }
 
 async function loadAgentQueueKeys(agentDbId) {
@@ -101,10 +121,12 @@ export async function createAgent(tenantId, { agentId, displayName, chatwootUser
     );
     const agent = rows[0];
     for (const skill of skills) {
-      await client.query('INSERT INTO routing_agent_skills (agent_id, skill) VALUES ($1, $2)', [
-        agent.id,
-        typeof skill === 'string' ? skill : skill.skill,
-      ]);
+      const skillName = typeof skill === 'string' ? skill : skill.skill;
+      const proficiency = (typeof skill === 'object' && skill.proficiency) ? skill.proficiency : 3;
+      await client.query(
+        'INSERT INTO routing_agent_skills (agent_id, skill, proficiency) VALUES ($1, $2, $3) ON CONFLICT (agent_id, skill) DO UPDATE SET proficiency = EXCLUDED.proficiency',
+        [agent.id, skillName, proficiency],
+      );
     }
     if (queueKeys.length) {
       for (const qk of queueKeys) {
@@ -161,10 +183,12 @@ export async function patchAgent(tenantId, agentId, patch) {
   if (patch.skills) {
     await p.query('DELETE FROM routing_agent_skills WHERE agent_id = $1', [dbId]);
     for (const skill of patch.skills) {
-      await p.query('INSERT INTO routing_agent_skills (agent_id, skill) VALUES ($1, $2)', [
-        dbId,
-        typeof skill === 'string' ? skill : skill.skill,
-      ]);
+      const skillName = typeof skill === 'string' ? skill : skill.skill;
+      const proficiency = (typeof skill === 'object' && skill.proficiency) ? skill.proficiency : 3;
+      await p.query(
+        'INSERT INTO routing_agent_skills (agent_id, skill, proficiency) VALUES ($1, $2, $3)',
+        [dbId, skillName, proficiency],
+      );
     }
   }
 
@@ -190,6 +214,108 @@ export async function patchAgent(tenantId, agentId, patch) {
 export async function updateAgentLiveState(tenantId, agentId, patch) {
   const agent = await getAgent(tenantId, agentId);
   const skills = patch.skills ?? agent?.skills ?? [];
+  const agentSkills = patch.agentSkills ?? agent?.agentSkills ?? [];
   const queueKeys = patch.queueKeys ?? agent?.queueKeys ?? [];
-  return setAgentState(tenantId, agentId, { ...patch, skills, queueKeys });
+  return setAgentState(tenantId, agentId, { ...patch, skills, agentSkills, queueKeys });
+}
+
+// ─── Skill proficiency CRUD ──────────────────────────────────────────────────
+
+/**
+ * Get the DB row id for an agent by tenant+agentId string.
+ * Returns null if not found.
+ */
+async function getAgentDbId(tenantId, agentId) {
+  const p = getPool();
+  const { rows } = await p.query(
+    'SELECT id FROM routing_agents WHERE tenant_id = $1 AND agent_id = $2',
+    [tenantId, agentId],
+  );
+  return rows[0]?.id ?? null;
+}
+
+/**
+ * List all skills for a single agent.
+ * Returns [{skill, proficiency}]
+ */
+export async function listAgentSkills(tenantId, agentId) {
+  const dbId = await getAgentDbId(tenantId, agentId);
+  if (!dbId) return [];
+  return loadAgentSkills(dbId);
+}
+
+/**
+ * Upsert a skill+proficiency for an agent. Creates agent record if missing.
+ * @param {string} tenantId
+ * @param {string} agentId
+ * @param {string} skill
+ * @param {number} proficiency — 1 to 5
+ */
+export async function upsertAgentSkill(tenantId, agentId, skill, proficiency) {
+  if (proficiency < 1 || proficiency > 5) {
+    const err = new Error('proficiency must be between 1 and 5');
+    err.code = 'VALIDATION_ERROR';
+    throw err;
+  }
+  const p = getPool();
+  let dbId = await getAgentDbId(tenantId, agentId);
+  if (!dbId) {
+    // Auto-create agent record if it doesn't exist (e.g. headless update)
+    const { rows } = await p.query(
+      `INSERT INTO routing_agents (tenant_id, agent_id) VALUES ($1, $2)
+       ON CONFLICT (tenant_id, agent_id) DO UPDATE SET updated_at = now()
+       RETURNING id`,
+      [tenantId, agentId],
+    );
+    dbId = rows[0].id;
+  }
+  await p.query(
+    `INSERT INTO routing_agent_skills (agent_id, skill, proficiency)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (agent_id, skill)
+     DO UPDATE SET proficiency = EXCLUDED.proficiency`,
+    [dbId, skill, proficiency],
+  );
+  // Refresh Redis state so selection picks up new proficiency immediately
+  const agent = await getAgent(tenantId, agentId);
+  if (agent) {
+    await setAgentState(tenantId, agentId, {
+      agentSkills: agent.agentSkills,
+      skills: agent.skills,
+    });
+  }
+}
+
+/**
+ * Delete a skill from an agent.
+ */
+export async function deleteAgentSkill(tenantId, agentId, skill) {
+  const dbId = await getAgentDbId(tenantId, agentId);
+  if (!dbId) return;
+  const p = getPool();
+  await p.query(
+    'DELETE FROM routing_agent_skills WHERE agent_id = $1 AND skill = $2',
+    [dbId, skill],
+  );
+  // Refresh Redis state
+  const agent = await getAgent(tenantId, agentId);
+  if (agent) {
+    await setAgentState(tenantId, agentId, {
+      agentSkills: agent.agentSkills,
+      skills: agent.skills,
+    });
+  }
+}
+
+/**
+ * List all agents with their proficiency skills for a tenant.
+ * Returns [{agentId, displayName, agentSkills:[{skill,proficiency}]}]
+ */
+export async function listAgentsWithSkills(tenantId) {
+  const agents = await listAgents(tenantId);
+  return agents.map((a) => ({
+    agentId: a.agentId,
+    displayName: a.displayName,
+    agentSkills: a.agentSkills ?? [],
+  }));
 }

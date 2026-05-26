@@ -4,7 +4,7 @@
  */
 
 import { bnFetch } from './client';
-import type { RoutingAgent, Queue, QueueStats } from '@/types';
+import type { RoutingAgent, Queue, QueueStats, AgentSkill, AgentWithSkills } from '@/types';
 
 const SVC = 'routing';
 
@@ -66,6 +66,51 @@ export async function createQueue(data: Partial<Queue>): Promise<Queue> {
   const res = await bnFetch<{ data: Queue }>(SVC, '/v1/queues', {
     method: 'POST',
     body: JSON.stringify(data),
+  });
+  return res.data;
+}
+
+// ─── Skill proficiency (Sprint 1 G01) ─────────────────────────────────────────
+
+/** List skill proficiency entries for a single agent */
+export async function listAgentSkills(agentId: string): Promise<AgentSkill[]> {
+  const res = await bnFetch<{ data: AgentSkill[] }>(SVC, `/v1/agents/${agentId}/skills`);
+  return res.data;
+}
+
+/** Upsert a skill+proficiency for an agent (1–5 scale) */
+export async function upsertAgentSkill(
+  agentId: string,
+  skill: string,
+  proficiency: number,
+): Promise<void> {
+  await bnFetch<unknown>(SVC, `/v1/agents/${agentId}/skills/${encodeURIComponent(skill)}`, {
+    method: 'PUT',
+    body: JSON.stringify({ proficiency }),
+  });
+}
+
+/** Remove a skill from an agent */
+export async function deleteAgentSkill(agentId: string, skill: string): Promise<void> {
+  await bnFetch<unknown>(SVC, `/v1/agents/${agentId}/skills/${encodeURIComponent(skill)}`, {
+    method: 'DELETE',
+  });
+}
+
+/** List all agents with their proficiency skills for the current tenant */
+export async function listAgentsWithSkills(): Promise<AgentWithSkills[]> {
+  const res = await bnFetch<{ data: AgentWithSkills[] }>(SVC, '/v1/agents/skills');
+  return res.data;
+}
+
+/** Update skill weight multipliers for the best_match algorithm on a queue */
+export async function updateQueueSkillWeights(
+  queueId: string,
+  skillWeights: Record<string, number>,
+): Promise<Queue> {
+  const res = await bnFetch<{ data: Queue }>(SVC, `/v1/queues/${queueId}/skill-weights`, {
+    method: 'PATCH',
+    body: JSON.stringify({ skillWeights }),
   });
   return res.data;
 }

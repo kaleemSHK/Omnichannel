@@ -54,7 +54,10 @@ export async function setAgentState(tenantId, agentId, patch) {
     lastIdleAt:
       patch.lastIdleAt ??
       (patch.status === 'available' ? now : (prev?.lastIdleAt ?? now)),
+    // Legacy string[] skills — for backward compat with old selection.js readers
     skills: patch.skills ?? prev?.skills ?? [],
+    // New: [{skill, proficiency}] — used by best_match selection algorithm
+    agentSkills: patch.agentSkills ?? prev?.agentSkills ?? [],
     queueKeys: patch.queueKeys ?? prev?.queueKeys ?? [],
     occupancy: patch.occupancy ?? prev?.occupancy ?? 0,
     updatedAt: now,
