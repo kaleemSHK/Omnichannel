@@ -6,6 +6,12 @@ import { Loader2, Plus, Search } from 'lucide-react';
 import { PlatformKPICards } from '@/components/platform/PlatformKPICards';
 import { TenantCard } from '@/components/platform/TenantCard';
 import { NewTenantWizard } from '@/components/platform/NewTenantWizard';
+import { FeatureFlagsMatrix } from '@/components/platform/FeatureFlagsMatrix';
+import { AdminsPanel } from '@/components/platform/AdminsPanel';
+import { StoragePanel } from '@/components/platform/StoragePanel';
+import { HealthPanel } from '@/components/platform/HealthPanel';
+import { AuditLogPanel } from '@/components/platform/AuditLogPanel';
+import { AlertsPanel } from '@/components/platform/AlertsPanel';
 import { DemoBanner } from '@/components/ui/DemoBanner';
 import { isDemoDataEnabled } from '@/lib/demo/config';
 import { usePlatformKpis, usePlatformTenants } from '@/lib/hooks/usePlatform';
@@ -16,14 +22,14 @@ type PlatformTab = 'tenants' | 'flags' | 'admins' | 'storage' | 'health' | 'audi
 
 const NAV: { id: PlatformTab; label: string }[] = [
   { id: 'tenants', label: 'Tenants' },
-  { id: 'flags', label: 'Feature flags' },
-  { id: 'admins', label: 'Admins' },
+  { id: 'flags',   label: 'Feature flags' },
+  { id: 'admins',  label: 'Admins' },
   { id: 'storage', label: 'Storage' },
-  { id: 'health', label: 'Health' },
+  { id: 'health',  label: 'Health' },
 ];
 
 const NAV_SECONDARY: { id: PlatformTab; label: string }[] = [
-  { id: 'audit', label: 'Audit log' },
+  { id: 'audit',  label: 'Audit log' },
   { id: 'alerts', label: 'Alerts' },
 ];
 
@@ -148,11 +154,12 @@ export function PlatformWorkspace() {
           </>
         )}
 
-        {tab !== 'tenants' && (
-          <div className="bn-card p-8 text-center text-sm text-gray-500">
-            {tab.charAt(0).toUpperCase() + tab.slice(1).replace('-', ' ')} — coming in a future release.
-          </div>
-        )}
+        {tab === 'flags'   && <FeatureFlagsMatrix />}
+        {tab === 'admins'  && <AdminsPanel />}
+        {tab === 'storage' && <StoragePanel />}
+        {tab === 'health'  && <HealthPanel />}
+        {tab === 'audit'   && <AuditLogPanel />}
+        {tab === 'alerts'  && <AlertsPanel />}
       </div>
 
       <NewTenantWizard open={wizardOpen} onClose={() => setWizardOpen(false)} />

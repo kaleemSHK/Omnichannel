@@ -81,3 +81,125 @@ export async function getBranding(accountId: number): Promise<{
   const res = await bnFetch<{ data: unknown }>(PLATFORM_SVC, `/v1/branding/${accountId}`);
   return res.data as { productName: string; primaryColor: string; logoUrl?: string; faviconUrl?: string };
 }
+
+// ─── P1: Platform admin types ─────────────────────────────────────────────────
+
+export interface PlatformAdmin {
+  id: string;
+  email: string;
+  name: string;
+  role: 'platform_admin' | 'platform_viewer';
+  status: 'active' | 'invited';
+  createdAt: string;
+}
+
+export interface StorageTenantStat {
+  tenantId: string;
+  tenantName: string;
+  plan: string;
+  recordings_gb: number;
+  assets_gb: number;
+  ai_gb: number;
+  total_gb: number;
+  quota_gb: number;
+}
+
+export interface ServiceHealthEntry {
+  name: string;
+  status: 'up' | 'down' | 'degraded' | 'unknown';
+  latency_ms: number;
+  error?: string;
+}
+
+export interface HealthAllResult {
+  overall: 'healthy' | 'degraded';
+  services: ServiceHealthEntry[];
+  checkedAt: string;
+}
+
+export interface AuditEvent {
+  id: string;
+  ts: string;
+  action: string;
+  resourceType: string;
+  tenantId: string | null;
+  actorEmail: string | null;
+}
+
+export interface AlertRule {
+  id: string;
+  name: string;
+  condition: string;
+  threshold: number | null;
+  channels: string[];
+  enabled: boolean;
+  createdAt: string;
+}
+
+// ─── P1: Admin CRUD ───────────────────────────────────────────────────────────
+
+export async function listAdmins(): Promise<PlatformAdmin[]> {
+  return bnFetch<PlatformAdmin[]>(PLATFORM_SVC, '/v1/admins');
+}
+
+export async function createAdmin(data: {
+  email: string;
+  name?: string;
+  role?: string;
+}): Promise<PlatformAdmin> {
+  return bnFetch<PlatformAdmin>(PLATFORM_SVC, '/v1/admins', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteAdmin(id: string): Promise<void> {
+  await bnFetch<unknown>(PLATFORM_SVC, `/v1/admins/${id}`, { method: 'DELETE' });
+}
+
+// ─── P1: Storage stats ────────────────────────────────────────────────────────
+
+export async function getStorageStats(): Promise<StorageTenantStat[]> {
+  return bnFetch<StorageTenantStat[]>(PLATFORM_SVC, '/v1/storage/stats');
+}
+
+// ─── P1: Health ───────────────────────────────────────────────────────────────
+
+export async function getHealthAll(): Promise<HealthAllResult> {
+  return bnFetch<HealthAllResult>(PLATFORM_SVC, '/v1/health/all');
+}
+
+// ─── P1: Audit log ────────────────────────────────────────────────────────────
+
+export async function getAuditLog(limit = 100): Promise<AuditEvent[]> {
+  return bnFetch<AuditEvent[]>(PLATFORM_SVC, `/v1/audit?limit=${limit}`);
+}
+
+// ─── P1: Alert rules ─────────────────────────────────────────────────────────
+
+export async function listAlerts(): Promise<AlertRule[]> {
+  return bnFetch<AlertRule[]>(PLATFORM_SVC, '/v1/alerts');
+}
+
+export async function createAlert(data: {
+  name: string;
+  condition: string;
+  threshold?: number;
+  channels?: string[];
+}): Promise<AlertRule> {
+  return bnFetch<AlertRule>(PLATFORM_SVC, '/v1/alerts', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateAlert(id: string, data: Partial<AlertRule>): Promise<AlertRule> {
+  return bnFetch<AlertRule>(PLATFORM_SVC, `/v1/alerts/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteAlert(id: string): Promise<void> {
+  await bnFetch<unknown>(PLATFORM_SVC, `/v1/alerts/${id}`, { method: 'DELETE' });
+}

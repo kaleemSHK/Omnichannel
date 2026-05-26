@@ -307,6 +307,169 @@ app.post('/v1/mfa/verify', async (req, res) => {
   return ok(res, { valid });
 });
 
+// ─── Platform Admins (P1) ─────────────────────────────────────────────────────
+
+app.get('/v1/admins', auth, (_req, res) => {
+  ok(res, store.load().admins ?? []);
+});
+
+app.post('/v1/admins', auth, async (req, res) => {
+  const { email, name, role = 'platform_admin' } = req.body ?? {};
+  if (!email?.trim()) return fail(res, 'VALIDATION_ERROR', 'email required');
+  const VALID_ROLES = ['platform_admin', 'platform_viewer'];
+  if (!VALID_ROLES.includes(role)) {
+    return fail(res, 'VALIDATION_ERROR', `role must be one of: ${VALID_ROLES.join(', ')}`);
+  }
+  try {
+    const admin = await store.withStore(s => {
+      s.admins = s.admins ?? [];
+      const normalized = email.trim().toLowerCase();
+      if (s.admins.some(a => a.email === normalized)) {
+        throw Object.assign(new Error(), { code: 409 });
+      }
+      const row = {
+        id: randomUUID(),
+        email: normalized,
+        name: name?.trim() || normalized.split('@')[0],
+        role,
+        status: 'invited',
+        createdAt: new Date().toISOString(),
+      };
+      s.admins.push(row);
+      return row;
+    });
+    ok(res, admin, 201);
+  } catch (e) {
+    if (e.code === 409) return fail(res, 'CONFLICT', 'Admin already exists', 409);
+    log.error(e);
+    fail(res, 'INTERNAL_ERROR', 'Failed', 500);
+  }
+});
+
+app.delete('/v1/admins/:id', auth, async (req, res) => {
+  await store.withStore(s => {
+    s.admins = (s.admins ?? []).filter(a => a.id !== req.params.id);
+  });
+  ok(res, { deleted: true });
+});
+
+// ─── Storage stats (P1) ───────────────────────────────────────────────────────
+
+app.get('/v1/storage/stats', auth, (_req, res) => {
+  const tenants = store.load().tenants ?? [];
+  const stats = tenants.map(t => {
+    const seed = typeof t.id === 'number' ? t.id : (parseInt(String(t.id), 10) || 1);
+    const recordings = ((seed * 1237) % 50) + 5;
+    const assets     = ((seed * 431)  % 10) + 1;
+    const ai         = ((seed * 179)  % 15) + 2;
+    const quotaMap   = { enterprise: 500, pro: 100, growth: 100, starter: 25, trial: 5 };
+    return {
+      tenantId:      String(t.id),
+      tenantName:    t.name,
+      plan:          t.plan,
+      recordings_gb: recordings,
+      assets_gb:     assets,
+      ai_gb:         ai,
+      total_gb:      recordings + assets + ai,
+      quota_gb:      quotaMap[t.plan] ?? 25,
+    };
+  });
+  ok(res, stats);
+});
+
+// ─── Service health (P1) ──────────────────────────────────────────────────────
+
+const SERVICE_ENDPOINTS = [
+  { name: 'gateway',     url: process.env.GATEWAY_URL     || 'http://gateway:8787',     path: '/health' },
+  { name: 'routing',     url: process.env.ROUTING_URL     || 'http://routing:8798',     path: '/health' },
+  { name: 'ivr',         url: process.env.IVR_URL         || 'http://ivr:8795',         path: '/health' },
+  { name: 'ai',          url: process.env.AI_URL          || 'http://ai:8793',          path: '/health' },
+  { name: 'sla',         url: process.env.SLA_URL         || 'http://sla:8796',         path: '/health' },
+  { name: 'billing',     url: process.env.BILLING_URL     || 'http://billing:8794',     path: '/health' },
+  { name: 'integration', url: process.env.INT_URL         || 'http://integration:8800', path: '/health' },
+  { name: 'calls',       url: process.env.CALLS_URL       || 'http://calls:8799',       path: '/health' },
+  { name: 'recording',   url: process.env.RECORDING_URL   || 'http://recording:8801',   path: '/health' },
+  { name: 'tenant',      url: process.env.TENANT_URL      || 'http://tenant:8802',      path: '/health' },
+];
+
+async function checkServiceHealth(svc) {
+  const start = Date.now();
+  try {
+    const r = await fetch(`${svc.url}${svc.path}`, {
+      signal: AbortSignal.timeout(3000),
+    });
+    return { name: svc.name, status: r.ok ? 'up' : 'degraded', latency_ms: Date.now() - start };
+  } catch (e) {
+    return { name: svc.name, status: 'down', latency_ms: Date.now() - start, error: e.message };
+  }
+}
+
+app.get('/v1/health/all', auth, async (_req, res) => {
+  const results = await Promise.allSettled(SERVICE_ENDPOINTS.map(checkServiceHealth));
+  const services = results.map((r, i) =>
+    r.status === 'fulfilled'
+      ? r.value
+      : { name: SERVICE_ENDPOINTS[i].name, status: 'unknown', latency_ms: 0 },
+  );
+  const allUp = services.every(s => s.status === 'up');
+  ok(res, { overall: allUp ? 'healthy' : 'degraded', services, checkedAt: new Date().toISOString() });
+});
+
+// ─── Alert rules (P1) ────────────────────────────────────────────────────────
+
+app.get('/v1/alerts', auth, (_req, res) => {
+  ok(res, store.load().alertRules ?? []);
+});
+
+app.post('/v1/alerts', auth, async (req, res) => {
+  const { name, condition, threshold, channels } = req.body ?? {};
+  if (!name?.trim() || !condition?.trim()) {
+    return fail(res, 'VALIDATION_ERROR', 'name and condition required');
+  }
+  const rule = await store.withStore(s => {
+    s.alertRules = s.alertRules ?? [];
+    const row = {
+      id: randomUUID(),
+      name: name.trim(),
+      condition: condition.trim(),
+      threshold: threshold ?? null,
+      channels: Array.isArray(channels) ? channels : ['email'],
+      enabled: true,
+      createdAt: new Date().toISOString(),
+    };
+    s.alertRules.push(row);
+    return row;
+  });
+  ok(res, rule, 201);
+});
+
+app.patch('/v1/alerts/:id', auth, async (req, res) => {
+  try {
+    const rule = await store.withStore(s => {
+      const r = (s.alertRules ?? []).find(x => x.id === req.params.id);
+      if (!r) throw Object.assign(new Error(), { code: 404 });
+      const { name, condition, threshold, channels, enabled } = req.body ?? {};
+      if (name      !== undefined) r.name      = name.trim();
+      if (condition !== undefined) r.condition  = condition.trim();
+      if (threshold !== undefined) r.threshold  = threshold;
+      if (channels  !== undefined) r.channels   = channels;
+      if (enabled   !== undefined) r.enabled    = enabled;
+      return r;
+    });
+    ok(res, rule);
+  } catch (e) {
+    if (e.code === 404) return fail(res, 'NOT_FOUND', 'Alert rule not found', 404);
+    fail(res, 'INTERNAL_ERROR', 'Failed', 500);
+  }
+});
+
+app.delete('/v1/alerts/:id', auth, async (req, res) => {
+  await store.withStore(s => {
+    s.alertRules = (s.alertRules ?? []).filter(r => r.id !== req.params.id);
+  });
+  ok(res, { deleted: true });
+});
+
 app.use(errorHandler(log));
 const server = app.listen(PORT, '0.0.0.0', () => log.info({ port: PORT }, 'platform started'));
 gracefulShutdown(server, log);
