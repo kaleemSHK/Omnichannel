@@ -6,6 +6,7 @@ import jwt from 'jsonwebtoken';
 import pino from 'pino';
 import { tenantHasFeature } from './tenant-features.js';
 import { piiSerializer, pinoMixin, PII_REDACT, maskString } from '../../services/_shared/lib/pii-masker.js';
+import { rateLimitMiddleware, authRateLimitMiddleware } from './rate-limiter.js';
 
 const log = pino({
   name: 'gateway',
@@ -293,7 +294,7 @@ const route = (path, target, token) =>
   app.use(path, target ? proxy(target, path, token) : notImpl(path));
 
 // Exchange Chatwoot user token → BlinkOne gateway JWT (Next.js frontend login step 2)
-app.post('/api/auth/token', express.json(), async (req, res) => {
+app.post('/api/auth/token', authRateLimitMiddleware(), express.json(), async (req, res) => {
   const auth = String(req.headers.authorization || '');
   const bearer = auth.startsWith('Bearer ') ? auth.slice(7).trim() : '';
   const cwToken = String(
@@ -368,6 +369,18 @@ app.use('/api/auth',     proxy(U.chatwoot, '/api/auth'));
 // so we relay them here preserving the full /api/v1/... path
 app.use('/api/v1', passthroughProxy(U.chatwoot, '/api/v1'));
 app.use('/api/v2', passthroughProxy(U.chatwoot, '/api/v2'));
+
+// ─── Per-route rate limiting ──────────────────────────────────────────────────
+app.use('/api/ai',         rateLimitMiddleware('ai'));
+app.use('/api/calls',      rateLimitMiddleware('calls'));
+app.use('/api/recordings', rateLimitMiddleware('recording'));
+app.use('/api/routing',    rateLimitMiddleware('routing'));
+app.use('/api/tickets',    rateLimitMiddleware('tickets'));
+app.use('/api/sla',        rateLimitMiddleware('sla'));
+app.use('/api/billing',    rateLimitMiddleware('billing'));
+app.use('/api/platform',   rateLimitMiddleware('platform'));
+app.use('/api/tenant',     rateLimitMiddleware('platform'));
+app.use('/api/webhooks',   rateLimitMiddleware('webhooks'));
 
 // Enterprise services
 route('/api/platform',    U.platform);

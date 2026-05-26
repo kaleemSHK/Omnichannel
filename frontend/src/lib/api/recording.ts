@@ -73,6 +73,39 @@ export async function getRecordingPlaybackUrl(id: string): Promise<{
   return { url: play.url ?? '', expiresAt: expires };
 }
 
+// ─── PCI Recording Pause / Resume — Sprint 1 G02 ─────────────────────────────
+
+export interface PciPauseResult {
+  id: string;
+  paused: boolean;
+  pciPauseStart?: string;
+  pciPauseEnd?: string;
+  pauseSegments?: Array<{ start: string; end: string }>;
+}
+
+/**
+ * Pause recording on an active recording entry.
+ * Called indirectly via calls service; exposed here for direct recording-level use.
+ */
+export async function pauseRecording(recordingId: string): Promise<PciPauseResult> {
+  const res = await bnFetch<{ data: PciPauseResult }>(
+    SVC,
+    `/v1/recordings/${encodeURIComponent(recordingId)}/pause`,
+    { method: 'PATCH', body: JSON.stringify({}) },
+  );
+  return res.data;
+}
+
+/** Resume recording after PCI secure payment collection. */
+export async function resumeRecording(recordingId: string): Promise<PciPauseResult> {
+  const res = await bnFetch<{ data: PciPauseResult }>(
+    SVC,
+    `/v1/recordings/${encodeURIComponent(recordingId)}/resume`,
+    { method: 'PATCH', body: JSON.stringify({}) },
+  );
+  return res.data;
+}
+
 /** Fetch recording audio through the gateway (JWT); use with URL.createObjectURL for playback. */
 export async function fetchRecordingAudioBlob(id: string): Promise<Blob> {
   const { tokens } = useAuthStore.getState();

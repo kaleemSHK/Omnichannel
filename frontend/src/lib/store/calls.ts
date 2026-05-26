@@ -10,6 +10,15 @@ export interface SipControls {
   answerCall: () => void;
   sendDTMF: (tone: string) => void;
   blindTransfer: (target: string) => void;
+  /** Returns current RTP stats for MOS calculation (G03). Optional — may be absent. */
+  getRtpStats?: () => {
+    roundTripTimeMs?: number;
+    jitterMs?: number;
+    packetsLost?: number;
+    packetsSent?: number;
+    packetsReceived?: number;
+    codec?: string;
+  };
 }
 
 interface CallsState {

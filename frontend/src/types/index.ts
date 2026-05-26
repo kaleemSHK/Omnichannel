@@ -82,6 +82,12 @@ export type CallStatus = 'ringing' | 'connected' | 'on_hold' | 'ended' | 'missed
 export type CallTransport = 'pstn' | 'whatsapp';
 export type CallDirection = 'inbound' | 'outbound';
 
+/** PCI DSS §3.2 audit trail — each pause window during card collection */
+export interface PciPauseSegment {
+  start: string; // ISO timestamp when recording was paused
+  end: string;   // ISO timestamp when recording was resumed
+}
+
 export interface CallSession {
   id: string;
   tenantId: string;
@@ -100,6 +106,11 @@ export interface CallSession {
   outcome?: string;
   conversationId?: string;
   contactId?: string;
+  recordingId?: string;
+  /** True while PCI secure payment mode is active */
+  recordingPaused?: boolean;
+  /** Audit trail of all pause windows for this call */
+  pciPauseSegments?: PciPauseSegment[];
 }
 
 export interface CDRRecord {

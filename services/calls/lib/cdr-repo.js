@@ -48,6 +48,56 @@ export async function appendCallEvent(tenantId, callSessionId, { eventType, acto
   return rows[0];
 }
 
+/** Historical CDR rows for agent UI (ended / missed sessions). */
+export async function listCdr(tenantId, { page = 1, limit = 20, from, to, agentId } = {}) {
+  const p = getPool();
+  const params = [tenantId];
+  let sql = `SELECT * FROM call_sessions WHERE tenant_id = $1 AND status IN ('ended', 'missed')`;
+  if (from) {
+    params.push(from);
+    sql += ` AND started_at >= $${params.length}::timestamptz`;
+  }
+  if (to) {
+    params.push(to);
+    sql += ` AND started_at <= $${params.length}::timestamptz`;
+  }
+  if (agentId) {
+    params.push(agentId);
+    sql += ` AND (assigned_agent_id = $${params.length} OR agent_label = $${params.length})`;
+  }
+  const lim = Math.min(Math.max(parseInt(String(limit), 10) || 20, 1), 100);
+  const off = Math.max((parseInt(String(page), 10) || 1) - 1, 0) * lim;
+  params.push(lim, off);
+  sql += ` ORDER BY started_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`;
+  const { rows } = await p.query(sql, params);
+  return rows.map((r) => {
+    const s = rowToSession(r);
+    return {
+      id: s.id,
+      tenantId: s.tenantId,
+      callSessionId: s.id,
+      agentId: s.assignedAgentId || s.agentLabel || '',
+      customerId: s.contactId ?? undefined,
+      direction: s.direction,
+      transport: s.transport,
+      duration: Math.max(0, Math.floor(Number(s.durationMs || 0) / 1000)),
+      outcome: s.outcome || s.status,
+      startedAt: s.startedAt,
+    };
+  });
+}
+
+export async function expireStaleRinging(tenantId, maxAgeSec = 180) {
+  const p = getPool();
+  await p.query(
+    `UPDATE call_sessions
+     SET status = 'missed', ended_at = NOW(), outcome = 'timeout'
+     WHERE tenant_id = $1 AND status = 'ringing'
+       AND started_at < NOW() - ($2::text || ' seconds')::interval`,
+    [tenantId, String(maxAgeSec)],
+  );
+}
+
 export async function listCalls(tenantId, { status, transport, scope, agentId } = {}) {
   const p = getPool();
   const params = [tenantId];
@@ -57,6 +107,10 @@ export async function listCalls(tenantId, { status, transport, scope, agentId } 
     if (statuses.length) {
       params.push(statuses);
       sql += ` AND status = ANY($${params.length})`;
+      if (statuses.includes('ringing') && statuses.length === 1) {
+        params.push(String(180));
+        sql += ` AND started_at >= NOW() - ($${params.length}::text || ' seconds')::interval`;
+      }
     }
   }
   if (transport) {
@@ -215,6 +269,28 @@ export async function createRecordingObject(tenantId, { callSessionId, storageBa
     ],
   );
   return rows[0];
+}
+
+/**
+ * Retrieve call events by type for MOS history (Sprint 1 G03).
+ * Returns an array of event rows ordered oldest → newest.
+ */
+export async function getCallEvents(tenantId, callSessionId, eventType) {
+  const p = getPool();
+  const { rows } = await p.query(
+    `SELECT id, event_type, actor_id, metadata, occurred_at AS "createdAt"
+     FROM call_events
+     WHERE tenant_id = $1 AND call_session_id = $2${eventType ? ' AND event_type = $3' : ''}
+     ORDER BY occurred_at ASC`,
+    eventType ? [tenantId, callSessionId, eventType] : [tenantId, callSessionId],
+  );
+  return rows.map(r => ({
+    id: r.id,
+    eventType: r.event_type,
+    actorId: r.actor_id,
+    metadata: r.metadata ?? {},
+    createdAt: r.createdAt?.toISOString?.() ?? r.createdAt,
+  }));
 }
 
 export { STATUS_MAP };
