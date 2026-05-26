@@ -1,4 +1,5 @@
 import type { SLAPolicy, SLAInstance } from '@/types';
+import type { SlaBreachStat } from '@/lib/api/sla';
 
 export type SlaUiStatus = 'breached' | 'at_risk' | 'active' | 'met';
 
@@ -102,6 +103,16 @@ export const DEMO_ACTIVE: SlaInstanceView[] = [
 
 export const DEMO_MET: SlaInstanceView[] = [
   inst('sla-6', 5, 'met', 'Khalid Al-Rashdi', 'bronze', 0, 'Resolved — thank you', 'Sarah Al-Hinai'),
+];
+
+export const DEMO_SLA_BREACH_STATS: SlaBreachStat[] = [
+  { date: '2026-05-21', breaches: 3, total: 74, breachRate: 4.1 },
+  { date: '2026-05-22', breaches: 5, total: 82, breachRate: 6.1 },
+  { date: '2026-05-23', breaches: 2, total: 88, breachRate: 2.3 },
+  { date: '2026-05-24', breaches: 6, total: 79, breachRate: 7.6 },
+  { date: '2026-05-25', breaches: 4, total: 86, breachRate: 4.7 },
+  { date: '2026-05-26', breaches: 1, total: 36, breachRate: 2.8 },
+  { date: '2026-05-27', breaches: 0, total: 24, breachRate: 0 },
 ];
 
 export function demoDashboard() {

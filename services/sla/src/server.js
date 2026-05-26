@@ -78,6 +78,36 @@ app.post('/v1/policies', auth, slaFeature, async (req, res) => {
   }
 });
 
+app.patch('/v1/policies/:id', auth, slaFeature, async (req, res) => {
+  if (!dbEnabled()) return fail(res, 'NOT_CONFIGURED', 'Postgres required', 501);
+  const tenantId = resolveTenantId(req);
+  try {
+    const updated = await repo.updatePolicy(tenantId, req.params.id, req.body ?? {});
+    if (!updated) return fail(res, 'NOT_FOUND', 'Policy not found', 404);
+    return ok(res, updated);
+  } catch (e) {
+    if (e.code === '23505') return fail(res, 'CONFLICT', 'Policy name exists', 409);
+    log.error(e);
+    return fail(res, 'INTERNAL_ERROR', e.message, 500);
+  }
+});
+
+app.delete('/v1/policies/:id', auth, slaFeature, async (req, res) => {
+  if (!dbEnabled()) return fail(res, 'NOT_CONFIGURED', 'Postgres required', 501);
+  const tenantId = resolveTenantId(req);
+  const deleted = await repo.deletePolicy(tenantId, req.params.id);
+  if (!deleted) return fail(res, 'NOT_FOUND', 'Policy not found', 404);
+  return res.status(204).end();
+});
+
+app.get('/v1/breach-stats', auth, slaFeature, async (req, res) => {
+  if (!dbEnabled()) return fail(res, 'NOT_CONFIGURED', 'Postgres required', 501);
+  const tenantId = resolveTenantId(req);
+  const since = req.query.since ? new Date(Number(req.query.since) * 1000).toISOString() : new Date(Date.now() - 7 * 86_400_000).toISOString();
+  const until = req.query.until ? new Date(Number(req.query.until) * 1000).toISOString() : new Date().toISOString();
+  return ok(res, await repo.getBreachStats(tenantId, since, until));
+});
+
 app.get('/v1/conversations/:id/sla', auth, slaFeature, async (req, res) => {
   if (!dbEnabled()) return fail(res, 'NOT_CONFIGURED', 'Postgres required', 501);
   const tenantId = resolveTenantId(req);

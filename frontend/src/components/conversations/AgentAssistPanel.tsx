@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/Dialog';
 import { cn } from '@/lib/utils/cn';
 import { CRMLookupCard } from './CRMLookupCard';
+import { SLAConversationBadge } from '@/components/sla/SLAConversationBadge';
 import type { CWMessage } from '@/types';
 
 interface Props {
@@ -43,6 +44,7 @@ export function AgentAssistPanel({ conversationId, contactId }: Props) {
   const [ragOpen, setRagOpen] = useState(true);
   const [insightsOpen, setInsightsOpen] = useState(true);
   const [crmOpen, setCrmOpen] = useState(true);
+  const [slaOpen, setSlaOpen] = useState(true);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [summaryText, setSummaryText] = useState('');
 
@@ -204,6 +206,10 @@ export function AgentAssistPanel({ conversationId, contactId }: Props) {
         >
           {summarize.isPending ? 'Summarizing…' : 'Summarize'}
         </Button>
+      </Section>
+
+      <Section title="SLA" open={slaOpen} onToggle={() => setSlaOpen(v => !v)}>
+        <SLAConversationBadge conversationId={conversationId} />
       </Section>
 
       {contactId && (

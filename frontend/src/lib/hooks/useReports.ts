@@ -396,16 +396,30 @@ export function useHourlyHeatmap(): { days: string[]; matrix: number[][] } {
   return { days: DEMO_HEATMAP_DAYS, matrix: DEMO_HOURLY_HEATMAP };
 }
 
-/** SLA breach rate per day — derived from chart data (approximated). */
+/** SLA breach rate per day — calls the real SLA service `/v1/breach-stats` endpoint. */
 export function useSlaBreachReport(range: DateRangeValue): { data: SlaBreachPoint[]; isLoading: boolean } {
+  const { since, until } = sinceUntil(range);
   const q = useQuery<SlaBreachPoint[]>({
-    queryKey: ['reportSlaBreach', range, isDemoDataEnabled()],
+    queryKey: ['reportSlaBreach', since, until, isDemoDataEnabled()],
     queryFn: async (): Promise<SlaBreachPoint[]> => {
       if (isDemoDataEnabled()) return DEMO_SLA_BREACH;
-      // In live mode, we approximate using summary data since CW v2 doesn't expose
-      // SLA breach per-day natively. A dedicated SLA endpoint is added in a future sprint.
-      return DEMO_SLA_BREACH;
+      try {
+        // Import lazily to avoid circular deps
+        const { getBreachStats } = await import('@/lib/api/sla');
+        const rows = await getBreachStats(since, until);
+        // Map ISO date to short weekday label for chart display
+        return rows.map(r => ({
+          date: new Date(r.date).toLocaleDateString('en-US', { weekday: 'short' }),
+          breaches: r.breaches,
+          total: r.total,
+          breachRate: r.breachRate,
+        }));
+      } catch {
+        return DEMO_SLA_BREACH; // graceful fallback
+      }
     },
+    staleTime: 5 * 60_000,
+    retry: false,
   });
   return { data: q.data ?? [], isLoading: q.isLoading };
 }

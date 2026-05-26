@@ -1,30 +1,39 @@
 'use client';
 
 import { useState } from 'react';
+import { PlusCircle } from 'lucide-react';
 import { SLAKPICards } from '@/components/sla/SLAKPICards';
 import { SLAInstanceTable } from '@/components/sla/SLAInstanceTable';
 import { PolicyCard } from '@/components/sla/PolicyCard';
+import { PolicyFormModal } from '@/components/sla/PolicyFormModal';
 import { BusinessHoursSection } from '@/components/settings/BusinessHoursSection';
+import { Button } from '@/components/ui/button';
 import {
   instancesForFilter,
   useSlaDashboard,
   useSlaPolicies,
+  useSlaBreachAlerts,
   type SlaFilter,
 } from '@/lib/hooks/useSla';
 import { cn } from '@/lib/utils/cn';
 
 const NAV: { id: SlaFilter | 'policies' | 'hours'; label: string }[] = [
   { id: 'dashboard', label: 'Dashboard' },
-  { id: 'breached', label: 'Breached' },
-  { id: 'at_risk', label: 'At risk' },
-  { id: 'active', label: 'Active' },
-  { id: 'met', label: 'Met' },
+  { id: 'breached',  label: 'Breached' },
+  { id: 'at_risk',   label: 'At risk' },
+  { id: 'active',    label: 'Active' },
+  { id: 'met',       label: 'Met' },
 ];
 
 export function SLAWorkspace() {
   const [view, setView] = useState<SlaFilter | 'policies' | 'hours'>('dashboard');
+  const [newPolicyOpen, setNewPolicyOpen] = useState(false);
+
   const { data, isLoading } = useSlaDashboard();
   const { data: policies = [] } = useSlaPolicies();
+
+  // Fires toast notifications on new breaches (side-effect hook, no render output)
+  useSlaBreachAlerts();
 
   const stats = data?.stats ?? {
     breachedCount: 0,
@@ -36,9 +45,9 @@ export function SLAWorkspace() {
 
   const badge = (id: SlaFilter) => {
     if (id === 'breached') return stats.breachedCount;
-    if (id === 'at_risk') return stats.atRiskCount;
-    if (id === 'active') return stats.activeCount;
-    if (id === 'met') return stats.metToday;
+    if (id === 'at_risk')  return stats.atRiskCount;
+    if (id === 'active')   return stats.activeCount;
+    if (id === 'met')      return stats.metToday;
     return 0;
   };
 
@@ -47,72 +56,105 @@ export function SLAWorkspace() {
   const instances = instancesForFilter(data, tableFilter);
 
   return (
-    <div className="flex h-full min-h-[calc(100vh-3rem)] bg-surface-tertiary">
-      <nav className="w-[180px] shrink-0 bg-white border-e border-gray-200 py-3 px-2">
-        {NAV.map(item => (
+    <>
+      <div className="flex h-full min-h-[calc(100vh-3rem)] bg-surface-tertiary">
+        {/* Sidebar nav */}
+        <nav className="w-[180px] shrink-0 bg-white border-e border-gray-200 py-3 px-2">
+          {NAV.map(item => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => setView(item.id)}
+              className={cn(
+                'w-full flex items-center justify-between px-2.5 py-2 rounded-md text-sm mb-0.5',
+                view === item.id
+                  ? 'bg-blue-50 text-[#0B5FFF] font-medium'
+                  : 'text-gray-600 hover:bg-gray-50',
+              )}
+            >
+              {item.label}
+              {badge(item.id as SlaFilter) > 0 && item.id !== 'dashboard' && (
+                <span
+                  className={cn(
+                    'min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-semibold flex items-center justify-center text-white',
+                    item.id === 'breached'
+                      ? 'bg-red-500'
+                      : item.id === 'at_risk'
+                        ? 'bg-amber-500'
+                        : 'bg-gray-400',
+                  )}
+                >
+                  {badge(item.id as SlaFilter)}
+                </span>
+              )}
+            </button>
+          ))}
+
+          <div className="my-2 border-t border-gray-100" />
+
           <button
-            key={item.id}
             type="button"
-            onClick={() => setView(item.id)}
+            onClick={() => setView('policies')}
             className={cn(
-              'w-full flex items-center justify-between px-2.5 py-2 rounded-md text-sm mb-0.5',
-              view === item.id ? 'bg-blue-50 text-[#0B5FFF] font-medium' : 'text-gray-600 hover:bg-gray-50',
+              'w-full text-start px-2.5 py-2 rounded-md text-sm',
+              view === 'policies'
+                ? 'bg-blue-50 text-[#0B5FFF] font-medium'
+                : 'text-gray-600 hover:bg-gray-50',
             )}
           >
-            {item.label}
-            {badge(item.id as SlaFilter) > 0 && item.id !== 'dashboard' && (
-              <span
-                className={cn(
-                  'min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-semibold flex items-center justify-center text-white',
-                  item.id === 'breached' ? 'bg-red-500' : item.id === 'at_risk' ? 'bg-amber-500' : 'bg-gray-400',
-                )}
-              >
-                {badge(item.id as SlaFilter)}
-              </span>
-            )}
+            Policies
           </button>
-        ))}
-        <div className="my-2 border-t border-gray-100" />
-        <button
-          type="button"
-          onClick={() => setView('policies')}
-          className={cn(
-            'w-full text-start px-2.5 py-2 rounded-md text-sm',
-            view === 'policies' ? 'bg-blue-50 text-[#0B5FFF] font-medium' : 'text-gray-600 hover:bg-gray-50',
+          <button
+            type="button"
+            onClick={() => setView('hours')}
+            className={cn(
+              'w-full text-start px-2.5 py-2 rounded-md text-sm',
+              view === 'hours'
+                ? 'bg-blue-50 text-[#0B5FFF] font-medium'
+                : 'text-gray-600 hover:bg-gray-50',
+            )}
+          >
+            Business hours
+          </button>
+        </nav>
+
+        {/* Main content */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-4 min-w-0">
+          {view === 'policies' && (
+            <>
+              <div className="flex items-center justify-between">
+                <h2 className="text-sm font-semibold text-gray-700">SLA Policies</h2>
+                <Button size="sm" onClick={() => setNewPolicyOpen(true)}>
+                  <PlusCircle className="w-4 h-4 mr-1.5" />
+                  New policy
+                </Button>
+              </div>
+              <div className="grid md:grid-cols-3 gap-3">
+                {policies.map(p => (
+                  <PolicyCard key={p.id} policy={p} />
+                ))}
+                {policies.length === 0 && (
+                  <div className="col-span-3 py-12 text-center text-sm text-muted-foreground">
+                    No policies yet. Click <strong>New policy</strong> to create one.
+                  </div>
+                )}
+              </div>
+            </>
           )}
-        >
-          Policies
-        </button>
-        <button
-          type="button"
-          onClick={() => setView('hours')}
-          className={cn(
-            'w-full text-start px-2.5 py-2 rounded-md text-sm',
-            view === 'hours' ? 'bg-blue-50 text-[#0B5FFF] font-medium' : 'text-gray-600 hover:bg-gray-50',
+
+          {view === 'hours' && <BusinessHoursSection />}
+
+          {view !== 'policies' && view !== 'hours' && (
+            <>
+              <SLAKPICards stats={stats} />
+              <SLAInstanceTable instances={instances} isLoading={isLoading} />
+            </>
           )}
-        >
-          Business hours
-        </button>
-      </nav>
-
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 min-w-0">
-        {view === 'policies' && (
-          <div className="grid md:grid-cols-3 gap-3">
-            {policies.map(p => (
-              <PolicyCard key={p.id} policy={p} />
-            ))}
-          </div>
-        )}
-
-        {view === 'hours' && <BusinessHoursSection />}
-
-        {view !== 'policies' && view !== 'hours' && (
-          <>
-            <SLAKPICards stats={stats} />
-            <SLAInstanceTable instances={instances} isLoading={isLoading} />
-          </>
-        )}
+        </div>
       </div>
-    </div>
+
+      {/* New policy modal — rendered outside the scrollable area */}
+      <PolicyFormModal open={newPolicyOpen} onClose={() => setNewPolicyOpen(false)} />
+    </>
   );
 }

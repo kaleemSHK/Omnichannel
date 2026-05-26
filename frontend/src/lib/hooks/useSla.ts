@@ -1,11 +1,22 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
-import { getSlaDashboard, listPolicies } from '@/lib/api/sla';
+import { useEffect, useRef } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
+import {
+  getSlaDashboard,
+  listPolicies,
+  createPolicy,
+  updatePolicy,
+  deletePolicy,
+  getBreachStats,
+  type SlaBreachStat,
+} from '@/lib/api/sla';
 import { isDemoDataEnabled, isGatewayQueryEnabled } from '@/lib/demo/config';
 import {
   demoDashboard,
   DEMO_POLICIES,
+  DEMO_SLA_BREACH_STATS,
   type SlaInstanceView,
   type SlaUiStatus,
 } from '@/lib/demo/slaFixture';
@@ -13,6 +24,8 @@ import { mapApiInstance } from '@/lib/utils/sla';
 import type { SLAPolicy } from '@/types';
 
 export type SlaFilter = 'dashboard' | 'breached' | 'at_risk' | 'active' | 'met';
+
+// ─── Dashboard ────────────────────────────────────────────────────────────────
 
 export function useSlaDashboard() {
   const gwEnabled = isGatewayQueryEnabled();
@@ -27,7 +40,13 @@ export function useSlaDashboard() {
           atRisk?: unknown[];
           active?: unknown[];
           met?: unknown[];
-          stats?: { breachedCount?: number; atRiskCount?: number; activeCount?: number; metToday?: number; compliancePct?: number };
+          stats?: {
+            breachedCount?: number;
+            atRiskCount?: number;
+            activeCount?: number;
+            metToday?: number;
+            compliancePct?: number;
+          };
         };
         const breached = (data.breached ?? []).map(r => mapApiInstance(r as Record<string, unknown>));
         const atRisk = (data.atRisk ?? []).map(r => mapApiInstance(r as Record<string, unknown>));
@@ -66,6 +85,48 @@ export function useSlaDashboard() {
     refetchInterval: gwEnabled ? 30_000 : false,
   });
 }
+
+// ─── Breach alert toasts (compares previous dashboard state) ──────────────────
+
+export function useSlaBreachAlerts() {
+  const { data } = useSlaDashboard();
+  const prevBreachedIds = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!data) return;
+    const currentIds = new Set(data.breached.map(i => i.id));
+    const newBreaches = data.breached.filter(i => !prevBreachedIds.current.has(i.id));
+    for (const inst of newBreaches) {
+      toast.error(
+        `SLA breached — conversation #${inst.conversationId}`,
+        {
+          description: inst.contact?.name
+            ? `${inst.contact.name} · ${inst.policyName ?? 'SLA policy'}`
+            : inst.policyName ?? 'SLA policy breached',
+          duration: 10_000,
+          id: `sla-breach-${inst.id}`,
+        },
+      );
+    }
+    prevBreachedIds.current = currentIds;
+  }, [data]);
+}
+
+// ─── Per-conversation SLA lookup (from cached dashboard) ─────────────────────
+
+export function useSlaForConversation(conversationId?: number): SlaInstanceView | null {
+  const { data } = useSlaDashboard();
+  if (!data || !conversationId) return null;
+  const id = String(conversationId);
+  return (
+    data.breached.find(i => i.conversationId === id) ??
+    data.atRisk.find(i => i.conversationId === id) ??
+    data.active.find(i => i.conversationId === id) ??
+    null
+  );
+}
+
+// ─── Policies ─────────────────────────────────────────────────────────────────
 
 export function useSlaPolicies() {
   const gwEnabled = isGatewayQueryEnabled();
@@ -106,6 +167,67 @@ function normalizePolicy(p: SLAPolicy): SLAPolicy {
     calendarId: raw.businessHoursCalendarId,
   };
 }
+
+// ─── Policy mutations ─────────────────────────────────────────────────────────
+
+export function useCreatePolicy() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: Omit<SLAPolicy, 'id' | 'tenantId'>) => createPolicy(data),
+    onSuccess: () => {
+      toast.success('Policy created');
+      void qc.invalidateQueries({ queryKey: ['sla-policies'] });
+    },
+    onError: (e: Error) => toast.error(`Failed to create policy: ${e.message}`),
+  });
+}
+
+export function useUpdatePolicy() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Partial<Omit<SLAPolicy, 'id' | 'tenantId'>> }) =>
+      updatePolicy(id, data),
+    onSuccess: () => {
+      toast.success('Policy updated');
+      void qc.invalidateQueries({ queryKey: ['sla-policies'] });
+    },
+    onError: (e: Error) => toast.error(`Failed to update policy: ${e.message}`),
+  });
+}
+
+export function useDeletePolicy() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => deletePolicy(id),
+    onSuccess: () => {
+      toast.success('Policy deleted');
+      void qc.invalidateQueries({ queryKey: ['sla-policies'] });
+    },
+    onError: (e: Error) => toast.error(`Failed to delete policy: ${e.message}`),
+  });
+}
+
+// ─── Breach stats (for Analytics dashboard) ───────────────────────────────────
+
+export function useSlaBreachStats(since: number, until: number): { data: SlaBreachStat[]; isLoading: boolean } {
+  const gwEnabled = isGatewayQueryEnabled();
+  const q = useQuery<SlaBreachStat[]>({
+    queryKey: ['sla-breach-stats', since, until, isDemoDataEnabled()],
+    queryFn: async (): Promise<SlaBreachStat[]> => {
+      if (isDemoDataEnabled()) return DEMO_SLA_BREACH_STATS;
+      try {
+        return await getBreachStats(since, until);
+      } catch {
+        return DEMO_SLA_BREACH_STATS;
+      }
+    },
+    enabled: gwEnabled,
+    staleTime: 5 * 60_000,
+  });
+  return { data: q.data ?? [], isLoading: q.isLoading };
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 export function instancesForFilter(
   data: ReturnType<typeof demoDashboard> | undefined,

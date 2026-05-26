@@ -131,6 +131,79 @@ export async function createPolicy(tenantId, body) {
   }
 }
 
+export async function updatePolicy(tenantId, id, body) {
+  const sets = [];
+  const vals = [id, tenantId];
+  let i = 3;
+  for (const [col, key] of [
+    ['name', 'name'],
+    ['description', 'description'],
+    ['enabled', 'enabled'],
+    ['is_default', 'isDefault'],
+    ['business_hours_calendar_id', 'businessHoursCalendarId'],
+  ]) {
+    if (body[key] !== undefined) {
+      sets.push(`${col} = $${i++}`);
+      vals.push(body[key]);
+    }
+  }
+  if (!sets.length) {
+    const { rows } = await getPool().query('SELECT * FROM sla_policies WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
+    if (!rows.length) return null;
+    const { rows: t } = await getPool().query('SELECT * FROM sla_targets WHERE policy_id = $1', [id]);
+    return policyRow(rows[0], t.map(targetRow));
+  }
+  sets.push('updated_at = now()');
+  const { rows } = await getPool().query(
+    `UPDATE sla_policies SET ${sets.join(', ')} WHERE id = $1 AND tenant_id = $2 RETURNING *`,
+    vals,
+  );
+  if (!rows.length) return null;
+  const { rows: t } = await getPool().query('SELECT * FROM sla_targets WHERE policy_id = $1', [id]);
+  return policyRow(rows[0], t.map(targetRow));
+}
+
+export async function deletePolicy(tenantId, id) {
+  const { rowCount } = await getPool().query(
+    'DELETE FROM sla_policies WHERE id = $1 AND tenant_id = $2',
+    [id, tenantId],
+  );
+  return rowCount > 0;
+}
+
+export async function getBreachStats(tenantId, sinceIso, untilIso) {
+  // Breach counts per calendar day
+  const { rows: breachRows } = await getPool().query(
+    `SELECT date_trunc('day', breached_at)::date AS day, COUNT(*)::int AS breaches
+     FROM sla_instances
+     WHERE tenant_id = $1 AND breached_at IS NOT NULL
+       AND breached_at >= $2 AND breached_at < $3
+     GROUP BY day ORDER BY day`,
+    [tenantId, sinceIso, untilIso],
+  );
+
+  // Total instances started per calendar day
+  const { rows: totalRows } = await getPool().query(
+    `SELECT date_trunc('day', started_at)::date AS day, COUNT(*)::int AS total
+     FROM sla_instances
+     WHERE tenant_id = $1 AND started_at >= $2 AND started_at < $3
+     GROUP BY day ORDER BY day`,
+    [tenantId, sinceIso, untilIso],
+  );
+
+  const totalMap = new Map(totalRows.map((r) => [String(r.day), r.total]));
+  return breachRows.map((r) => {
+    const day = String(r.day);
+    const total = totalMap.get(day) ?? r.breaches;
+    return {
+      date: day,
+      breaches: r.breaches,
+      total,
+      breachRate: total > 0 ? Math.round((r.breaches / total) * 1000) / 10 : 0,
+    };
+  });
+}
+
 export async function getDefaultPolicy(tenantId) {
   const { rows } = await getPool().query(
     'SELECT * FROM sla_policies WHERE tenant_id = $1 AND is_default = true AND enabled = true LIMIT 1',

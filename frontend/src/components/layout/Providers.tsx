@@ -7,6 +7,7 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { NextIntlClientProvider, type AbstractIntlMessages } from 'next-intl';
 import { Toaster } from 'sonner';
 import { BrandingProvider } from '@/components/providers/BrandingProvider';
+import { SlaAlertsProvider } from '@/components/providers/SlaAlertsProvider';
 
 export function Providers({
   children,
@@ -35,10 +36,13 @@ export function Providers({
     <QueryClientProvider client={queryClient}>
       {/* BrandingProvider fetches tenant colors/logo after login and injects CSS vars */}
       <BrandingProvider>
-        <NextIntlClientProvider locale={locale} messages={messages}>
-          {children}
-          <Toaster richColors position="top-right" />
-        </NextIntlClientProvider>
+        {/* SlaAlertsProvider fires toast on SLA breach events (side-effect only) */}
+        <SlaAlertsProvider>
+          <NextIntlClientProvider locale={locale} messages={messages}>
+            {children}
+            <Toaster richColors position="top-right" />
+          </NextIntlClientProvider>
+        </SlaAlertsProvider>
       </BrandingProvider>
       {process.env.NODE_ENV === 'development' && <ReactQueryDevtools initialIsOpen={false} />}
     </QueryClientProvider>
