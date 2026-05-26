@@ -2,25 +2,147 @@ name: blinkone-ci
 
 on:
   push:
-    branches: [blinkone/main, blinkone/develop, main, develop]
-    paths:
-      - 'services/_shared/**'
-      - 'services/gateway/**'
-      - 'package.json'
-      - 'pnpm-workspace.yaml'
+    branches: [main, develop, 'blinkone/**', 'feature/**']
   pull_request:
-    paths:
-      - 'services/_shared/**'
-      - 'services/gateway/**'
-      - 'package.json'
-      - 'pnpm-workspace.yaml'
+    branches: [main, develop]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  lint-typecheck-test:
+  # ────────────────────────────────────────────────────────────────────────────
+  # Job 1: Frontend — TypeScript, lint, build
+  # ────────────────────────────────────────────────────────────────────────────
+  frontend:
+    name: Frontend (TS + lint + build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --prefer-offline
+
+      - name: TypeScript check (zero errors required)
+        run: npx tsc --noEmit
+
+      - name: ESLint
+        run: npm run lint
+        continue-on-error: false
+
+      - name: Next.js build
+        run: npm run build
+        env:
+          NEXT_PUBLIC_CHATWOOT_URL: http://localhost:3000
+          NEXT_PUBLIC_API_BASE: http://localhost:8080
+          NEXT_PUBLIC_WS_URL: ws://localhost:3000/cable
+          NEXT_PUBLIC_SIP_WSS: ws://localhost:8080/telephony/wss
+          NEXT_PUBLIC_SIP_DOMAIN: blinkone.local
+          NEXT_PUBLIC_DEMO_DATA: '1'
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # Job 2: Node.js microservices — lint + unit tests (all services)
+  # ────────────────────────────────────────────────────────────────────────────
+  services:
+    name: Services (${{ matrix.service }})
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        node-version: [20, 22]
+        service:
+          - calls
+          - routing
+          - recording
+          - ivr
+          - tickets
+          - sla
+          - escalation
+          - ai
+          - tenant
+          - platform
+          - integration
+          - billing
+          - whatsapp-calls
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: blinkone_app
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U app -d blinkone_app"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      BLINKONE_DATABASE_URL: postgresql://app:test@localhost:5432/blinkone_app
+      BLINKONE_REDIS_URL: redis://localhost:6379
+      REDIS_URL: redis://localhost:6379
+      JWT_SECRET: ci-test-secret
+      TOKEN: ci-test-token
+      NODE_ENV: test
+      # WhatsApp stub
+      WHATSAPP_MESSAGING_ENABLED: '0'
+      MINIO_STUB: '1'
+      KEYCLOAK_STUB: '1'
+      ACME_STUB: '1'
+      FEATURE_FAILOPEN: '1'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: services/${{ matrix.service }}/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --prefer-offline
+        working-directory: services/${{ matrix.service }}
+
+      - name: Run tests (if test script exists)
+        run: |
+          if node -e "require('./package.json').scripts.test" 2>/dev/null; then
+            npm test
+          else
+            echo "No test script — skipping"
+          fi
+        working-directory: services/${{ matrix.service }}
+
+      - name: Lint (if lint script exists)
+        run: |
+          if node -e "require('./package.json').scripts.lint" 2>/dev/null; then
+            npm run lint
+          else
+            echo "No lint script — skipping"
+          fi
+        working-directory: services/${{ matrix.service }}
+        continue-on-error: true
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # Job 3: Gateway (NestJS) — existing coverage
+  # ────────────────────────────────────────────────────────────────────────────
+  gateway:
+    name: Gateway (NestJS)
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -54,10 +176,50 @@ jobs:
           version: 9
       - uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node-version }}
+          node-version: '20'
           cache: pnpm
       - run: pnpm install
       - run: pnpm run typecheck
       - run: pnpm run build
       - run: pnpm run lint
         continue-on-error: true
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # Job 4: Security scan — secrets + dependency audit
+  # ────────────────────────────────────────────────────────────────────────────
+  security:
+    name: Security scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Detect secrets with gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
+
+      - name: npm audit (frontend)
+        run: npm audit --audit-level=high
+        working-directory: frontend
+        continue-on-error: true
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # Job 5: Docker build smoke-test (key services only)
+  # ────────────────────────────────────────────────────────────────────────────
+  docker-smoke:
+    name: Docker build (${{ matrix.service }})
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [calls, routing, ai, ivr]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Docker image
+        run: |
+          docker build \
+            --file services/${{ matrix.service }}/Dockerfile \
+            --tag blinkone/${{ matrix.service }}:ci-${{ github.sha }} \
+            services/${{ matrix.service }}

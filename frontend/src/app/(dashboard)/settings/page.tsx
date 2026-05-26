@@ -18,6 +18,7 @@ import { IntegrationsSection } from '@/components/settings/IntegrationsSection';
 import { WebhooksSection } from '@/components/settings/WebhooksSection';
 import { BusinessHoursSection } from '@/components/settings/BusinessHoursSection';
 import { TicketFieldsSettings } from '@/components/settings/TicketFieldsSettings';
+import { BrandingSection } from '@/components/settings/BrandingSection';
 
 export default function SettingsPage() {
   const [view, setView] = useState<SettingsView>('profile');
@@ -36,6 +37,7 @@ export default function SettingsPage() {
     bots: <BotsSection />,
     macros: <MacrosSection />,
     canned: <CannedSection />,
+    branding: <BrandingSection />,
     integrations: <IntegrationsSection />,
     webhooks: <WebhooksSection />,
     'business-hours': <BusinessHoursSection />,

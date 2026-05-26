@@ -17,6 +17,7 @@ import {
   Webhook,
   Clock,
   Ticket,
+  Palette,
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store/auth';
 import { can } from '@/lib/rbac';
@@ -35,6 +36,7 @@ const NAV_ITEMS = [
   { id: 'bots', label: 'Agent Bots', icon: Bot, group: 'Automation' },
   { id: 'macros', label: 'Macros', icon: BookOpen, group: 'Automation' },
   { id: 'canned', label: 'Canned Responses', icon: MessageSquare, group: 'Automation' },
+  { id: 'branding', label: 'Branding', icon: Palette, group: 'Platform' },
   { id: 'integrations', label: 'Integrations', icon: Puzzle, group: 'Integrations' },
   { id: 'webhooks', label: 'Webhooks', icon: Webhook, group: 'Integrations' },
   { id: 'business-hours', label: 'Business Hours', icon: Clock, group: 'Integrations' },
@@ -64,6 +66,7 @@ export function SettingsNav({ active, onChange }: Props) {
     if (item.id === 'canned') return true;
     if (item.id === 'integrations') return can(role, 'manageInboxes');
     if (item.id === 'webhooks') return can(role, 'manageWebhooks');
+    if (item.id === 'branding') return can(role, 'manageTeam');
     return true;
   });
 
