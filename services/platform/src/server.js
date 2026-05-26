@@ -7,6 +7,8 @@ import { createLogger } from '../lib/logger.js';
 import { createStore } from '../lib/store.js';
 import { ok, fail, bearerAuth, requestId, errorHandler, healthRouter, gracefulShutdown } from '../lib/http.js';
 import { mountMetrics } from '../_shared/lib/metrics-middleware.js';
+import { generateSecret, totpUri, verifyTOTP } from '../lib/totp.js';
+import * as mfaStore from '../lib/mfa-store.js';
 import {
   publicBrandingPayload,
   patchToYamlOverride,
@@ -213,6 +215,96 @@ app.get('/v1/audit', auth, (req, res) => {
   const limit = Math.min(200, Number(req.query.limit) || 50);
   const events = [...(store.load().auditLog ?? [])].reverse().slice(0, limit);
   ok(res, events);
+});
+
+// ─── MFA / TOTP — Sprint 2 M01 ───────────────────────────────────────────────
+
+const MFA_ISSUER = (process.env.MFA_ISSUER || 'BlinkOne').trim();
+
+/**
+ * GET /v1/mfa/status?user_id=&tenant_id=
+ * Returns { enabled: bool } — called by the gateway during login.
+ * No auth guard (internal service-to-service call; network-level trust).
+ */
+app.get('/v1/mfa/status', (req, res) => {
+  const userId   = String(req.query.user_id   ?? '').trim();
+  const tenantId = String(req.query.tenant_id ?? req.headers['x-blinkone-tenant-id'] ?? '').trim();
+  if (!userId || !tenantId) return fail(res, 'VALIDATION_ERROR', 'user_id and tenant_id required');
+  const enabled = mfaStore.isMfaEnabled(tenantId, userId);
+  return ok(res, { userId, tenantId, enabled });
+});
+
+/**
+ * POST /v1/mfa/enroll
+ * Begin enrollment — generates a new secret and returns the otpauth:// URI.
+ * The enrollment is NOT active until confirmed.
+ *
+ * Body: { userId, tenantId, label? }  (label defaults to userId)
+ * Returns: { secret, uri }
+ */
+app.post('/v1/mfa/enroll', auth, async (req, res) => {
+  const { userId, tenantId, label } = req.body ?? {};
+  if (!userId?.trim() || !tenantId?.trim()) return fail(res, 'VALIDATION_ERROR', 'userId and tenantId required');
+  const secret = generateSecret();
+  const displayLabel = label?.trim() || String(userId);
+  await mfaStore.startEnrollment(tenantId, userId, { secret, label: displayLabel });
+  const uri = totpUri(secret, displayLabel, MFA_ISSUER);
+  log.info({ userId, tenantId }, 'MFA enrollment started');
+  return ok(res, { secret, uri, issuer: MFA_ISSUER, label: displayLabel });
+});
+
+/**
+ * POST /v1/mfa/confirm
+ * Confirm enrollment by verifying the first TOTP code from the authenticator.
+ *
+ * Body: { userId, tenantId, code }
+ * Returns: { confirmed: true } or 400
+ */
+app.post('/v1/mfa/confirm', auth, async (req, res) => {
+  const { userId, tenantId, code } = req.body ?? {};
+  if (!userId?.trim() || !tenantId?.trim()) return fail(res, 'VALIDATION_ERROR', 'userId and tenantId required');
+  if (!String(code ?? '').trim()) return fail(res, 'VALIDATION_ERROR', 'code required');
+  const enrollment = mfaStore.getEnrollment(tenantId, userId);
+  if (!enrollment) return fail(res, 'NOT_FOUND', 'No pending MFA enrollment — call /v1/mfa/enroll first', 404);
+  if (!verifyTOTP(enrollment.secret, code)) {
+    return fail(res, 'INVALID_CODE', 'TOTP code is incorrect or expired', 400);
+  }
+  await mfaStore.confirmEnrollment(tenantId, userId);
+  log.info({ userId, tenantId }, 'MFA enrollment confirmed');
+  return ok(res, { confirmed: true, userId, tenantId });
+});
+
+/**
+ * DELETE /v1/mfa/:userId
+ * Disable MFA for a user.
+ *
+ * Query: ?tenant_id=
+ */
+app.delete('/v1/mfa/:userId', auth, async (req, res) => {
+  const userId   = String(req.params.userId).trim();
+  const tenantId = String(req.query.tenant_id ?? req.headers['x-blinkone-tenant-id'] ?? '').trim();
+  if (!tenantId) return fail(res, 'VALIDATION_ERROR', 'tenant_id required');
+  await mfaStore.deleteEnrollment(tenantId, userId);
+  log.info({ userId, tenantId }, 'MFA disabled');
+  return ok(res, { disabled: true, userId });
+});
+
+/**
+ * POST /v1/mfa/verify
+ * Verify a TOTP code during login (called by the gateway).
+ * Internal service-to-service — no bearer auth.
+ *
+ * Body: { userId, tenantId, code }
+ * Returns: { valid: bool }
+ */
+app.post('/v1/mfa/verify', async (req, res) => {
+  const { userId, tenantId, code } = req.body ?? {};
+  if (!userId?.trim() || !tenantId?.trim()) return fail(res, 'VALIDATION_ERROR', 'userId and tenantId required');
+  const enrollment = mfaStore.getEnrollment(tenantId, userId);
+  if (!enrollment?.confirmed) return fail(res, 'NOT_CONFIGURED', 'MFA not enabled for this user', 404);
+  const valid = verifyTOTP(enrollment.secret, String(code ?? '').trim());
+  if (!valid) log.warn({ userId, tenantId }, 'MFA verify failed');
+  return ok(res, { valid });
 });
 
 app.use(errorHandler(log));

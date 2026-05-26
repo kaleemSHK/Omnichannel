@@ -21,6 +21,7 @@ import { TicketFieldsSettings } from '@/components/settings/TicketFieldsSettings
 import { BrandingSection } from '@/components/settings/BrandingSection';
 import { SkillsManagerSection } from '@/components/settings/SkillsManagerSection';
 import { BotRoutingRules } from '@/components/ai/BotRoutingRules';
+import { MfaSetupPanel } from '@/components/settings/MfaSetupPanel';
 
 export default function SettingsPage() {
   const [view, setView] = useState<SettingsView>('profile');
@@ -40,6 +41,7 @@ export default function SettingsPage() {
     'bot-routing': <BotRoutingRules />,
     macros: <MacrosSection />,
     canned: <CannedSection />,
+    mfa: <MfaSetupPanel />,
     branding: <BrandingSection />,
     'skills-manager': <SkillsManagerSection />,
     integrations: <IntegrationsSection />,

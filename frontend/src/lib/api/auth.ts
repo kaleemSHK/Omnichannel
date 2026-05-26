@@ -34,6 +34,12 @@ export interface GatewayTokenResponse {
   expiresIn: number;
 }
 
+/** Returned by the gateway when the user has MFA enabled — login is not yet complete. */
+export interface MfaChallengeResponse {
+  mfa_required: true;
+  mfa_token: string;   // short-lived JWT containing userId/tenantId; pass to /api/auth/mfa
+}
+
 async function authFetch(url: string, init?: RequestInit): Promise<Response> {
   try {
     return await fetch(url, init);
@@ -47,10 +53,10 @@ async function authFetch(url: string, init?: RequestInit): Promise<Response> {
   }
 }
 
-export async function loginWithPassword(payload: LoginPayload): Promise<{
-  user: BlinkoneUser;
-  tokens: AuthTokens;
-}> {
+export async function loginWithPassword(payload: LoginPayload): Promise<
+  | { user: BlinkoneUser; tokens: AuthTokens }
+  | { mfa_required: true; mfa_token: string; user: BlinkoneUser; tokens: AuthTokens }
+> {
   // Step 1 — Chatwoot sign in
   const cwRes = await authFetch(`${CHATWOOT_URL}/auth/sign_in`, {
     method: 'POST',
@@ -95,7 +101,30 @@ export async function loginWithPassword(payload: LoginPayload): Promise<{
     );
   }
 
-  const gw: GatewayTokenResponse = await gwRes.json();
+  const gwBody = await gwRes.json();
+
+  // Sprint 2 M01: handle MFA challenge from gateway
+  if (gwBody && 'mfa_required' in gwBody && gwBody.mfa_required) {
+    const challenge = gwBody as MfaChallengeResponse;
+    // Build a partial user object from Chatwoot data for pending login state
+    const partialUser: BlinkoneUser = {
+      id: cw.data.id,
+      name: cw.data.name,
+      email: cw.data.email,
+      role: resolveRoleFromAuth(cw.data.role, '', cw.data.email),
+      tenantId: String(cw.data.account_id),
+      chatwootAccountId: cw.data.account_id,
+      avatarUrl: cw.data.avatar_url,
+    };
+    return {
+      mfa_required: true,
+      mfa_token: challenge.mfa_token,
+      user: partialUser,
+      tokens: { accessToken: cwToken, gatewayJwt: '' },
+    };
+  }
+
+  const gw = gwBody as GatewayTokenResponse;
 
   const user: BlinkoneUser = {
     id: cw.data.id,

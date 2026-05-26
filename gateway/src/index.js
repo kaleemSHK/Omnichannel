@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { randomUUID } from 'node:crypto';
+import { verifyTOTP } from '../lib/totp.js';
 import express from 'express';
 import { createProxyMiddleware } from 'http-proxy-middleware';
 import jwt from 'jsonwebtoken';
@@ -338,6 +339,38 @@ app.post('/api/auth/token', authRateLimitMiddleware(), express.json(), async (re
     }
     const expiresIn = 12 * 60 * 60;
 
+    // ── MFA check (Sprint 2 M01) ───────────────────────────────────────────
+    if (U.platform && process.env.MFA_ENABLED !== '0') {
+      try {
+        const mfaRes = await fetch(
+          `${U.platform}/v1/mfa/status?user_id=${encodeURIComponent(userId)}&tenant_id=${encodeURIComponent(tenantId)}`,
+          { headers: { Accept: 'application/json', ...(TOKENS.platform ? { Authorization: `Bearer ${TOKENS.platform}` } : {}) } },
+        );
+        if (mfaRes.ok) {
+          const mfaBody = await mfaRes.json();
+          if (mfaBody?.data?.enabled) {
+            // Issue short-lived MFA challenge token (5 minutes)
+            const challengeToken = jwt.sign(
+              {
+                mfa_challenge: true,
+                sub:           String(userId),
+                tenant_id:     tenantId,
+                account_id:    accountId,
+                cw_token:      cwToken,
+                roles,
+              },
+              secret,
+              { expiresIn: 5 * 60, issuer: 'blinkone-gateway' },
+            );
+            return res.status(200).json({ mfa_required: true, mfa_token: challengeToken });
+          }
+        }
+      } catch (mfaErr) {
+        // MFA check failed (platform down) — fall through to normal token
+        log.warn({ err: mfaErr.message }, 'MFA status check failed, skipping');
+      }
+    }
+
     const token = jwt.sign(
       {
         sub: String(userId),
@@ -362,6 +395,66 @@ function mapChatwootRoles(role) {
   if (role === 'agent') return ['agent'];
   return ['viewer'];
 }
+
+// ─── MFA step-up — Sprint 2 M01 ─────────────────────────────────────────────
+// Called after /api/auth/token returns { mfa_required: true, mfa_token }.
+// Client sends mfa_token + the 6-digit code from their authenticator app.
+// Returns the full gateway JWT on success.
+app.post('/api/auth/mfa', authRateLimitMiddleware(), express.json(), async (req, res) => {
+  const { mfa_token: mfaToken, code } = req.body ?? {};
+  if (!mfaToken || !String(code ?? '').trim()) {
+    return res.status(400).json({ error: { code: 'VALIDATION_ERROR', message: 'mfa_token and code required' } });
+  }
+  const secret = (process.env.JWT_SECRET || '').trim();
+  if (!secret) {
+    return res.status(500).json({ error: { code: 'CONFIG_ERROR', message: 'JWT_SECRET not configured' } });
+  }
+  let challenge;
+  try {
+    challenge = jwt.verify(mfaToken, secret, { issuer: 'blinkone-gateway' });
+  } catch {
+    return res.status(401).json({ error: { code: 'INVALID_TOKEN', message: 'Invalid or expired MFA challenge token' } });
+  }
+  if (!challenge.mfa_challenge) {
+    return res.status(401).json({ error: { code: 'INVALID_TOKEN', message: 'Token is not an MFA challenge' } });
+  }
+
+  const { sub: userId, tenant_id: tenantId, account_id: accountId, roles, cw_token: cwToken } = challenge;
+
+  // Verify TOTP code via platform service
+  let valid = false;
+  if (U.platform) {
+    try {
+      const verRes = await fetch(`${U.platform}/v1/mfa/verify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(TOKENS.platform ? { Authorization: `Bearer ${TOKENS.platform}` } : {}) },
+        body: JSON.stringify({ userId, tenantId, code: String(code).trim() }),
+      });
+      const verBody = await verRes.json().catch(() => ({}));
+      valid = verBody?.data?.valid === true;
+    } catch (e) {
+      log.error({ err: e.message }, 'MFA verify call failed');
+      return res.status(502).json({ error: { code: 'BAD_GATEWAY', message: 'MFA verification service unavailable' } });
+    }
+  } else {
+    // Fallback: no platform service — use local TOTP (only works if secret is embedded in token, not stored)
+    return res.status(503).json({ error: { code: 'NOT_CONFIGURED', message: 'Platform service required for MFA' } });
+  }
+
+  if (!valid) {
+    return res.status(401).json({ error: { code: 'INVALID_MFA_CODE', message: 'Incorrect TOTP code' } });
+  }
+
+  const expiresIn = 12 * 60 * 60;
+  const token = jwt.sign(
+    { sub: String(userId), tenant_id: tenantId, roles, account_id: accountId },
+    secret,
+    { expiresIn, issuer: 'blinkone-gateway' },
+  );
+
+  log.info({ userId, tenantId }, 'MFA verified — JWT issued');
+  return res.json({ token, expiresIn });
+});
 
 // Chatwoot pass-through (must be after /api/auth/token)
 app.use('/api/chatwoot', proxy(U.chatwoot, '/api/chatwoot'));

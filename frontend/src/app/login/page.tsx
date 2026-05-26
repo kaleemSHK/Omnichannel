@@ -9,6 +9,7 @@ import { Eye, EyeOff, CheckCircle, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { loginWithPassword } from '@/lib/api/auth';
 import { useAuthStore } from '@/lib/store/auth';
+import { MfaVerifyModal } from '@/components/auth/MfaVerifyModal';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -31,6 +32,9 @@ const FEATURES = [
 export default function LoginPage() {
   const router = useRouter();
   const [showPassword, setShowPassword] = useState(false);
+  // MFA step-up state (Sprint 2 M01)
+  const [mfaToken, setMfaToken] = useState<string | null>(null);
+  const [pendingLogin, setPendingLogin] = useState<{ user: import('@/types').BlinkoneUser; cwToken: string } | null>(null);
   const hydrated = useAuthStore(s => s.hydrated);
   const user = useAuthStore(s => s.user);
   const hydrateFromSession = useAuthStore(s => s.hydrateFromSession);
@@ -56,6 +60,15 @@ export default function LoginPage() {
   async function onSubmit(data: LoginForm) {
     try {
       const result = await loginWithPassword({ email: data.email, password: data.password });
+
+      // Sprint 2 M01: handle MFA challenge
+      if ('mfa_required' in result && result.mfa_required) {
+        const challenge = result as unknown as { mfa_required: true; mfa_token: string };
+        setPendingLogin({ user: result.user, cwToken: result.tokens.accessToken });
+        setMfaToken(challenge.mfa_token);
+        return;
+      }
+
       useAuthStore.getState().setAuth(result.user, result.tokens);
       const role = result.user.role;
       if (role === 'platform_admin') {
@@ -69,8 +82,29 @@ export default function LoginPage() {
     }
   }
 
+  // Called when the MFA modal successfully verifies the code
+  function onMfaSuccess(gatewayJwt: string, _expiresIn: number) {
+    if (!pendingLogin) return;
+    useAuthStore.getState().setAuth(pendingLogin.user, {
+      accessToken: pendingLogin.cwToken,
+      gatewayJwt,
+    });
+    setMfaToken(null);
+    setPendingLogin(null);
+    const role = pendingLogin.user.role;
+    router.push(role === 'platform_admin' ? '/platform' : '/conversations');
+  }
+
   return (
     <div className="h-screen flex flex-col md:flex-row">
+      {/* MFA step-up modal (Sprint 2 M01) */}
+      {mfaToken && (
+        <MfaVerifyModal
+          mfaToken={mfaToken}
+          onSuccess={onMfaSuccess}
+          onCancel={() => { setMfaToken(null); setPendingLogin(null); }}
+        />
+      )}
       <div className="w-full md:w-[45%] bg-[#0B5FFF] flex flex-col min-h-[40vh] md:min-h-0 md:h-screen">
         <span className="text-white text-2xl font-bold p-8">BlinkOne</span>
         <div className="flex-1 flex items-center justify-center px-8 md:px-12 pb-8 md:pb-0">
