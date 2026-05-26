@@ -17,7 +17,9 @@ import { toast } from 'sonner';
 import { AgentStateSelector } from '@/components/calling/AgentStateSelector';
 import { CallSessionItem, CdrListItem } from '@/components/calling/CallListItem';
 import { CallTimer } from '@/components/calling/CallTimer';
+import { CallNotesModal } from '@/components/calling/CallNotesModal';
 import { DialPad } from '@/components/calling/DialPad';
+import { RecordingsPanel } from '@/components/calling/RecordingsPanel';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/Dialog';
 import { Input } from '@/components/ui/input';
@@ -78,6 +80,7 @@ export function CallingWorkspace() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [transferOpen, setTransferOpen] = useState(false);
   const [transferTarget, setTransferTarget] = useState('');
+  const [transferMode, setTransferMode] = useState<'blind' | 'attended'>('blind');
   const [cdrPage, setCdrPage] = useState(1);
   const [cdrRows, setCdrRows] = useState<CDRRecord[]>([]);
 
@@ -108,17 +111,18 @@ export function CallingWorkspace() {
     sessions.find(s => s.id === selectedId) ??
     activeCall;
 
-  const incomingRing = incoming[0] ?? activeList.find(s => s.status === 'ringing');
+  const incomingRing = incoming[0];
   const isSupervisor = can(user?.role, 'supervisorListen');
   const queueDisplay = queues.length > 0 ? queues : [];
   const showEmptyCenter = !activeCall && !incomingRing && !selected;
-  const sampleStats = !isDemoDataEnabled() && queueDisplay.length > 0 && cdrRows.length > 0;
+  // Show "Sample" badge only when demo data is active
+  const showSampleBadge = isDemoDataEnabled() && queueDisplay.length > 0;
 
   useEffect(() => {
     if (!selectedId && filtered.length > 0) {
       setSelectedId(filtered[0].id);
     }
-  }, [filtered, selectedId]);
+  }, [filtered.length, selectedId]);
 
   useEffect(() => {
     if (cdrPage === 1) {
@@ -130,6 +134,40 @@ export function CallingWorkspace() {
       return [...prev, ...cdrBatch.filter(r => !ids.has(r.id))];
     });
   }, [cdrBatch, cdrPage]);
+
+  // Keyboard shortcuts — Space/Enter = answer, Esc = decline
+  useEffect(() => {
+    if (!incomingRing) return;
+    const handleKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
+      if (e.key === ' ' || e.key === 'Enter') {
+        e.preventDefault();
+        sipControls?.answerCall();
+        useCallsStore.getState().removeIncomingCall(incomingRing.id);
+        setActiveCall(incomingRing);
+        answer.mutate(incomingRing.id, { onSuccess: c => setActiveCall(c) });
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        decline.mutate(incomingRing.id);
+        useCallsStore.getState().removeIncomingCall(incomingRing.id);
+      }
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [incomingRing, sipControls, answer, decline, setActiveCall]);
+
+  // Keyboard shortcut — M = mute during active call
+  useEffect(() => {
+    if (!activeCall) return;
+    const handleKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
+      if (e.key === 'm' || e.key === 'M') sipControls?.toggleMute();
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [activeCall, sipControls]);
 
   const handleHangup = () => {
     sipControls?.hangup();
@@ -149,22 +187,33 @@ export function CallingWorkspace() {
   const handleTransfer = () => {
     const t = transferTarget.trim();
     if (!t) return;
-    sipControls?.blindTransfer(t);
+    if (transferMode === 'blind') {
+      sipControls?.blindTransfer(t);
+      toast.success(`Blind transfer to ${t} initiated`);
+    } else {
+      // Attended: put on hold, notify agent to dial target manually
+      sipControls?.toggleHold();
+      toast.info(`Call held. Dial ${t} to consult, then complete transfer.`);
+    }
     setTransferOpen(false);
     setTransferTarget('');
-    toast.success(`Transferring to ${t}`);
   };
 
   function cdrLabel(record: CDRRecord): string {
-    return (
-      contactCache.get(record.callSessionId) ??
-      demoCallerName({ id: record.callSessionId, customerPhone: record.callSessionId })
-    );
+    if (isDemoDataEnabled()) {
+      return (
+        contactCache.get(record.callSessionId) ??
+        demoCallerName({ id: record.callSessionId, customerPhone: record.callSessionId })
+      );
+    }
+    return contactCache.get(record.callSessionId) ?? record.callSessionId;
   }
 
   return (
     <div className="flex h-full min-h-0 bg-slate-50">
+      {/* ── Left sidebar: active / recent calls ─────────────────────── */}
       <aside className="w-56 shrink-0 border-e border-gray-200 bg-white flex flex-col min-h-0">
+        {/* SIP status banner */}
         {!isDemoDataEnabled() && (
           <div
             className={cn(
@@ -184,9 +233,11 @@ export function CallingWorkspace() {
                 'Softphone connected'
               ) : (
                 <>
-                  <span className="font-medium">Softphone offline</span>
+                  <span className="font-medium">
+                    {sipError ? 'Softphone offline' : 'Connecting softphone…'}
+                  </span>
                   <span className="block text-[10px] text-amber-800/90 mt-0.5">
-                    {sipError ?? 'PSTN needs Asterisk/Kamailio. WhatsApp outbound still works.'}
+                    {sipError ?? 'Waiting for SIP registration'}
                   </span>
                 </>
               )}
@@ -194,6 +245,7 @@ export function CallingWorkspace() {
           </div>
         )}
 
+        {/* PSTN / WhatsApp tabs */}
         <div className="flex border-b border-gray-100">
           {(['pstn', 'whatsapp'] as const).map(t => (
             <button
@@ -259,7 +311,9 @@ export function CallingWorkspace() {
         </div>
       </aside>
 
+      {/* ── Main panel ──────────────────────────────────────────────── */}
       <div className="flex-1 flex flex-col min-w-0 min-h-0 bg-white">
+        {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 shrink-0">
           <div className="min-w-0">
             <p className="text-sm font-semibold text-gray-900 truncate">
@@ -275,6 +329,7 @@ export function CallingWorkspace() {
         </div>
 
         <div className="flex-1 overflow-y-auto min-h-0 p-4 space-y-4">
+          {/* Empty state */}
           {showEmptyCenter && (
             <div className="flex flex-col items-center justify-center py-12 px-6 text-center rounded-xl border border-dashed border-gray-200 bg-slate-50/80">
               <div className="w-14 h-14 rounded-full bg-blue-50 text-brand-primary flex items-center justify-center mb-4">
@@ -294,30 +349,39 @@ export function CallingWorkspace() {
               )}
             </div>
           )}
+
+          {/* Incoming call card (with pulse animation) */}
           {incomingRing && (
-            <div className="flex items-center gap-3 p-4 rounded-xl bg-green-50 border border-green-200">
-              <div className="w-11 h-11 rounded-full bg-green-100 text-green-800 flex items-center justify-center text-sm font-semibold shrink-0">
-                {resolveCallerName(incomingRing, contactCache).slice(0, 2).toUpperCase()}
+            <div className="flex items-center gap-3 p-4 rounded-xl bg-green-50 border border-green-200 animate-pulse-once">
+              <div className="relative shrink-0">
+                <div className="w-11 h-11 rounded-full bg-green-100 text-green-800 flex items-center justify-center text-sm font-semibold">
+                  {resolveCallerName(incomingRing, contactCache).slice(0, 2).toUpperCase()}
+                </div>
+                {/* Pulse rings */}
+                <span className="absolute inset-0 rounded-full bg-green-400 opacity-30 animate-ping" />
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold">
                   {resolveCallerName(incomingRing, contactCache)}
                 </p>
                 <p className="text-xs text-green-700">{incomingRing.customerPhone}</p>
+                <p className="text-[10px] text-green-600/80 mt-0.5">
+                  Press <kbd className="font-mono bg-green-100 px-1 rounded">Space</kbd> to answer ·{' '}
+                  <kbd className="font-mono bg-green-100 px-1 rounded">Esc</kbd> to decline
+                </p>
               </div>
               <button
                 type="button"
                 aria-label="Answer call"
                 className="w-11 h-11 rounded-full bg-green-600 hover:bg-green-700 text-white flex items-center justify-center shadow-sm transition-colors"
-                onClick={() =>
+                onClick={() => {
+                  sipControls?.answerCall();
+                  useCallsStore.getState().removeIncomingCall(incomingRing.id);
+                  setActiveCall(incomingRing);
                   answer.mutate(incomingRing.id, {
-                    onSuccess: c => {
-                      setActiveCall(c);
-                      sipControls?.answerCall();
-                      useCallsStore.getState().removeIncomingCall(incomingRing.id);
-                    },
-                  })
-                }
+                    onSuccess: c => setActiveCall(c),
+                  });
+                }}
               >
                 <Phone size={18} />
               </button>
@@ -335,6 +399,7 @@ export function CallingWorkspace() {
             </div>
           )}
 
+          {/* Active call controls */}
           {activeCall && (
             <div className="rounded-xl border p-4 space-y-4 bg-white shadow-sm">
               <div className="flex items-start gap-3">
@@ -360,6 +425,11 @@ export function CallingWorkspace() {
                     {held && (
                       <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-100 text-amber-800">
                         On Hold
+                      </span>
+                    )}
+                    {muted && (
+                      <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-medium bg-gray-100 text-gray-600">
+                        Muted
                       </span>
                     )}
                   </div>
@@ -393,7 +463,7 @@ export function CallingWorkspace() {
                 <CtrlBtn
                   label="Record"
                   icon={Radio}
-                  onClick={() => toast.info('Recording is managed by Asterisk')}
+                  onClick={() => toast.info('Recording is managed server-side automatically')}
                 />
                 <CtrlBtn
                   label="End call"
@@ -406,13 +476,14 @@ export function CallingWorkspace() {
             </div>
           )}
 
+          {/* Queue stats + today summary */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="rounded-xl border border-gray-100 p-4 bg-white shadow-sm">
               <div className="flex items-center justify-between mb-3">
                 <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
                   Queue stats
                 </p>
-                {sampleStats && (
+                {showSampleBadge && (
                   <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
                     Sample
                   </span>
@@ -448,6 +519,9 @@ export function CallingWorkspace() {
             </div>
           </div>
 
+          <RecordingsPanel />
+
+          {/* Supervisor controls */}
           {isSupervisor && selected && (
             <div className="rounded-xl border p-3 bg-white">
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
@@ -473,6 +547,7 @@ export function CallingWorkspace() {
         </div>
       </div>
 
+      {/* ── Right sidebar: dial pad ──────────────────────────────────── */}
       <aside className="w-64 shrink-0 border-s border-gray-200 bg-white flex flex-col min-h-0">
         <p className="px-4 pt-3 pb-1 text-[10px] font-semibold text-gray-400 uppercase tracking-wider shrink-0">
           Dial pad
@@ -483,7 +558,11 @@ export function CallingWorkspace() {
           disabled={!user}
           onCall={async (number, t) => {
             if (t === 'pstn') {
-              makeCall?.(number);
+              if (!makeCall || !sipRegistered) {
+                toast.error('Softphone not connected — wait for "Softphone connected".');
+                return;
+              }
+              makeCall(number);
               return;
             }
             if (!user) return;
@@ -515,18 +594,39 @@ export function CallingWorkspace() {
         />
       </aside>
 
+      {/* ── Transfer dialog ──────────────────────────────────────────── */}
       <Dialog
         open={transferOpen}
         onClose={() => setTransferOpen(false)}
-        title="Blind transfer"
+        title="Transfer call"
         className="sm:max-w-sm"
       >
-        <p className="text-sm text-muted-foreground">
-          Enter the extension or phone number to transfer this call to.
+        {/* Blind / Attended tabs */}
+        <div className="flex border border-gray-200 rounded-md overflow-hidden text-xs mb-3">
+          {(['blind', 'attended'] as const).map(mode => (
+            <button
+              key={mode}
+              type="button"
+              onClick={() => setTransferMode(mode)}
+              className={cn(
+                'flex-1 py-1.5 capitalize font-medium transition-colors',
+                transferMode === mode
+                  ? 'bg-blue-50 text-brand-primary'
+                  : 'text-gray-500 hover:bg-gray-50',
+              )}
+            >
+              {mode === 'blind' ? 'Blind transfer' : 'Warm transfer'}
+            </button>
+          ))}
+        </div>
+        <p className="text-sm text-muted-foreground mb-2">
+          {transferMode === 'blind'
+            ? 'The call is immediately transferred to the destination.'
+            : 'The call is held while you consult the destination first.'}
         </p>
-        <div className="flex gap-2 mt-2">
+        <div className="flex gap-2">
           <Input
-            placeholder="Extension or +968..."
+            placeholder="Extension or +968…"
             value={transferTarget}
             onChange={e => setTransferTarget(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && handleTransfer()}
@@ -537,10 +637,13 @@ export function CallingWorkspace() {
             disabled={!transferTarget.trim()}
             className="bg-brand-primary hover:bg-brand-primary/90 shrink-0"
           >
-            Transfer
+            {transferMode === 'blind' ? 'Transfer' : 'Hold & Consult'}
           </Button>
         </div>
       </Dialog>
+
+      {/* ── After-Call Work notes modal ──────────────────────────────── */}
+      <CallNotesModal />
     </div>
   );
 }

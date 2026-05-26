@@ -1,12 +1,13 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Delete, Phone } from 'lucide-react';
 import { createSession } from '@/lib/api/calls';
 import { Button } from '@/components/ui/button';
 import { useAuthStore } from '@/lib/store/auth';
 import { useCallsStore } from '@/lib/store/calls';
 import { isDemoDataEnabled } from '@/lib/demo/config';
+import { toast } from 'sonner';
 import { cn } from '@/lib/utils/cn';
 
 const KEYPAD_ROWS = [
@@ -15,6 +16,11 @@ const KEYPAD_ROWS = [
   ['7', '8', '9'],
   ['*', '0', '#'],
 ];
+
+/** Strip characters that aren't valid in a phone number */
+function sanitizePhone(raw: string): string {
+  return raw.replace(/[^\d+\-\s()]/g, '');
+}
 
 interface Props {
   transport?: 'pstn' | 'whatsapp';
@@ -27,9 +33,12 @@ export function DialPad({ transport: transportProp, onCall, disabled, className 
   const [number, setNumber] = useState('');
   const [tab, setTab] = useState<'pstn' | 'whatsapp'>('pstn');
   const [calling, setCalling] = useState(false);
+  const [dtmfFlash, setDtmfFlash] = useState<string | null>(null);
+  const dtmfTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const makeCall = useCallsStore(s => s.makeCall);
   const sipControls = useCallsStore(s => s.sipControls);
+  const sipRegistered = useCallsStore(s => s.sipRegistered);
   const { user } = useAuthStore();
   const setActiveCall = useCallsStore(s => s.setActiveCall);
   const activeCall = useCallsStore(s => s.activeCall);
@@ -41,6 +50,10 @@ export function DialPad({ transport: transportProp, onCall, disabled, className 
     (key: string) => {
       if (isInCall && transport === 'pstn') {
         sipControls?.sendDTMF(key);
+        // Visual flash feedback
+        if (dtmfTimer.current) clearTimeout(dtmfTimer.current);
+        setDtmfFlash(key);
+        dtmfTimer.current = setTimeout(() => setDtmfFlash(null), 350);
         return;
       }
       setNumber(n => n + key);
@@ -48,7 +61,10 @@ export function DialPad({ transport: transportProp, onCall, disabled, className 
     [isInCall, transport, sipControls],
   );
 
-  async function handleCall() {
+  // Cleanup dtmf timer on unmount
+  useEffect(() => () => { if (dtmfTimer.current) clearTimeout(dtmfTimer.current); }, []);
+
+  const handleCall = useCallback(async () => {
     const n = number.trim();
     if (!n || calling) return;
 
@@ -61,7 +77,11 @@ export function DialPad({ transport: transportProp, onCall, disabled, className 
     setCalling(true);
     try {
       if (transport === 'pstn') {
-        makeCall?.(n);
+        if (!makeCall || !sipRegistered) {
+          toast.error('Softphone not connected — wait for the green "Softphone connected" status.');
+          return;
+        }
+        makeCall(n);
         setNumber('');
       } else {
         if (!user) return;
@@ -95,10 +115,38 @@ export function DialPad({ transport: transportProp, onCall, disabled, className 
     } finally {
       setCalling(false);
     }
-  }
+  }, [number, calling, onCall, transport, makeCall, sipRegistered, user, setActiveCall, isDemoDataEnabled]);
+
+  // Global keyboard handler: digit keys feed the pad, Enter calls, Backspace deletes
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (disabled) return;
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+      if (/^[0-9*#]$/.test(e.key)) {
+        e.preventDefault();
+        pressKey(e.key);
+      } else if (e.key === 'Backspace' && !isInCall) {
+        e.preventDefault();
+        setNumber(n => n.slice(0, -1));
+      } else if (e.key === 'Enter' && !isInCall) {
+        e.preventDefault();
+        void handleCall();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [disabled, isInCall, pressKey, handleCall]);
+
+  const callDisabled =
+    !number.trim() || disabled || calling || isInCall ||
+    (transport === 'pstn' && !sipRegistered);
 
   return (
     <div className={cn('p-4 space-y-3 h-full flex flex-col min-h-0', className)}>
+      {/* Transport tab (only when not controlled by parent) */}
       {!transportProp && (
         <div className="flex border border-gray-200 rounded-md overflow-hidden text-xs">
           {(['pstn', 'whatsapp'] as const).map(t => (
@@ -118,11 +166,12 @@ export function DialPad({ transport: transportProp, onCall, disabled, className 
         </div>
       )}
 
+      {/* Number input */}
       <div className="relative">
         <input
           type="tel"
           value={number}
-          onChange={e => setNumber(e.target.value)}
+          onChange={e => setNumber(sanitizePhone(e.target.value))}
           placeholder="+968"
           disabled={disabled || isInCall}
           aria-label="Phone number to dial"
@@ -141,34 +190,50 @@ export function DialPad({ transport: transportProp, onCall, disabled, className 
       </div>
 
       {isInCall && (
-        <p className="text-center text-xs text-muted-foreground">Tap keys to send DTMF tones</p>
+        <p className="text-center text-xs text-muted-foreground">
+          Tap keys to send DTMF tones
+        </p>
       )}
 
+      {/* Keypad grid */}
       <div className="grid grid-cols-3 gap-2 flex-1">
         {KEYPAD_ROWS.flat().map(key => (
           <button
             key={key}
             type="button"
             disabled={disabled}
-            aria-label={`Dial ${key}`}
+            aria-label={isInCall ? `Send DTMF ${key}` : `Dial ${key}`}
             onClick={() => pressKey(key)}
-            className="h-12 rounded-lg bg-muted hover:bg-muted/70 active:scale-95 text-base font-medium transition-all disabled:opacity-50"
+            className={cn(
+              'h-12 rounded-lg text-base font-medium transition-all disabled:opacity-50',
+              dtmfFlash === key
+                ? 'bg-brand-primary/20 text-brand-primary scale-95'
+                : 'bg-muted hover:bg-muted/70 active:scale-95',
+            )}
           >
             {key}
           </button>
         ))}
       </div>
 
+      {/* Call button */}
       <Button
         type="button"
         onClick={() => void handleCall()}
-        disabled={!number.trim() || disabled || calling || isInCall}
+        disabled={callDisabled}
         aria-label={`Call ${number || 'number'} via ${transport}`}
         className="w-full bg-green-500 hover:bg-green-600 text-white"
       >
         <Phone className="w-4 h-4 me-2" aria-hidden />
         {calling ? 'Calling…' : 'Call'}
       </Button>
+
+      {/* Hint when SIP not connected */}
+      {transport === 'pstn' && !sipRegistered && !isInCall && (
+        <p className="text-center text-[11px] text-amber-700">
+          Waiting for softphone registration…
+        </p>
+      )}
     </div>
   );
 }

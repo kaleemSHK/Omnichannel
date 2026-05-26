@@ -41,6 +41,13 @@ export async function answerCall(sessionId: string): Promise<CallSession> {
   return res.data;
 }
 
+export async function declineCall(sessionId: string): Promise<void> {
+  await bnFetch<void>(SVC, `/v1/calls/${sessionId}/decline`, {
+    method: 'POST',
+    body: '{}',
+  });
+}
+
 export async function endCall(sessionId: string, outcome = 'completed'): Promise<void> {
   await bnFetch<void>(SVC, `/v1/calls/${sessionId}`, {
     method: 'PATCH',
@@ -58,6 +65,16 @@ export async function holdCall(sessionId: string, hold: boolean): Promise<void> 
 export async function listIncomingCalls(): Promise<CallSession[]> {
   const res = await bnFetch<{ data: CallSession[] }>(SVC, '/v1/calls/incoming');
   return res.data;
+}
+
+export async function addCallNotes(
+  sessionId: string,
+  data: { outcome: string; notes?: string },
+): Promise<void> {
+  await bnFetch<void>(SVC, `/v1/calls/${sessionId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ outcome: data.outcome, metadata: { notes: data.notes ?? '' } }),
+  });
 }
 
 export async function listCDR(filters: {

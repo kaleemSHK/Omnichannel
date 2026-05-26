@@ -1,19 +1,21 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
-import { usePathname } from 'next/navigation';
+import { useEffect } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
 import { Mic, MicOff, PauseCircle, Phone, PhoneOff } from 'lucide-react';
-import { searchContacts } from '@/lib/api/contacts';
 import { CallTimer } from '@/components/calling/CallTimer';
-import { showIncomingCallToast } from '@/components/calling/IncomingCallToast';
-import { useCallsList, useAnswerCall, useDeclineCall } from '@/lib/hooks/useCalls';
+import { useAnswerCall, useDeclineCall } from '@/lib/hooks/useCalls';
 import { useCallsStore } from '@/lib/store/calls';
 import { useAuthStore } from '@/lib/store/auth';
 import { isActionCableReady } from '@/lib/env/telephony';
 import { subscribeToCallEvents } from '@/lib/api/websocket';
+import {
+  clearIncomingCallUi,
+  normalizeCallEvent,
+  presentIncomingCall,
+} from '@/lib/calling/incoming-call-ui';
 import { resolveCallerName } from '@/lib/utils/calling';
 import { cn } from '@/lib/utils/cn';
-import type { CallSession } from '@/types';
 
 function CallControls() {
   const setActiveCall = useCallsStore(s => s.setActiveCall);
@@ -64,119 +66,61 @@ function CallControls() {
 
 export function PhonePanel() {
   const pathname = usePathname();
+  const router = useRouter();
   const onCallingPage = pathname.startsWith('/calling');
   const { user } = useAuthStore();
   const activeCall = useCallsStore(s => s.activeCall);
   const setActiveCall = useCallsStore(s => s.setActiveCall);
-  const addIncoming = useCallsStore(s => s.addIncomingCall);
-  const removeIncoming = useCallsStore(s => s.removeIncomingCall);
-  const contactCache = useCallsStore(s => s.contactCache);
-  const cacheContact = useCallsStore(s => s.cacheContact);
   const sipControls = useCallsStore(s => s.sipControls);
-  const { data: calls = [] } = useCallsList();
+  const contactCache = useCallsStore(s => s.contactCache);
   const answer = useAnswerCall();
   const decline = useDeclineCall();
-  const toasted = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (!user?.chatwootAccountId || !isActionCableReady()) return;
-    return subscribeToCallEvents(user.chatwootAccountId, evt => {
-      if (evt.eventType === 'call.ringing' && evt.callSession) {
-        const session = evt.callSession as CallSession;
-        addIncoming(session);
-        if (toasted.current.has(session.id)) return;
-        toasted.current.add(session.id);
 
-        const cached = contactCache.get(session.customerPhone);
-        if (cached) {
-          showIncomingCallToast(
-            { ...session, agentLabel: cached },
-            {
-              onAnswer: () => {
-                answer.mutate(session.id, {
-                  onSuccess: s => {
-                    setActiveCall(s);
-                    sipControls?.answerCall();
-                    removeIncoming(session.id);
-                  },
-                });
-              },
-              onDecline: () => {
-                decline.mutate(session.id);
-                removeIncoming(session.id);
-              },
-            },
-          );
-          return;
-        }
+    return subscribeToCallEvents(user.chatwootAccountId, raw => {
+      const { eventType, session } = normalizeCallEvent(
+        raw as {
+          eventType?: string;
+          type?: string;
+          callId?: string;
+          callSession?: import('@/types').CallSession;
+        },
+      );
 
-        void searchContacts(session.customerPhone).then(res => {
-          const rows =
-            (res as { payload?: { name?: string }[] }).payload ??
-            (res as { data?: { name?: string }[] }).data ??
-            [];
-          const contactName = rows[0]?.name ?? session.customerPhone;
-          cacheContact(session.customerPhone, contactName);
-          showIncomingCallToast(
-            { ...session, agentLabel: contactName },
-            {
-              onAnswer: () => {
-                answer.mutate(session.id, {
-                  onSuccess: s => {
-                    setActiveCall(s);
-                    sipControls?.answerCall();
-                    removeIncoming(session.id);
-                  },
-                });
-              },
-              onDecline: () => {
-                decline.mutate(session.id);
-                removeIncoming(session.id);
-              },
-            },
-          );
+      if (!session?.id) return;
+
+      if (eventType === 'call.ringing') {
+        presentIncomingCall(session, {
+          onAnswer: () => {
+            sipControls?.answerCall();
+            clearIncomingCallUi(session.id);
+            answer.mutate(session.id, {
+              onSuccess: s => setActiveCall(s),
+              onError: () => setActiveCall(session),
+            });
+          },
+          onDecline: () => {
+            decline.mutate(session.id);
+            clearIncomingCallUi(session.id);
+          },
         });
+        return;
+      }
+
+      if (
+        eventType === 'call.ended' ||
+        eventType === 'call.missed' ||
+        eventType === 'call.connected'
+      ) {
+        clearIncomingCallUi(session.id);
+        if (eventType === 'call.connected') {
+          setActiveCall(session);
+        }
       }
     });
-  }, [
-    user?.chatwootAccountId,
-    addIncoming,
-    removeIncoming,
-    answer,
-    decline,
-    setActiveCall,
-    sipControls,
-    cacheContact,
-    contactCache,
-  ]);
-
-  useEffect(() => {
-    for (const c of calls.filter(x => x.status === 'ringing')) {
-      if (toasted.current.has(c.id)) continue;
-      toasted.current.add(c.id);
-      addIncoming(c);
-      showIncomingCallToast(c, {
-        onAnswer: () => {
-          answer.mutate(c.id, {
-            onSuccess: session => {
-              setActiveCall(session);
-              sipControls?.answerCall();
-              removeIncoming(c.id);
-            },
-          });
-        },
-        onDecline: () => {
-          decline.mutate(c.id);
-          removeIncoming(c.id);
-        },
-      });
-    }
-  }, [calls, addIncoming, removeIncoming, answer, decline, setActiveCall, sipControls]);
-
-  useEffect(() => {
-    const live = calls.find(c => c.status === 'connected');
-    if (live && !activeCall) setActiveCall(live);
-  }, [calls, activeCall, setActiveCall]);
+  }, [user?.chatwootAccountId, answer, decline, setActiveCall, sipControls]);
 
   if (!activeCall) {
     if (onCallingPage) return null;
@@ -186,9 +130,7 @@ export function PhonePanel() {
           type="button"
           className="w-12 h-12 rounded-full bg-brand-primary text-white flex items-center justify-center shadow-lg hover:bg-brand-primary/90"
           aria-label="Open phone panel"
-          onClick={() => {
-            window.location.href = '/calling';
-          }}
+          onClick={() => router.push('/calling')}
         >
           <Phone className="w-5 h-5" />
         </button>

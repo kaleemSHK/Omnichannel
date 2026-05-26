@@ -14,6 +14,7 @@ export interface SipControls {
 
 interface CallsState {
   activeCall: ActiveCall | null;
+  acwCall: ActiveCall | null;  // after-call work — the just-ended call awaiting notes
   incomingCalls: ActiveCall[];
   agentState: AgentState;
   sipRegistered: boolean;
@@ -23,6 +24,7 @@ interface CallsState {
   contactCache: Map<string, string>;
 
   setActiveCall: (call: ActiveCall | null) => void;
+  setAcwCall: (call: ActiveCall | null) => void;
   addIncomingCall: (call: ActiveCall) => void;
   removeIncomingCall: (id: string) => void;
   setAgentState: (state: AgentState) => void;
@@ -39,6 +41,7 @@ interface CallsState {
 
 export const useCallsStore = create<CallsState>(set => ({
   activeCall: null,
+  acwCall: null,
   incomingCalls: [],
   agentState: 'available',
   sipRegistered: false,
@@ -49,7 +52,19 @@ export const useCallsStore = create<CallsState>(set => ({
   makeCall: null,
   sipControls: null,
 
-  setActiveCall: call => set({ activeCall: call, muted: false, held: false }),
+  // When ending a connected call, promote it to acwCall for wrap-up notes
+  setActiveCall: call =>
+    set(state => ({
+      activeCall: call,
+      muted: false,
+      held: false,
+      acwCall:
+        !call && state.activeCall?.status === 'connected'
+          ? state.activeCall
+          : state.acwCall,
+    })),
+
+  setAcwCall: call => set({ acwCall: call }),
 
   addIncomingCall: call =>
     set(s => ({

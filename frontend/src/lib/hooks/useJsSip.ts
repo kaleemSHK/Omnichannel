@@ -6,6 +6,15 @@ import { useAuthStore } from '@/lib/store/auth';
 import { isDemoDataEnabled, shouldSkipGatewayFetch } from '@/lib/demo/config';
 import { isPlaceholderEnv, isSipReady } from '@/lib/env/telephony';
 import { getWebRTCCredentials } from '@/lib/api/routing';
+import { pstnSipTarget } from '@/lib/utils/phone';
+import {
+  bindSessionRemoteAudio,
+  clearRemoteAudio,
+} from '@/lib/telephony/sip-audio';
+import { stopIncomingRingtone } from '@/lib/telephony/ringtone';
+import { presentIncomingCall, clearIncomingCallUi } from '@/lib/calling/incoming-call-ui';
+import { answerCall as apiAnswerCall, declineCall as apiDeclineCall } from '@/lib/api/calls';
+import { toast } from 'sonner';
 import type { CallSession } from '@/types';
 
 const SIP_WSS = process.env.NEXT_PUBLIC_SIP_WSS ?? '';
@@ -23,9 +32,7 @@ function sipRegistrarHost(): string {
   }
 }
 
-function sipAccountUser(
-  user: { email?: string } | null,
-): string {
+function sipAccountUser(user: { email?: string } | null): string {
   const envUser = SIP_USER?.trim();
   if (envUser) return envUser;
   return user?.email?.split('@')[0] ?? 'agent';
@@ -73,43 +80,11 @@ function buildCallSession(
   };
 }
 
-let remoteAudio: HTMLAudioElement | null = null;
-
 const uaRef = { current: null as JsSIPUA | null };
 const sessionRef = { current: null as JsSIPRTCSession | null };
 const incomingIdRef = { current: null as string | null };
 const iceServersRef = { current: [{ urls: 'stun:stun.l.google.com:19302' }] as RTCIceServer[] };
 let sipInitOwners = 0;
-
-function getAudioElement(): HTMLAudioElement {
-  if (!remoteAudio && typeof window !== 'undefined') {
-    remoteAudio = new Audio();
-    remoteAudio.autoplay = true;
-    remoteAudio.id = '__bn_sip_audio__';
-  }
-  return remoteAudio!;
-}
-
-function attachRemoteStream(session: JsSIPRTCSession) {
-  const conn = (session as unknown as { connection?: RTCPeerConnection }).connection;
-  if (!conn) return;
-
-  const audio = getAudioElement();
-  const receivers = conn.getReceivers?.() ?? [];
-  const audioTrack = receivers.find(r => r.track?.kind === 'audio')?.track;
-  if (audioTrack) {
-    audio.srcObject = new MediaStream([audioTrack]);
-    void audio.play().catch(() => undefined);
-    return;
-  }
-
-  const legacy = conn as RTCPeerConnection & { getRemoteStreams?: () => MediaStream[] };
-  const streams = legacy.getRemoteStreams?.() ?? [];
-  if (streams.length > 0) {
-    audio.srcObject = streams[0];
-    void audio.play().catch(() => undefined);
-  }
-}
 
 function sessionEnded(session: JsSIPRTCSession | null): boolean {
   if (!session) return true;
@@ -123,7 +98,6 @@ function sessionEnded(session: JsSIPRTCSession | null): boolean {
 export function useJsSip() {
   const {
     setAgentState,
-    addIncomingCall,
     removeIncomingCall,
     setActiveCall,
     setSipRegistered,
@@ -133,26 +107,23 @@ export function useJsSip() {
     setMakeCall,
     setSipControls,
   } = useCallsStore();
-  const { user, tokens } = useAuthStore();
+  const { user } = useAuthStore();
 
   useEffect(() => {
     if (isDemoDataEnabled()) return;
     if (!isSipReady()) return;
-    if (!tokens?.gatewayJwt) return;
-    if (shouldSkipGatewayFetch()) return;
 
     sipInitOwners += 1;
     const isOwner = sipInitOwners === 1;
     if (!isOwner) {
-      return () => {
-        sipInitOwners -= 1;
-      };
+      return () => { sipInitOwners -= 1; };
     }
 
     let ua: JsSIPUA | undefined;
     let destroyed = false;
 
     (async () => {
+      // Fetch TURN/STUN credentials if available
       try {
         if (user?.id && !shouldSkipGatewayFetch()) {
           const creds = await getWebRTCCredentials(String(user.id));
@@ -195,6 +166,7 @@ export function useJsSip() {
 
         ua.on('registered', () => {
           if (destroyed) return;
+          console.info('[JsSIP] UA registered');
           setSipRegistered(true);
           setSipError(null);
           setAgentState('available');
@@ -209,9 +181,11 @@ export function useJsSip() {
         ua.on('registrationFailed', (data: unknown) => {
           if (destroyed) return;
           const cause = (data as { cause?: string })?.cause ?? 'Registration failed';
+          console.warn('[JsSIP] Registration failed:', cause);
           setSipRegistered(false);
           setSipError(cause);
           setAgentState('offline');
+          toast.error(`Softphone registration failed: ${cause}`);
         });
 
         ua.on('newRTCSession', (...args: unknown[]) => {
@@ -231,25 +205,55 @@ export function useJsSip() {
             const callId = crypto.randomUUID();
             incomingIdRef.current = callId;
 
-            addIncomingCall(
-              buildCallSession(
-                {
-                  id: callId,
-                  customerPhone: callerNum,
-                  status: 'ringing',
-                  direction: 'inbound',
-                },
-                user,
-              ),
+            const incomingSession = buildCallSession(
+              {
+                id: callId,
+                customerPhone: callerNum,
+                status: 'ringing',
+                direction: 'inbound',
+              },
+              user,
             );
 
+            presentIncomingCall(incomingSession, {
+              onAnswer: () => {
+                clearIncomingCallUi(callId);
+                try {
+                  session.answer({ mediaConstraints: { audio: true, video: false } });
+                } catch {
+                  /* session may have ended */
+                }
+                void apiAnswerCall(callId)
+                  .then(s => setActiveCall(s))
+                  .catch(() => setActiveCall(incomingSession));
+              },
+              onDecline: () => {
+                clearIncomingCallUi(callId);
+                try {
+                  session.terminate();
+                } catch {
+                  /* ignore */
+                }
+                void apiDeclineCall(callId).catch(() => undefined);
+              },
+            });
+
+            session.on('peerconnection', () => {
+              bindSessionRemoteAudio(session as unknown as { connection?: RTCPeerConnection });
+            });
+
+            session.on('progress', () => {
+              bindSessionRemoteAudio(session as unknown as { connection?: RTCPeerConnection });
+            });
+
             session.on('ended', () => {
-              if (incomingIdRef.current) removeIncomingCall(incomingIdRef.current);
+              if (incomingIdRef.current) clearIncomingCallUi(incomingIdRef.current);
             });
             session.on('failed', () => {
-              if (incomingIdRef.current) removeIncomingCall(incomingIdRef.current);
+              if (incomingIdRef.current) clearIncomingCallUi(incomingIdRef.current);
             });
           } else {
+            // Outbound call — show ringing state immediately
             setActiveCall(
               buildCallSession(
                 {
@@ -263,9 +267,18 @@ export function useJsSip() {
             );
           }
 
+          session.on('peerconnection', () => {
+            bindSessionRemoteAudio(session as unknown as { connection?: RTCPeerConnection });
+          });
+
+          session.on('progress', () => {
+            bindSessionRemoteAudio(session as unknown as { connection?: RTCPeerConnection });
+          });
+
           session.on('confirmed', () => {
             if (destroyed) return;
-            attachRemoteStream(session);
+            stopIncomingRingtone();
+            bindSessionRemoteAudio(session as unknown as { connection?: RTCPeerConnection });
             setMuted(false);
             setHeld(false);
             setAgentState('busy');
@@ -300,23 +313,60 @@ export function useJsSip() {
 
           session.on('ended', () => {
             if (destroyed) return;
+            stopIncomingRingtone();
             sessionRef.current = null;
-            const audio = getAudioElement();
-            audio.srcObject = null;
+            clearRemoteAudio();
             setActiveCall(null);
             setMuted(false);
             setHeld(false);
             setAgentState('available');
           });
 
-          session.on('failed', () => {
+          session.on('failed', (ev: unknown) => {
             if (destroyed) return;
+            stopIncomingRingtone();
+            const failEv = ev as {
+              cause?: string;
+              message?: { status_code?: number; reason_phrase?: string };
+              originator?: string;
+            };
+            const cause = failEv.cause ?? 'unknown';
+            const sipCode = failEv.message?.status_code;
+            const sipReason = failEv.message?.reason_phrase;
+            const detail =
+              sipCode != null
+                ? `${cause} (SIP ${sipCode}${sipReason ? ` ${sipReason}` : ''})`
+                : cause;
+
+            // Ignore spurious ICE/SDP failures during WSS reconnect
+            if (failEv.originator === 'system' && cause === 'WebRTC Error') {
+              console.warn('[JsSIP] WebRTC error during signaling — likely reconnect');
+              return;
+            }
+
+            const userHint =
+              sipCode === 403 || cause === 'Rejected'
+                ? ' — check Twilio trial verified numbers, geo permissions, and trunk credentials'
+                : '';
+            toast.error(`Call failed: ${detail}${userHint}`);
+
             sessionRef.current = null;
             setActiveCall(null);
+            setSipError(String(cause));
             setMuted(false);
             setHeld(false);
             setAgentState('available');
           });
+        });
+
+        ua.on('connected', () => {
+          if (destroyed) return;
+          console.info('[JsSIP] WSS transport connected');
+        });
+
+        ua.on('disconnected', () => {
+          if (destroyed) return;
+          setSipRegistered(false);
         });
 
         uaRef.current = ua;
@@ -342,13 +392,11 @@ export function useJsSip() {
       uaRef.current = null;
     };
   }, [
-    tokens?.gatewayJwt,
     user?.id,
     user?.email,
     user?.name,
     user?.tenantId,
     setAgentState,
-    addIncomingCall,
     removeIncomingCall,
     setActiveCall,
     setSipRegistered,
@@ -364,38 +412,51 @@ export function useJsSip() {
 
   const makeCall = useCallback(
     (destination: string) => {
-      if (!uaRef.current?.isRegistered()) {
-        console.warn('[JsSIP] not registered');
+      const registered = !!uaRef.current?.isRegistered();
+      if (!registered || !uaRef.current) {
+        console.warn('[JsSIP] makeCall blocked — not registered');
+        toast.error('Softphone not connected — wait for "Softphone connected" in the sidebar.');
         return;
       }
-      const target = destination.startsWith('sip:')
-        ? destination
-        : `sip:${destination}@${SIP_DOMAIN}`;
-
-      sessionRef.current = uaRef.current.call(target, {
-        mediaConstraints: { audio: true, video: false },
-        rtcOfferConstraints: { offerToReceiveAudio: true, offerToReceiveVideo: false },
-        pcConfig: pcConfig(),
-      });
+      const target = pstnSipTarget(destination, SIP_DOMAIN);
+      try {
+        sessionRef.current = uaRef.current.call(target, {
+          mediaConstraints: { audio: true, video: false },
+          rtcOfferConstraints: { offerToReceiveAudio: true, offerToReceiveVideo: false },
+          pcConfig: pcConfig(),
+        });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Call failed';
+        toast.error(msg);
+        setSipError(msg);
+      }
     },
-    [pcConfig],
+    [pcConfig, setSipError],
   );
 
   const answerCall = useCallback(() => {
-    sessionRef.current?.answer({
-      mediaConstraints: { audio: true, video: false },
-      pcConfig: pcConfig(),
-    });
+    const session = sessionRef.current;
+    if (!session) {
+      toast.error('No active call to answer');
+      return;
+    }
+    stopIncomingRingtone();
+    try {
+      session.answer({
+        mediaConstraints: { audio: true, video: false },
+        rtcAnswerConstraints: { offerToReceiveAudio: true, offerToReceiveVideo: false },
+        pcConfig: pcConfig(),
+      });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Answer failed');
+    }
   }, [pcConfig]);
 
   const hangup = useCallback(() => {
+    stopIncomingRingtone();
     const s = sessionRef.current;
     if (s && !sessionEnded(s)) {
-      try {
-        s.terminate();
-      } catch {
-        /* already ended */
-      }
+      try { s.terminate(); } catch { /* already ended */ }
     }
     sessionRef.current = null;
     if (incomingIdRef.current) {
@@ -405,8 +466,7 @@ export function useJsSip() {
     setActiveCall(null);
     setMuted(false);
     setHeld(false);
-    const audio = getAudioElement();
-    audio.srcObject = null;
+    clearRemoteAudio();
   }, [removeIncomingCall, setActiveCall, setMuted, setHeld]);
 
   const toggleMute = useCallback(() => {
@@ -463,13 +523,5 @@ export function useJsSip() {
     setSipControls,
   ]);
 
-  return {
-    makeCall,
-    answerCall,
-    hangup,
-    toggleMute,
-    toggleHold,
-    sendDTMF,
-    blindTransfer,
-  };
+  return { makeCall, answerCall, hangup, toggleMute, toggleHold, sendDTMF, blindTransfer };
 }

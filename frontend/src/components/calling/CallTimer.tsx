@@ -22,16 +22,18 @@ export function CallTimer({ startTime, className }: Props) {
     return () => clearInterval(id);
   }, [startTime]);
 
-  const mm = String(Math.floor(elapsed / 60)).padStart(2, '0');
+  const hh = Math.floor(elapsed / 3600);
+  const mm = String(Math.floor((elapsed % 3600) / 60)).padStart(2, '0');
   const ss = String(elapsed % 60).padStart(2, '0');
+  const display = hh > 0 ? `${hh}:${mm}:${ss}` : `${mm}:${ss}`;
 
   return (
     <time
       className={className}
       dateTime={`PT${elapsed}S`}
-      aria-label={`Call duration ${mm} minutes ${Number(ss)} seconds`}
+      aria-label={`Call duration ${hh > 0 ? `${hh} hours ` : ''}${Number(mm)} minutes ${Number(ss)} seconds`}
     >
-      {mm}:{ss}
+      {display}
     </time>
   );
 }
