@@ -20,7 +20,7 @@
 | Branding engine (`services/platform/lib/branding.js`) | ✅ | YAML-based, per-tenant overrides, logo URLs |
 | Tenant branding API (`GET/PATCH /v1/tenants/:id/branding`) | ✅ | `services/tenant/src/server.js` |
 | Chatwoot Vue component overlays | ✅ | Admin audit, billing, branding, SSO Vue stubs |
-| **Next.js branding settings UI** | ❌ | Backend exists, no frontend settings panel |
+| **Next.js branding settings UI** | ✅ | `BrandingSection.tsx` — identity, colors, logos, email, links |
 | **Runtime CSS variable injection** | ❌ | Primary/secondary color not applied live in Next.js |
 | **Logo upload endpoint** | ❌ | No file upload API for branding assets |
 | Per-tenant subdomain routing | ✅ | `services/tenant/lib/resolve-host.js` |
@@ -40,7 +40,7 @@
 | Feature flags per tenant | ✅ | `_shared/lib/features.js`, 60s TTL cache |
 | Tenant provisioning API | ✅ | `services/tenant/` — full CRUD |
 | Tenant suspension middleware | ✅ | `services/routing/lib/tenant-guard.js` |
-| **Rate limiting per tenant** | ❌ | No `express-rate-limit` anywhere |
+| **Rate limiting per tenant** | ✅ | `gateway/src/rate-limiter.js` — sliding window, per-tenant keying |
 | **Platform admin tenant wizard** | ❌ | API exists, no frontend UI |
 | Feature flag admin UI | ⚠️ | Settings page has feature section, not fully wired |
 | Multi-region data residency | ❌ | Single DB, not planned |
@@ -77,15 +77,15 @@
 |------|--------|-------|
 | Meta webhook verification (hub.challenge) | ✅ | `services/whatsapp-calls/lib/meta-webhook.js` |
 | WhatsApp Calling webhook (WABA Voice) | ⚠️ | SDP relay exists, `WHATSAPP_CALLING_ENABLED=0` |
-| **WhatsApp Messaging webhook handler** | ❌ | `meta-webhook.js` only handles calling events, not text/media messages |
-| **Incoming message → Chatwoot conversation** | ❌ | No bridge between Meta webhook and Chatwoot |
-| **Send WhatsApp text message** | ❌ | No `POST /messages` to Meta Graph API |
-| **Send WhatsApp template message** | ❌ | No template sender |
-| **Media message handling** | ❌ | No image/video/document processing |
-| **Message status callbacks (delivered/read)** | ❌ | Webhook parses no status events |
-| **Phone number verification flow** | ❌ | No OTP verification UI |
+| **WhatsApp Messaging webhook handler** | ✅ | `meta-webhook.js` fully rewritten — handles text/media/status/calling |
+| **Incoming message → Chatwoot conversation** | ✅ | `chatwoot-bridge.js` — findOrCreateContact + findOrCreateConversation |
+| **Send WhatsApp text message** | ✅ | `messaging.js` sendText() + POST /v1/messages/text |
+| **Send WhatsApp template message** | ✅ | `messaging.js` sendTemplate() + POST /v1/messages/template |
+| **Media message handling** | ✅ | image/video/audio/document/location bridged to Chatwoot |
+| **Message status callbacks (delivered/read)** | ✅ | parseWebhookEvents() returns status events |
+| **Phone number verification flow** | ❌ | No OTP verification UI — Sprint 3 |
 | WhatsApp inbox setup wizard (frontend) | ✅ | `InboxCreateWizard.tsx` supports `Channel::Whatsapp` |
-| WHATSAPP_PHONE_NUMBER_ID env var | ❌ | Not in `.env.example` |
+| WHATSAPP_PHONE_NUMBER_ID env var | ✅ | Added to `.env.example` |
 
 **Risk:** WhatsApp is listed as a key feature in all marketing materials. Current codebase cannot send or receive a single WhatsApp message.
 
@@ -180,8 +180,8 @@
 | STUN/TURN via WebRTC credentials | ✅ | `/v1/agents/:id/webrtc` |
 | Incoming call toast | ✅ | `IncomingCallToast.tsx` |
 | ACW (After Call Work) notes | ✅ | `CallNotesModal.tsx` |
-| MOS voice quality scoring | ❌ | Sprint 1 G03 — not yet implemented |
-| PCI Recording Pause | ❌ | Sprint 1 G02 — UI stub, no backend |
+| MOS voice quality scoring | ✅ | `mos-scoring.js` (ITU-T E-model), `POST /v1/calls/:id/mos`, MosBadge in PhonePanel |
+| PCI Recording Pause | ✅ | `POST /v1/calls/:id/recording/pause+resume` + PATCH recording service + ShieldCheck UI button |
 | **Mobile app (React Native)** | ❌ | Browser-only WebRTC |
 | **Push notifications for incoming calls** | ❌ | No FCM/APNs integration |
 
@@ -195,14 +195,14 @@
 |------|--------|-------|
 | Docker Compose (all services) | ✅ | `docker-compose.yml` — 14+ services |
 | PM2 frontend process manager | ✅ | `ecosystem.config.cjs` + deploy script |
-| GitHub Actions CI | ⚠️ | `blinkone-ci.yml` covers only gateway/shared — NOT frontend, calls, AI, routing, etc. |
+| GitHub Actions CI | ✅ | `blinkone-ci.yml` — 5 jobs: frontend TS+lint+build, 13-service matrix, gateway, security, docker-smoke |
 | Deploy script (`restart_frontend_standalone.sh`) | ✅ | Full 5-step deploy with static asset fix |
 | **CI: frontend TypeScript check** | ❌ | Not in any workflow |
 | **CI: all services lint+test** | ❌ | Only gateway covered |
 | **Monitoring (Prometheus/Grafana)** | ❌ | No metrics endpoints, no dashboards |
 | **Alerting** | ❌ | No PagerDuty/alertmanager setup |
 | **Log aggregation (Loki/ELK)** | ❌ | Services log to stdout only |
-| PII log masking | ❌ | Sprint 1 G07 — not yet implemented |
+| PII log masking | ✅ | `_shared/lib/pii-masker.js` — all 13 service loggers + gateway updated |
 | Rate limiting at gateway | ❌ | G11 — not implemented |
 | Input validation (Zod) | ⚠️ | Inconsistent across services |
 | CORS configuration | ⚠️ | Need per-service audit |
