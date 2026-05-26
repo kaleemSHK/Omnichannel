@@ -13,6 +13,29 @@ import { useAuthStore } from '@/lib/store/auth';
 
 export type ReportRange = 'today' | '7d' | '30d';
 
+/** Custom date range — since/until are Unix seconds; label is shown in UI / exports. */
+export interface CustomDateRange {
+  since: number;
+  until: number;
+  label: string;
+}
+
+/** All hook-compatible range values: preset string OR custom timestamps. */
+export type DateRangeValue = ReportRange | CustomDateRange;
+
+/** Narrow helper — is this a custom range object? */
+export function isCustomRange(r: DateRangeValue): r is CustomDateRange {
+  return typeof r === 'object';
+}
+
+/** Human-readable label for any DateRangeValue. */
+export function rangeLabelOf(r: DateRangeValue): string {
+  if (isCustomRange(r)) return r.label;
+  if (r === 'today') return 'Today';
+  if (r === '7d') return 'Last 7 days';
+  return 'Last 30 days';
+}
+
 export type AgentReportRow = {
   id?: number;
   name: string;
@@ -60,7 +83,8 @@ function accountId() {
 }
 
 /** Returns Unix timestamps for since/until (Chatwoot expects integers) */
-function sinceUntil(range: ReportRange): { since: number; until: number } {
+function sinceUntil(range: DateRangeValue): { since: number; until: number } {
+  if (isCustomRange(range)) return { since: range.since, until: range.until };
   const now = Math.floor(Date.now() / 1000);
   if (range === 'today') {
     const startOfDay = new Date();
@@ -131,7 +155,7 @@ export function parseDurationToSeconds(s: string): number {
   return total;
 }
 
-export function useReportSummary(range: ReportRange) {
+export function useReportSummary(range: DateRangeValue) {
   const { since, until } = sinceUntil(range);
   return useQuery({
     queryKey: ['reportSummary', range, isDemoDataEnabled()],
@@ -163,7 +187,7 @@ interface CWReportPoint {
   value: number;
 }
 
-export function useReportChart(range: ReportRange) {
+export function useReportChart(range: DateRangeValue) {
   const { since, until } = sinceUntil(range);
   return useQuery({
     queryKey: ['reportChart', range, isDemoDataEnabled()],
@@ -205,7 +229,7 @@ export function useReportChart(range: ReportRange) {
   });
 }
 
-export function useOverviewAgents(range: ReportRange) {
+export function useOverviewAgents(range: DateRangeValue) {
   const { since, until } = sinceUntil(range);
   return useQuery({
     queryKey: ['reportOverviewAgents', range, isDemoDataEnabled()],
@@ -230,7 +254,7 @@ export function useOverviewAgents(range: ReportRange) {
   });
 }
 
-export function useAgentReport(range: ReportRange) {
+export function useAgentReport(range: DateRangeValue) {
   const { since, until } = sinceUntil(range);
   return useQuery({
     queryKey: ['reportAgents', range, isDemoDataEnabled()],
@@ -252,7 +276,7 @@ export function useAgentReport(range: ReportRange) {
   });
 }
 
-export function useInboxReport(range: ReportRange) {
+export function useInboxReport(range: DateRangeValue) {
   const { since, until } = sinceUntil(range);
   return useQuery({
     queryKey: ['reportInboxes', range, isDemoDataEnabled()],
@@ -282,7 +306,7 @@ export function useInboxReport(range: ReportRange) {
   });
 }
 
-export function useTeamReport(range: ReportRange) {
+export function useTeamReport(range: DateRangeValue) {
   const { since, until } = sinceUntil(range);
   return useQuery({
     queryKey: ['reportTeams', range, isDemoDataEnabled()],

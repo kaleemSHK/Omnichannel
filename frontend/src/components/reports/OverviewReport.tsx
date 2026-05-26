@@ -12,17 +12,20 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { ReportRangeTabs } from '@/components/reports/ReportRangeTabs';
 import { Skeleton } from '@/components/ui/skeleton';
+import { DateRangePicker } from '@/components/reports/DateRangePicker';
+import { ExportButton } from '@/components/reports/ExportButton';
 import {
   useReportSummary,
   useReportChart,
   useOverviewAgents,
-  type ReportRange,
+  type DateRangeValue,
+  rangeLabelOf,
 } from '@/lib/hooks/useReports';
 
 export function OverviewReport() {
-  const [range, setRange] = useState<ReportRange>('7d');
+  const [range, setRange] = useState<DateRangeValue>('7d');
+
   const { data: summary, isLoading: summaryLoading, isError: summaryError } =
     useReportSummary(range);
   const { data: chartData = [], isLoading: chartLoading } = useReportChart(range);
@@ -42,11 +45,28 @@ export function OverviewReport() {
     return Math.min(160, Math.max(100, longest * 7));
   }, [byAgent]);
 
+  const exportSpec = useMemo(() => ({
+    title: 'BlinkOne Overview Report',
+    dateLabel: rangeLabelOf(range),
+    filename: `blinkone-overview-${new Date().toISOString().slice(0, 10)}`,
+    columns: [
+      { header: 'Agent', key: 'name' },
+      { header: 'Conversations', key: 'count', align: 'right' as const },
+    ],
+    rows: byAgent.slice(0, 10).map(a => ({ name: a.name, count: a.count })),
+  }), [range, byAgent]);
+
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <h1 className="text-lg font-semibold">Overview</h1>
-        <ReportRangeTabs range={range} onChange={setRange} />
+        <div className="flex items-center gap-2 flex-wrap">
+          <DateRangePicker value={range} onChange={setRange} />
+          <ExportButton
+            spec={exportSpec}
+            disabled={isLoading || byAgent.length === 0}
+          />
+        </div>
       </div>
 
       {summaryError && (

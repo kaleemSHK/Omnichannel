@@ -1,11 +1,15 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Download } from 'lucide-react';
-import { ReportRangeTabs } from '@/components/reports/ReportRangeTabs';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useAgentReport, parseDurationToSeconds, type ReportRange } from '@/lib/hooks/useReports';
-import { downloadCsv } from '@/lib/utils/exportCsv';
+import { DateRangePicker } from '@/components/reports/DateRangePicker';
+import { ExportButton } from '@/components/reports/ExportButton';
+import {
+  useAgentReport,
+  parseDurationToSeconds,
+  type DateRangeValue,
+  rangeLabelOf,
+} from '@/lib/hooks/useReports';
 import { cn } from '@/lib/utils/cn';
 
 type SortKey = 'name' | 'open' | 'resolved' | 'avg_first_response' | 'avg_resolution' | 'online_time';
@@ -13,7 +17,7 @@ type SortKey = 'name' | 'open' | 'resolved' | 'avg_first_response' | 'avg_resolu
 const TIME_SORT_KEYS: SortKey[] = ['avg_first_response', 'avg_resolution', 'online_time'];
 
 export function AgentReport() {
-  const [range, setRange] = useState<ReportRange>('7d');
+  const [range, setRange] = useState<DateRangeValue>('7d');
   const [sortKey, setSortKey] = useState<SortKey>('resolved');
   const [sortAsc, setSortAsc] = useState(false);
   const { data = [], isLoading, isError } = useAgentReport(range);
@@ -53,32 +57,38 @@ export function AgentReport() {
     { key: 'online_time', label: 'Online time' },
   ];
 
+  const exportSpec = useMemo(() => ({
+    title: 'Agent Performance Report',
+    dateLabel: rangeLabelOf(range),
+    filename: `agent-report-${new Date().toISOString().slice(0, 10)}`,
+    columns: [
+      { header: 'Agent', key: 'name' },
+      { header: 'Open', key: 'open', align: 'right' as const },
+      { header: 'Resolved', key: 'resolved', align: 'right' as const },
+      { header: 'Avg First Response', key: 'avg_first_response' },
+      { header: 'Avg Resolution', key: 'avg_resolution' },
+      { header: 'Online Time', key: 'online_time' },
+    ],
+    rows: sorted.map(r => ({
+      name: r.name,
+      open: r.open,
+      resolved: r.resolved,
+      avg_first_response: r.avg_first_response,
+      avg_resolution: r.avg_resolution,
+      online_time: r.online_time,
+    })),
+  }), [range, sorted]);
+
   return (
     <div className="p-6 space-y-4">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <h1 className="text-lg font-semibold">Agent performance</h1>
         <div className="flex items-center gap-2 flex-wrap">
-          <button
-            type="button"
-            onClick={() =>
-              downloadCsv(
-                sorted.map(r => ({
-                  Agent: r.name,
-                  Open: r.open,
-                  Resolved: r.resolved,
-                  'Avg First Response': r.avg_first_response,
-                  'Avg Resolution': r.avg_resolution,
-                  'Online Time': r.online_time,
-                })),
-                `agent-report-${range}-${new Date().toISOString().slice(0, 10)}.csv`,
-              )
-            }
+          <DateRangePicker value={range} onChange={setRange} />
+          <ExportButton
+            spec={exportSpec}
             disabled={isLoading || data.length === 0}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs border rounded-lg hover:bg-muted disabled:opacity-50"
-          >
-            <Download size={13} /> Export CSV
-          </button>
-          <ReportRangeTabs range={range} onChange={setRange} />
+          />
         </div>
       </div>
 

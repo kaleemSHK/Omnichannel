@@ -1,41 +1,45 @@
 'use client';
 
-import { useState } from 'react';
-import { Download } from 'lucide-react';
-import { ReportRangeTabs } from '@/components/reports/ReportRangeTabs';
+import { useMemo, useState } from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useTeamReport, type ReportRange } from '@/lib/hooks/useReports';
-import { downloadCsv } from '@/lib/utils/exportCsv';
+import { DateRangePicker } from '@/components/reports/DateRangePicker';
+import { ExportButton } from '@/components/reports/ExportButton';
+import { useTeamReport, type DateRangeValue, rangeLabelOf } from '@/lib/hooks/useReports';
 
 export function TeamReport() {
-  const [range, setRange] = useState<ReportRange>('7d');
+  const [range, setRange] = useState<DateRangeValue>('7d');
   const { data = [], isLoading, isError } = useTeamReport(range);
+
+  const exportSpec = useMemo(() => ({
+    title: 'Team Performance Report',
+    dateLabel: rangeLabelOf(range),
+    filename: `team-report-${new Date().toISOString().slice(0, 10)}`,
+    columns: [
+      { header: 'Team', key: 'name' },
+      { header: 'Open', key: 'open', align: 'right' as const },
+      { header: 'Resolved', key: 'resolved', align: 'right' as const },
+      { header: 'Avg First Response', key: 'avg_first_response' },
+      { header: 'Avg Resolution', key: 'avg_resolution' },
+    ],
+    rows: data.map(r => ({
+      name: r.name,
+      open: r.open,
+      resolved: r.resolved,
+      avg_first_response: r.avg_first_response,
+      avg_resolution: r.avg_resolution,
+    })),
+  }), [range, data]);
 
   return (
     <div className="p-6 space-y-4">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <h1 className="text-lg font-semibold">Team performance</h1>
         <div className="flex items-center gap-2 flex-wrap">
-          <button
-            type="button"
-            onClick={() =>
-              downloadCsv(
-                data.map(r => ({
-                  Team: r.name,
-                  Open: r.open,
-                  Resolved: r.resolved,
-                  'Avg First Response': r.avg_first_response,
-                  'Avg Resolution': r.avg_resolution,
-                })),
-                `team-report-${range}-${new Date().toISOString().slice(0, 10)}.csv`,
-              )
-            }
+          <DateRangePicker value={range} onChange={setRange} />
+          <ExportButton
+            spec={exportSpec}
             disabled={isLoading || data.length === 0}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs border rounded-lg hover:bg-muted disabled:opacity-50"
-          >
-            <Download size={13} /> Export CSV
-          </button>
-          <ReportRangeTabs range={range} onChange={setRange} />
+          />
         </div>
       </div>
 
