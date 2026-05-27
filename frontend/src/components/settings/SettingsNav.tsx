@@ -21,6 +21,7 @@ import {
   Star,
   ShieldCheck,
   Database,
+  KeyRound,
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store/auth';
 import { can } from '@/lib/rbac';
@@ -46,6 +47,7 @@ const NAV_ITEMS = [
   { id: 'integrations', label: 'Integrations', icon: Puzzle, group: 'Integrations' },
   { id: 'crm-connectors', label: 'CRM & ERP', icon: Database, group: 'Integrations' },
   { id: 'webhooks', label: 'Webhooks', icon: Webhook, group: 'Integrations' },
+  { id: 'api-keys', label: 'API Keys', icon: KeyRound, group: 'Integrations' },
   { id: 'business-hours', label: 'Business Hours', icon: Clock, group: 'Integrations' },
 ] as const;
 
@@ -76,6 +78,7 @@ export function SettingsNav({ active, onChange }: Props) {
     if (item.id === 'integrations') return can(role, 'manageInboxes');
     if (item.id === 'crm-connectors') return can(role, 'manageInboxes');
     if (item.id === 'webhooks') return can(role, 'manageWebhooks');
+    if (item.id === 'api-keys') return can(role, 'manageWebhooks');
     if (item.id === 'branding') return can(role, 'manageTeam');
     if (item.id === 'mfa') return true; // every user manages their own MFA
     return true;

@@ -23,6 +23,7 @@ import { SkillsManagerSection } from '@/components/settings/SkillsManagerSection
 import { BotRoutingRules } from '@/components/ai/BotRoutingRules';
 import { MfaSetupPanel } from '@/components/settings/MfaSetupPanel';
 import { CRMConnectorsPanel } from '@/components/settings/CRMConnectorsPanel';
+import { ApiKeysSection } from '@/components/settings/ApiKeysSection';
 
 export default function SettingsPage() {
   const [view, setView] = useState<SettingsView>('profile');
@@ -48,6 +49,7 @@ export default function SettingsPage() {
     integrations: <IntegrationsSection />,
     'crm-connectors': <CRMConnectorsPanel />,
     webhooks: <WebhooksSection />,
+    'api-keys': <ApiKeysSection />,
     'business-hours': <BusinessHoursSection />,
   };
 

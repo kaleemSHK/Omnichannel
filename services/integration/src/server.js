@@ -375,9 +375,30 @@ app.post('/v1/audit', auth, async (req, res) => {
 // ─── Tenant API keys ──────────────────────────────────────────────────────────
 app.post('/v1/api-keys', auth, async (req, res) => {
   if (!dbEnabled()) return fail(res, 'NOT_CONFIGURED', 'Postgres required', 501);
+  const { name, scopes } = req.body ?? {};
+  if (!name?.trim()) return fail(res, 'VALIDATION_ERROR', 'name required');
+  return ok(res, await repo.createApiKey(tenantId(req), name, actorId(req), scopes), 201);
+});
+
+app.get('/v1/api-keys', auth, async (req, res) => {
+  if (!dbEnabled()) return ok(res, []);
+  return ok(res, await repo.listApiKeys(tenantId(req)));
+});
+
+app.patch('/v1/api-keys/:id', auth, async (req, res) => {
+  if (!dbEnabled()) return fail(res, 'NOT_CONFIGURED', 'Postgres required', 501);
   const { name } = req.body ?? {};
-  if (!name) return fail(res, 'VALIDATION_ERROR', 'name required');
-  return ok(res, await repo.createApiKey(tenantId(req), name, actorId(req)), 201);
+  if (!name?.trim()) return fail(res, 'VALIDATION_ERROR', 'name required');
+  const result = await repo.renameApiKey(tenantId(req), req.params.id, name.trim(), actorId(req));
+  if (!result) return fail(res, 'NOT_FOUND', 'Not found', 404);
+  return ok(res, result);
+});
+
+app.delete('/v1/api-keys/:id', auth, async (req, res) => {
+  if (!dbEnabled()) return fail(res, 'NOT_CONFIGURED', 'Postgres required', 501);
+  const revoked = await repo.revokeApiKey(tenantId(req), req.params.id, actorId(req));
+  if (!revoked) return fail(res, 'NOT_FOUND', 'Not found', 404);
+  return res.status(204).end();
 });
 
 app.use(errorHandler(log));
