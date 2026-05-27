@@ -15,8 +15,12 @@ export const metadata: Metadata = {
   title: 'BlinkOne — LABBIK Telecom',
   description: 'BlinkOne Contact Center',
   icons: {
-    icon: [{ url: '/icon.svg', type: 'image/svg+xml' }],
+    icon: [
+      { url: '/icon.svg', type: 'image/svg+xml' },
+      { url: '/icon.svg', sizes: 'any' },
+    ],
     shortcut: '/icon.svg',
+    apple: '/icon.svg',
   },
 };
 

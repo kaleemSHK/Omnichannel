@@ -108,19 +108,33 @@ export async function bnFetch<T>(
     }),
   });
 
-  if (res.status === 401) {
-    const { markGatewayAuthFailed } = await import('@/lib/demo/config');
-    markGatewayAuthFailed();
-  } else if (res.status === 403) {
+  if (res.status === 401 || res.status === 403) {
+    // Only invalidate the gateway session when the *gateway itself* rejects our JWT.
+    // A 401/403 that comes from a downstream service proxied through the gateway
+    // (e.g. routing returning 401 because ROUTING_TOKEN is misconfigured) must NOT
+    // kill the gateway session — that would silently disable all other features.
+    // The gateway always sets X-Request-Id; downstream services that produce their
+    // own 401 before the gateway adds that header won't have it, but the safe
+    // discriminator is the error code: the gateway uses 'UNAUTHORIZED'/'FORBIDDEN'
+    // with the message "Invalid or expired token" / "Bearer token required".
     try {
-      const body = await res.clone().json();
-      const code = (body as { error?: { code?: string } })?.error?.code;
-      if (code === 'UNAUTHORIZED' || code === 'FORBIDDEN') {
+      const body = await res.clone().json() as { error?: { code?: string; message?: string } };
+      const code = body?.error?.code;
+      const msg  = body?.error?.message ?? '';
+      const isGatewayAuthError =
+        (code === 'UNAUTHORIZED' || code === 'FORBIDDEN') &&
+        // Gateway-level messages contain these substrings; service-level ones say "Unauthorized"
+        (msg.includes('token') || msg.includes('Token') || msg.includes('expired') || msg.includes('required'));
+      if (isGatewayAuthError) {
         const { markGatewayAuthFailed } = await import('@/lib/demo/config');
         markGatewayAuthFailed();
       }
     } catch {
-      /* not JSON — leave gateway session intact */
+      // Non-JSON 401/403 — treat as gateway auth failure conservatively only for 401
+      if (res.status === 401) {
+        const { markGatewayAuthFailed } = await import('@/lib/demo/config');
+        markGatewayAuthFailed();
+      }
     }
   }
 
