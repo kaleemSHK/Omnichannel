@@ -3,7 +3,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { cwFetch } from '@/lib/api/client';
 import { assignConversation } from '@/lib/api/conversations';
-import { listCannedResponses, listAgents } from '@/lib/api/settings';
+import { listCannedResponses, listAgents, listLabels } from '@/lib/api/settings';
+import { normalizeLabelList } from '@/lib/labels/normalize';
 import { DEMO_AGENTS } from '@/lib/demo/settingsFixture';
 import {
   DEMO_CANNED_RESPONSES,
@@ -87,10 +88,10 @@ export function useLabels() {
     queryFn: async () => {
       if (isDemoDataEnabled()) return DEMO_LABELS;
       try {
-        const res = await cwFetch<{ payload?: DemoLabel[] }>(`/accounts/${accountId()}/labels`);
-        return res.payload ?? [];
+        const res = await listLabels();
+        return normalizeLabelList(res.payload) as DemoLabel[];
       } catch {
-        return isDemoDataEnabled() ? DEMO_LABELS : [];
+        return [];
       }
     },
     staleTime: 60_000,

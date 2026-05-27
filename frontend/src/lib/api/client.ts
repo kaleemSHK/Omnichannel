@@ -9,8 +9,14 @@
  *      Auth: `Authorization: Bearer <gatewayJwt>` header
  */
 
+import { refreshGatewayToken } from '@/lib/api/auth';
 import { useAuthStore } from '@/lib/store/auth';
-import { shouldSkipGatewayFetch } from '@/lib/demo/config';
+import {
+  isDemoDataEnabled,
+  isGatewayAuthFailed,
+  resetGatewayAuthFailed,
+  shouldSkipGatewayFetch,
+} from '@/lib/demo/config';
 import { CHATWOOT_URL, GATEWAY_URL } from '@/lib/env';
 import type { ApiError } from '@/types';
 
@@ -25,16 +31,23 @@ class BlinkoneApiError extends Error {
   }
 }
 
+async function readJsonBody<T>(res: Response): Promise<T | undefined> {
+  const text = await res.text();
+  if (!text.trim()) return undefined;
+  return JSON.parse(text) as T;
+}
+
 async function handleResponse<T>(res: Response): Promise<T> {
   if (res.ok) {
-    // 204 No Content
+    // 204 No Content, or 200/201 with empty body (e.g. Chatwoot DELETE)
     if (res.status === 204) return undefined as T;
-    return res.json() as Promise<T>;
+    const body = await readJsonBody<T>(res);
+    return (body ?? undefined) as T;
   }
 
   let errBody: Partial<ApiError> & { error?: string } = {};
   try {
-    errBody = await res.json();
+    errBody = (await readJsonBody(res)) ?? {};
   } catch {
     /* ignore */
   }
@@ -45,6 +58,41 @@ async function handleResponse<T>(res: Response): Promise<T> {
     `Request failed with status ${res.status}`;
 
   throw new BlinkoneApiError(errBody.code ?? 'HTTP_ERROR', message, res.status);
+}
+
+/** Exchange Chatwoot token for gateway JWT when missing or after auth flag was set. */
+export async function ensureGatewayJwt(): Promise<string> {
+  if (isDemoDataEnabled()) {
+    throw new BlinkoneApiError('SKIP_GATEWAY', 'Gateway not used in demo mode', 0);
+  }
+
+  const { tokens, updateTokens } = useAuthStore.getState();
+  if (tokens?.gatewayJwt && !isGatewayAuthFailed()) {
+    return tokens.gatewayJwt;
+  }
+
+  const cwToken = tokens?.accessToken;
+  if (!cwToken) {
+    throw new BlinkoneApiError(
+      'NO_AUTH',
+      'Sign in required to use ticket fields and other BlinkOne services.',
+      401,
+    );
+  }
+
+  try {
+    resetGatewayAuthFailed();
+    const gw = await refreshGatewayToken(cwToken);
+    if (!gw.token) throw new Error('Empty gateway token');
+    updateTokens({ accessToken: cwToken, gatewayJwt: gw.token });
+    return gw.token;
+  } catch {
+    throw new BlinkoneApiError(
+      'GATEWAY_SESSION',
+      'Could not connect to BlinkOne services. Sign out, sign in again, or check that the gateway is running.',
+      503,
+    );
+  }
 }
 
 function buildHeaders(
@@ -88,15 +136,26 @@ export async function bnFetch<T>(
   path: string,
   init: RequestInit = {},
 ): Promise<T> {
-  if (shouldSkipGatewayFetch()) {
+  if (isDemoDataEnabled()) {
     throw new BlinkoneApiError(
       'SKIP_GATEWAY',
-      'Gateway fetch skipped (demo mode or missing JWT)',
+      'Gateway fetch skipped (demo mode)',
       0,
     );
   }
 
+  if (shouldSkipGatewayFetch()) {
+    await ensureGatewayJwt();
+  }
+
   const { tokens } = useAuthStore.getState();
+  if (!tokens?.gatewayJwt) {
+    throw new BlinkoneApiError(
+      'NO_GATEWAY_JWT',
+      'BlinkOne session unavailable. Sign out and sign in again.',
+      0,
+    );
+  }
   const url = `${GATEWAY_URL}/api/${service}${path}`;
 
   const res = await fetch(url, {

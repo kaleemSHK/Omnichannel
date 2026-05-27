@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Tag } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { DEFAULT_LABEL_COLOR } from '@/lib/labels/normalize';
 import { useConversationLabels, useLabels } from '@/lib/hooks/useChatwootExtras';
 
 interface Props {
@@ -35,7 +36,9 @@ export function LabelPicker({ conversationId, currentLabels }: Props) {
       </PopoverTrigger>
       <PopoverContent className="w-56 p-2">
         <p className="text-xs font-semibold text-muted-foreground mb-2">Labels</p>
-        {allLabels.map(label => (
+        {allLabels
+          .filter(label => label?.id && label?.title)
+          .map(label => (
           <button
             key={label.id}
             type="button"
@@ -44,7 +47,7 @@ export function LabelPicker({ conversationId, currentLabels }: Props) {
           >
             <div
               className="w-3 h-3 rounded-full shrink-0"
-              style={{ backgroundColor: label.color }}
+              style={{ backgroundColor: label.color ?? DEFAULT_LABEL_COLOR }}
             />
             {label.title}
             {currentLabels.includes(label.title) && (

@@ -2,13 +2,16 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2, RefreshCw } from 'lucide-react';
 import {
   listTicketFields,
   createTicketField,
   deleteTicketField,
+  refreshTicketFieldsSession,
+  isTicketFieldsGatewayError,
   type TicketField,
 } from '@/lib/api/ticketFields';
+import { isGatewayQueryEnabled } from '@/lib/demo/config';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
@@ -16,9 +19,13 @@ const FIELD_TYPES = ['text', 'number', 'boolean', 'select', 'date'] as const;
 
 export function TicketFieldsSettings() {
   const qc = useQueryClient();
-  const { data: fields = [], isLoading } = useQuery({
+  const gatewayReady = isGatewayQueryEnabled();
+
+  const { data: fields = [], isLoading, error: loadError, refetch } = useQuery({
     queryKey: ['ticket-fields'],
     queryFn: listTicketFields,
+    enabled: gatewayReady,
+    retry: 1,
   });
 
   const [form, setForm] = useState({
@@ -28,22 +35,54 @@ export function TicketFieldsSettings() {
     required: false,
   });
   const [error, setError] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
+
+  async function retryGateway() {
+    setRefreshing(true);
+    setError('');
+    try {
+      await refreshTicketFieldsSession();
+      await refetch();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not restore BlinkOne session');
+    } finally {
+      setRefreshing(false);
+    }
+  }
 
   const create = useMutation({
-    mutationFn: () =>
-      createTicketField({ ...form, sort_order: fields.length }),
+    mutationFn: async () => {
+      if (!gatewayReady) {
+        await refreshTicketFieldsSession();
+      }
+      return createTicketField({ ...form, sort_order: fields.length });
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['ticket-fields'] });
       setForm({ field_key: '', label: '', field_type: 'text', required: false });
       setError('');
     },
-    onError: (e: Error) => setError(e.message),
+    onError: (e: Error) => {
+      setError(
+        isTicketFieldsGatewayError(e)
+          ? 'BlinkOne session unavailable. Use “Reconnect” below or sign out and sign in again.'
+          : e.message,
+      );
+    },
   });
 
   const remove = useMutation({
     mutationFn: deleteTicketField,
     onSuccess: () => qc.invalidateQueries({ queryKey: ['ticket-fields'] }),
+    onError: (e: Error) => setError(e.message),
   });
+
+  const gatewayMessage =
+    !gatewayReady
+      ? 'Ticket fields use the BlinkOne gateway. Your session has no gateway token yet.'
+      : loadError && isTicketFieldsGatewayError(loadError)
+        ? (loadError as Error).message
+        : null;
 
   return (
     <div className="space-y-6 max-w-2xl">
@@ -53,6 +92,22 @@ export function TicketFieldsSettings() {
           Add custom fields that appear on every ticket form.
         </p>
       </div>
+
+      {gatewayMessage && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 flex flex-wrap items-center gap-3">
+          <span className="flex-1 min-w-[200px]">{gatewayMessage}</span>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={refreshing}
+            onClick={() => void retryGateway()}
+          >
+            <RefreshCw className={`w-4 h-4 me-1 ${refreshing ? 'animate-spin' : ''}`} />
+            Reconnect
+          </Button>
+        </div>
+      )}
 
       <div className="border rounded-lg p-4 space-y-3 bg-muted/20">
         <h3 className="text-sm font-medium">Add new field</h3>
@@ -112,8 +167,10 @@ export function TicketFieldsSettings() {
       </div>
 
       <div className="space-y-2">
-        {isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
-        {fields.length === 0 && !isLoading && (
+        {isLoading && gatewayReady && (
+          <p className="text-sm text-muted-foreground">Loading…</p>
+        )}
+        {fields.length === 0 && !isLoading && gatewayReady && !loadError && (
           <p className="text-sm text-muted-foreground">No custom fields yet.</p>
         )}
         {fields.map(f => (

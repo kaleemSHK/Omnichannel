@@ -1,7 +1,8 @@
 /**
  * Chatwoot Settings API — all /api/v1/accounts/:id/... settings endpoints
  */
-import { cwFetch } from './client';
+import { normalizeLabel, normalizeLabelList } from '@/lib/labels/normalize';
+import { cwFetch, BlinkoneApiError } from './client';
 import { useAuthStore } from '@/lib/store/auth';
 
 function aid() {
@@ -13,24 +14,9 @@ function unwrapArray<T>(res: T[] | { payload?: T[] }): T[] {
   return res.payload ?? [];
 }
 
-const DEFAULT_LABEL_COLOR = '#6B7280';
-
-function unwrapLabel(
-  res: Label | { payload?: Label },
-  fallback?: Partial<Label>,
-): Label {
-  const raw =
-    res && typeof res === 'object' && 'payload' in res && res.payload
-      ? res.payload
-      : (res as Label);
-
-  return {
-    id: raw.id,
-    title: raw.title ?? fallback?.title ?? '',
-    description: raw.description ?? fallback?.description,
-    color: raw.color ?? fallback?.color ?? DEFAULT_LABEL_COLOR,
-    show_on_sidebar: raw.show_on_sidebar ?? fallback?.show_on_sidebar ?? false,
-  };
+// Chatwoot dashboard posts flat JSON; Rails wrap_parameters adds :label server-side.
+function labelBody(data: Partial<Label> | Omit<Label, 'id'>) {
+  return JSON.stringify(data);
 }
 
 // ─── Account ─────────────────────────────────────────────────────────────────
@@ -131,27 +117,79 @@ export interface Label {
 export async function listLabels(): Promise<{ payload: Label[] }> {
   const res = await cwFetch<{ payload: Label[] } | Label[]>(`/accounts/${aid()}/labels`);
   const raw = Array.isArray(res) ? res : (res.payload ?? []);
-  return { payload: raw.map(l => unwrapLabel(l)).filter(l => l.id && l.title) };
+  return { payload: normalizeLabelList(raw) };
 }
 
 export async function createLabel(data: Omit<Label, 'id'>): Promise<{ payload: Label }> {
-  const res = await cwFetch<Label | { payload?: Label }>(`/accounts/${aid()}/labels`, {
+  const res = await cwFetch<unknown>(`/accounts/${aid()}/labels`, {
     method: 'POST',
-    body: JSON.stringify(data),
+    body: labelBody(data),
   });
-  return { payload: unwrapLabel(res, data) };
+  let label = normalizeLabel(res, data);
+  if (!label?.id) {
+    const listed = await listLabels();
+    label =
+      listed.payload.find(
+        l => l.title === data.title.trim().toLowerCase(),
+      ) ?? null;
+  }
+  if (!label?.id) {
+    throw new BlinkoneApiError(
+      'LABEL_CREATE_FAILED',
+      'Label was created but the server response could not be read. Refresh the page.',
+      0,
+    );
+  }
+  return { payload: label };
 }
 
 export async function updateLabel(id: number, data: Partial<Label>): Promise<{ payload: Label }> {
-  const res = await cwFetch<Label | { payload?: Label }>(
+  const res = await cwFetch<unknown>(
     `/accounts/${aid()}/labels/${id}`,
-    { method: 'PATCH', body: JSON.stringify(data) },
+    { method: 'PATCH', body: labelBody(data) },
   );
-  return { payload: unwrapLabel(res, { id, ...data }) };
+  const label = normalizeLabel(res, { id, ...data });
+  if (!label?.id) {
+    throw new BlinkoneApiError(
+      'LABEL_UPDATE_FAILED',
+      'Label update failed or response was invalid.',
+      0,
+    );
+  }
+  return { payload: label };
 }
 
-export async function deleteLabel(id: number): Promise<void> {
-  return cwFetch(`/accounts/${aid()}/labels/${id}`, { method: 'DELETE' });
+export async function deleteLabel(id: number, title?: string): Promise<void> {
+  const accountPath = `/accounts/${aid()}/labels`;
+
+  async function destroy(labelId: number): Promise<void> {
+    await cwFetch(`${accountPath}/${labelId}`, { method: 'DELETE' });
+  }
+
+  try {
+    await destroy(id);
+    return;
+  } catch (e) {
+    if (!(e instanceof BlinkoneApiError) || e.status !== 404) throw e;
+  }
+
+  // Stale UI id — resolve by title from a fresh list, then delete or treat as gone
+  if (!title?.trim()) return;
+
+  const { payload } = await listLabels();
+  const match = payload.find(
+    l => l.title.toLowerCase() === title.toLowerCase().trim(),
+  );
+  if (!match) return;
+
+  if (match.id === id) return;
+
+  try {
+    await destroy(match.id);
+  } catch (e) {
+    if (e instanceof BlinkoneApiError && e.status === 404) return;
+    throw e;
+  }
 }
 
 // ─── Custom Attributes ───────────────────────────────────────────────────────
@@ -177,6 +215,7 @@ export async function listCustomAttributes(model: AttrEntity): Promise<CustomAtt
 
 export async function createCustomAttribute(data: {
   attribute_display_name: string;
+  attribute_key: string;
   attribute_display_type: AttrType;
   attribute_model: AttrEntity;
   attribute_values?: string[];

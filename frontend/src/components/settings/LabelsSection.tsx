@@ -12,6 +12,7 @@ import {
 } from '@/lib/api/settings';
 import { DEMO_LABELS, settingsDemoDelay } from '@/lib/demo/settingsFixture';
 import { isDemoDataEnabled } from '@/lib/demo/config';
+import { DEFAULT_LABEL_COLOR, normalizeLabelList } from '@/lib/labels/normalize';
 import { useAuthStore } from '@/lib/store/auth';
 import { can } from '@/lib/rbac';
 import { SectionHeader } from './shared/SectionHeader';
@@ -47,16 +48,15 @@ export function LabelsSection() {
   const canManage = can(role, 'manageInboxes');
 
   const { data: labels = [], isLoading } = useQuery({
-    queryKey: ['labels'],
+    queryKey: ['settings', 'labels'],
     queryFn: async () => {
       if (isDemoDataEnabled()) return DEMO_LABELS;
-      try {
-        const res = await listLabels();
-        return res.payload.length ? res.payload : DEMO_LABELS;
-      } catch {
-        return DEMO_LABELS;
-      }
+      const res = await listLabels();
+      return res.payload;
     },
+    select: data => normalizeLabelList(data),
+    staleTime: 0,
+    refetchOnMount: 'always',
   });
 
   const { mutate: toggleSidebar } = useMutation({
@@ -67,10 +67,9 @@ export function LabelsSection() {
       }
       return updateLabel(id, { show_on_sidebar: show });
     },
-    onSuccess: (_, { id, show }) => {
-      qc.setQueryData<Label[]>(['labels'], prev =>
-        (prev ?? []).map(l => (l.id === id ? { ...l, show_on_sidebar: show } : l)),
-      );
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['settings', 'labels'] });
+      void qc.invalidateQueries({ queryKey: ['labels'] });
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -118,19 +117,9 @@ export function LabelsSection() {
       if (editing) return updateLabel(editing.id, payload);
       return createLabel(payload);
     },
-    onSuccess: res => {
-      const saved = res.payload;
-      if (!saved?.id) {
-        void qc.invalidateQueries({ queryKey: ['labels'] });
-        toast.success(editing ? 'Label updated' : 'Label created');
-        setSheetOpen(false);
-        return;
-      }
-      qc.setQueryData<Label[]>(['labels'], prev => {
-        const list = (prev ?? []).filter((l): l is Label => Boolean(l?.id));
-        if (editing) return list.map(l => (l.id === saved.id ? saved : l));
-        return [...list, saved];
-      });
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ['settings', 'labels'] });
+      await qc.invalidateQueries({ queryKey: ['labels'] });
       toast.success(editing ? 'Label updated' : 'Label created');
       setSheetOpen(false);
     },
@@ -145,18 +134,19 @@ export function LabelsSection() {
         await settingsDemoDelay();
         return;
       }
-      await deleteLabel(deleteTarget!.id);
+      await deleteLabel(deleteTarget!.id, deleteTarget!.title);
     },
     onSuccess: () => {
-      qc.setQueryData<Label[]>(['labels'], prev =>
-        (prev ?? []).filter(l => l.id !== deleteTarget?.id),
-      );
+      void qc.invalidateQueries({ queryKey: ['settings', 'labels'] });
+      void qc.invalidateQueries({ queryKey: ['labels'] });
       toast.success('Label deleted');
       setDeleteTarget(null);
     },
     onError: (e: Error) => {
-      toast.error(e.message);
+      void qc.invalidateQueries({ queryKey: ['settings', 'labels'] });
       void qc.invalidateQueries({ queryKey: ['labels'] });
+      toast.error(e.message);
+      setDeleteTarget(null);
     },
   });
 
@@ -186,14 +176,16 @@ export function LabelsSection() {
         />
       ) : (
         <ul className="border rounded-lg divide-y">
-          {labels.filter((l): l is Label => Boolean(l?.id)).map(label => (
+          {labels.map(label => (
             <li
               key={label.id}
               className="flex items-center gap-3 px-4 py-3 hover:bg-muted/20"
             >
               <span
                 className="w-3 h-3 rounded-full shrink-0"
-                style={{ backgroundColor: label.color ?? COLOR_PRESETS[0] }}
+                style={{
+                  backgroundColor: label?.color ?? DEFAULT_LABEL_COLOR,
+                }}
                 aria-hidden
               />
               <div className="flex-1 min-w-0">

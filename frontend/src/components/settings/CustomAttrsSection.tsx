@@ -65,12 +65,7 @@ export function CustomAttrsSection() {
       if (isDemoDataEnabled()) {
         return DEMO_CUSTOM_ATTRS.filter(a => a.attribute_model === tab);
       }
-      try {
-        const list = await listCustomAttributes(tab);
-        return list.length ? list : DEMO_CUSTOM_ATTRS.filter(a => a.attribute_model === tab);
-      } catch {
-        return DEMO_CUSTOM_ATTRS.filter(a => a.attribute_model === tab);
-      }
+      return listCustomAttributes(tab);
     },
   });
 
@@ -83,8 +78,13 @@ export function CustomAttrsSection() {
 
   const { mutate: create, isPending: creating } = useMutation({
     mutationFn: async () => {
+      const attribute_key = keyPreview;
+      if (!attribute_key) {
+        throw new Error('Enter a display name to generate a valid attribute key.');
+      }
       const payload = {
-        attribute_display_name: displayName,
+        attribute_display_name: displayName.trim(),
+        attribute_key,
         attribute_display_type: attrType,
         attribute_model: tab as AttrEntity,
         ...(attrType === 'list'
@@ -100,14 +100,13 @@ export function CustomAttrsSection() {
         await settingsDemoDelay();
         return {
           id: Date.now(),
-          attribute_key: keyPreview,
           ...payload,
         } as CustomAttribute;
       }
       return createCustomAttribute(payload);
     },
-    onSuccess: created => {
-      qc.setQueryData<CustomAttribute[]>(['custom-attrs', tab], prev => [...(prev ?? []), created]);
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ['custom-attrs', tab] });
       toast.success('Attribute created');
       setSheetOpen(false);
       setDisplayName('');
@@ -267,7 +266,7 @@ export function CustomAttrsSection() {
           )}
           <Button
             className="w-full bg-brand-primary hover:bg-brand-primary/90"
-            disabled={!displayName.trim() || creating}
+            disabled={!displayName.trim() || !keyPreview || creating}
             onClick={() => create()}
           >
             {creating ? 'Creating…' : 'Create attribute'}
