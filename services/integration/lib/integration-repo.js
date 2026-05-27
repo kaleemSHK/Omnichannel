@@ -338,6 +338,52 @@ export async function listDeliveries(tenantId, limit = 100) {
   return rows.map(mapDelivery);
 }
 
+export async function updateEndpoint(tenantId, id, body, actorId) {
+  const sets = [];
+  const vals = [id, tenantId];
+  let i = 3;
+  if (body.name      !== undefined) { sets.push(`name = $${i++}`);             vals.push(body.name.trim()); }
+  if (body.url       !== undefined) { sets.push(`url = $${i++}`);              vals.push(body.url.trim()); }
+  if (body.eventsSubscribed !== undefined || body.events !== undefined) {
+    sets.push(`events_subscribed = $${i++}`);
+    vals.push(JSON.stringify(body.eventsSubscribed ?? body.events));
+  }
+  if (body.enabled   !== undefined) { sets.push(`enabled = $${i++}`);          vals.push(!!body.enabled); }
+  if (body.extraHeaders !== undefined) {
+    sets.push(`extra_headers = $${i++}`);
+    vals.push(JSON.stringify(body.extraHeaders ?? {}));
+  }
+  if (!sets.length) return null;
+  const { rows } = await getPool().query(
+    `UPDATE integration_webhook_endpoints
+     SET ${sets.join(', ')}, updated_at = now()
+     WHERE id = $1 AND tenant_id = $2
+     RETURNING *`,
+    vals,
+  );
+  if (!rows.length) return null;
+  await writeAudit({
+    tenantId,
+    actorId,
+    action: 'webhook_endpoint.update',
+    targetType: 'webhook_endpoint',
+    targetId: id,
+    after: mapEndpoint(rows[0]),
+  });
+  return mapEndpoint(rows[0]);
+}
+
+export async function getEndpointDeliveries(tenantId, endpointId, limit = 50) {
+  const { rows } = await tenantQuery(
+    getPool(),
+    tenantId,
+    `SELECT * FROM integration_webhook_deliveries
+     WHERE endpoint_id = $1 ORDER BY created_at DESC LIMIT $2`,
+    [endpointId, limit],
+  );
+  return rows.map(mapDelivery);
+}
+
 export async function retryDelivery(tenantId, deliveryId) {
   await tenantQuery(
     getPool(),

@@ -117,6 +117,19 @@ app.post('/v1/webhooks', auth, async (req, res) => {
   return ok(res, result, 201);
 });
 
+app.patch('/v1/webhooks/:id', auth, async (req, res) => {
+  if (!dbEnabled()) return fail(res, 'NOT_CONFIGURED', 'Postgres required', 501);
+  const result = await repo.updateEndpoint(tenantId(req), req.params.id, req.body ?? {}, actorId(req));
+  if (!result) return fail(res, 'NOT_FOUND', 'Not found', 404);
+  return ok(res, result);
+});
+
+app.get('/v1/webhooks/:id/deliveries', auth, async (req, res) => {
+  if (!dbEnabled()) return ok(res, []);
+  const limit = Math.min(100, Number(req.query.limit) || 50);
+  return ok(res, await repo.getEndpointDeliveries(tenantId(req), req.params.id, limit));
+});
+
 app.delete('/v1/webhooks/:id', auth, async (req, res) => {
   if (!dbEnabled()) return fail(res, 'NOT_CONFIGURED', 'Postgres required', 501);
   const deleted = await repo.deleteEndpoint(tenantId(req), req.params.id, actorId(req));
