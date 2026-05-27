@@ -13,6 +13,26 @@ function unwrapArray<T>(res: T[] | { payload?: T[] }): T[] {
   return res.payload ?? [];
 }
 
+const DEFAULT_LABEL_COLOR = '#6B7280';
+
+function unwrapLabel(
+  res: Label | { payload?: Label },
+  fallback?: Partial<Label>,
+): Label {
+  const raw =
+    res && typeof res === 'object' && 'payload' in res && res.payload
+      ? res.payload
+      : (res as Label);
+
+  return {
+    id: raw.id,
+    title: raw.title ?? fallback?.title ?? '',
+    description: raw.description ?? fallback?.description,
+    color: raw.color ?? fallback?.color ?? DEFAULT_LABEL_COLOR,
+    show_on_sidebar: raw.show_on_sidebar ?? fallback?.show_on_sidebar ?? false,
+  };
+}
+
 // ─── Account ─────────────────────────────────────────────────────────────────
 export interface AccountSettings {
   id: number;
@@ -110,16 +130,24 @@ export interface Label {
 
 export async function listLabels(): Promise<{ payload: Label[] }> {
   const res = await cwFetch<{ payload: Label[] } | Label[]>(`/accounts/${aid()}/labels`);
-  if (Array.isArray(res)) return { payload: res };
-  return { payload: res.payload ?? [] };
+  const raw = Array.isArray(res) ? res : (res.payload ?? []);
+  return { payload: raw.map(l => unwrapLabel(l)).filter(l => l.id && l.title) };
 }
 
 export async function createLabel(data: Omit<Label, 'id'>): Promise<{ payload: Label }> {
-  return cwFetch(`/accounts/${aid()}/labels`, { method: 'POST', body: JSON.stringify(data) });
+  const res = await cwFetch<Label | { payload?: Label }>(`/accounts/${aid()}/labels`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+  return { payload: unwrapLabel(res, data) };
 }
 
 export async function updateLabel(id: number, data: Partial<Label>): Promise<{ payload: Label }> {
-  return cwFetch(`/accounts/${aid()}/labels/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
+  const res = await cwFetch<Label | { payload?: Label }>(
+    `/accounts/${aid()}/labels/${id}`,
+    { method: 'PATCH', body: JSON.stringify(data) },
+  );
+  return { payload: unwrapLabel(res, { id, ...data }) };
 }
 
 export async function deleteLabel(id: number): Promise<void> {

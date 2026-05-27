@@ -1,5 +1,15 @@
 import { Tabs } from 'expo-router';
 import { useTranslation } from 'react-i18next';
+import { Ionicons } from '@expo/vector-icons';
+import type { ColorValue } from 'react-native';
+
+type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
+
+function tabIcon(name: IoniconName, activeName: IoniconName) {
+  return ({ color, focused }: { color: ColorValue; focused: boolean }) => (
+    <Ionicons name={focused ? activeName : name} size={22} color={color as string} />
+  );
+}
 
 export default function AgentLayout() {
   const { t } = useTranslation();
@@ -13,10 +23,35 @@ export default function AgentLayout() {
         tabBarInactiveTintColor: '#5a6170',
       }}
     >
-      <Tabs.Screen name="index" options={{ title: t('agent.dashboard'), tabBarIcon: () => null }} />
-      <Tabs.Screen name="conversations/index" options={{ title: t('agent.conversations'), tabBarIcon: () => null }} />
-      <Tabs.Screen name="calls/index" options={{ title: t('agent.calls'), tabBarIcon: () => null }} />
-      <Tabs.Screen name="settings" options={{ title: t('agent.settings'), tabBarIcon: () => null }} />
+      <Tabs.Screen
+        name="index"
+        options={{
+          title: t('agent.dashboard'),
+          tabBarIcon: tabIcon('home-outline', 'home'),
+        }}
+      />
+      <Tabs.Screen
+        name="conversations/index"
+        options={{
+          title: t('agent.conversations'),
+          tabBarIcon: tabIcon('chatbubbles-outline', 'chatbubbles'),
+        }}
+      />
+      <Tabs.Screen
+        name="calls/index"
+        options={{
+          title: t('agent.calls'),
+          tabBarIcon: tabIcon('call-outline', 'call'),
+        }}
+      />
+      <Tabs.Screen
+        name="settings"
+        options={{
+          title: t('agent.settings'),
+          tabBarIcon: tabIcon('settings-outline', 'settings'),
+        }}
+      />
+      {/* Hidden screens — accessible via router.push, not as tabs */}
       <Tabs.Screen name="conversations/[id]" options={{ href: null }} />
     </Tabs>
   );

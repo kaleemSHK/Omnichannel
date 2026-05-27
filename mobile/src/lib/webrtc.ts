@@ -17,8 +17,8 @@ export function installWebRtcGlobals(): boolean {
 
   try {
     const { RTCPeerConnection, RTCSessionDescription } = require('react-native-webrtc');
-    (global as Record<string, unknown>).RTCPeerConnection = RTCPeerConnection;
-    (global as Record<string, unknown>).RTCSessionDescription = RTCSessionDescription;
+    (globalThis as Record<string, unknown>).RTCPeerConnection = RTCPeerConnection;
+    (globalThis as Record<string, unknown>).RTCSessionDescription = RTCSessionDescription;
     available = true;
     return true;
   } catch {

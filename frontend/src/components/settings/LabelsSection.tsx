@@ -120,8 +120,14 @@ export function LabelsSection() {
     },
     onSuccess: res => {
       const saved = res.payload;
+      if (!saved?.id) {
+        void qc.invalidateQueries({ queryKey: ['labels'] });
+        toast.success(editing ? 'Label updated' : 'Label created');
+        setSheetOpen(false);
+        return;
+      }
       qc.setQueryData<Label[]>(['labels'], prev => {
-        const list = prev ?? [];
+        const list = (prev ?? []).filter((l): l is Label => Boolean(l?.id));
         if (editing) return list.map(l => (l.id === saved.id ? saved : l));
         return [...list, saved];
       });
@@ -148,7 +154,10 @@ export function LabelsSection() {
       toast.success('Label deleted');
       setDeleteTarget(null);
     },
-    onError: (e: Error) => toast.error(e.message),
+    onError: (e: Error) => {
+      toast.error(e.message);
+      void qc.invalidateQueries({ queryKey: ['labels'] });
+    },
   });
 
   return (
@@ -177,14 +186,14 @@ export function LabelsSection() {
         />
       ) : (
         <ul className="border rounded-lg divide-y">
-          {labels.map(label => (
+          {labels.filter((l): l is Label => Boolean(l?.id)).map(label => (
             <li
               key={label.id}
               className="flex items-center gap-3 px-4 py-3 hover:bg-muted/20"
             >
               <span
                 className="w-3 h-3 rounded-full shrink-0"
-                style={{ backgroundColor: label.color }}
+                style={{ backgroundColor: label.color ?? COLOR_PRESETS[0] }}
                 aria-hidden
               />
               <div className="flex-1 min-w-0">
