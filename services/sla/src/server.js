@@ -66,11 +66,19 @@ app.get('/v1/policies', auth, slaFeature, async (req, res) => {
 
 app.post('/v1/policies', auth, slaFeature, async (req, res) => {
   if (!dbEnabled()) return legacyCreatePolicy(req, res);
-  const { name, targets } = req.body ?? {};
+  const body = req.body ?? {};
+  const { name, firstResponseMinutes, resolutionHours, escalationHours } = body;
   if (!name?.trim()) return fail(res, 'VALIDATION_ERROR', 'name required');
-  if (!targets?.length) return fail(res, 'VALIDATION_ERROR', 'targets required');
+  // Accept legacy flat format (firstResponseMinutes/resolutionHours) and coerce to targets array
+  let targets = body.targets;
+  if (!targets?.length && (firstResponseMinutes || resolutionHours)) {
+    targets = [];
+    if (firstResponseMinutes) targets.push({ targetType: 'first_response', thresholdMinutes: Number(firstResponseMinutes), appliesWhen: {} });
+    if (resolutionHours) targets.push({ targetType: 'resolution', thresholdMinutes: Number(resolutionHours) * 60, appliesWhen: {} });
+    if (escalationHours) targets.push({ targetType: 'escalation', thresholdMinutes: Number(escalationHours) * 60, appliesWhen: {} });
+  }
   try {
-    return ok(res, await repo.createPolicy(resolveTenantId(req), req.body), 201);
+    return ok(res, await repo.createPolicy(resolveTenantId(req), { ...body, targets: targets ?? [] }), 201);
   } catch (e) {
     if (e.code === '23505') return fail(res, 'CONFLICT', 'Policy name exists', 409);
     log.error(e);
