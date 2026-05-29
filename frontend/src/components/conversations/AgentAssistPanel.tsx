@@ -1,10 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import { classifyConversation, queryRAG, suggestReply, summarizeConversation } from '@/lib/api/ai';
 import { useMessages } from '@/lib/hooks/useConversations';
+import { useSentiment } from '@/lib/hooks/useSentiment';
+import { useSentimentStore } from '@/lib/store/sentiment';
 import { isDemoDataEnabled } from '@/lib/demo/config';
 import { DEMO_RAG_RESULTS } from '@/lib/demo/aiFixture';
 import { scorePercent } from '@/lib/utils/ai';
@@ -39,6 +41,12 @@ function toSuggestPayload(messages: CWMessage[]) {
 export function AgentAssistPanel({ conversationId, contactId }: Props) {
   const { data: messages = [] } = useMessages(conversationId);
   const lastInbound = lastInboundText(messages);
+  const { currentSentiment, history: sentimentHistory, trend } = useSentiment(messages);
+  const setSentiment = useSentimentStore(s => s.setSentiment);
+
+  useEffect(() => {
+    setSentiment(conversationId, currentSentiment);
+  }, [conversationId, currentSentiment, setSentiment]);
 
   const [suggestOpen, setSuggestOpen] = useState(true);
   const [ragOpen, setRagOpen] = useState(true);
@@ -141,7 +149,7 @@ export function AgentAssistPanel({ conversationId, contactId }: Props) {
     },
   });
 
-  const sentiment = insights?.sentiment ?? 'neutral';
+  const sentiment = currentSentiment;
   const sentimentClass =
     sentiment === 'positive'
       ? 'bg-green-50 text-green-700'
@@ -194,9 +202,35 @@ export function AgentAssistPanel({ conversationId, contactId }: Props) {
       </Section>
 
       <Section title="AI Insights" open={insightsOpen} onToggle={() => setInsightsOpen(v => !v)}>
-        <span className={cn('text-xs px-2 py-1 rounded-full capitalize inline-block', sentimentClass)}>
-          {sentiment}
-        </span>
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className={cn('text-xs px-2 py-1 rounded-full capitalize inline-block', sentimentClass)}>
+            {sentiment}
+          </span>
+          {trend > 1 && (
+            <span className="text-xs text-green-600">↑ Improving</span>
+          )}
+          {trend < -1 && (
+            <span className="text-xs text-red-600">↓ Declining</span>
+          )}
+        </div>
+        {sentimentHistory.length > 2 && (
+          <div className="flex items-end gap-0.5 mt-2 h-6">
+            {sentimentHistory.slice(-10).map((h, i) => (
+              <div
+                key={i}
+                title={h.sentiment}
+                className={cn('flex-1 rounded-sm min-h-[4px]', {
+                  'bg-green-400': h.sentiment === 'positive',
+                  'bg-red-400': h.sentiment === 'negative',
+                  'bg-gray-300': h.sentiment === 'neutral',
+                })}
+                style={{
+                  height: h.sentiment === 'positive' ? '100%' : h.sentiment === 'negative' ? '60%' : '30%',
+                }}
+              />
+            ))}
+          </div>
+        )}
         <Button
           type="button"
           variant="outline"

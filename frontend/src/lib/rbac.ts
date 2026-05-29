@@ -37,6 +37,7 @@ export const ROLE_PERMISSIONS = {
     manageSLA: ['supervisor', 'admin', 'platform_admin'],
     manageIVR: ['admin', 'platform_admin'],
     impersonateTenant: ['platform_admin'],
+    viewAgentAssist: ['agent', 'supervisor', 'admin', 'platform_admin'],
   } as Record<string, UserRole[]>,
 } as const;
 

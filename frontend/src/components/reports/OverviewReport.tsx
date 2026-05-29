@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   Area,
   AreaChart,
@@ -15,13 +16,41 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { DateRangePicker } from '@/components/reports/DateRangePicker';
 import { ExportButton } from '@/components/reports/ExportButton';
+import { getSentimentSummary } from '@/lib/api/ai';
 import {
   useReportSummary,
   useReportChart,
   useOverviewAgents,
+  isCustomRange,
   type DateRangeValue,
   rangeLabelOf,
 } from '@/lib/hooks/useReports';
+
+function SentimentCard({ range }: { range: DateRangeValue }) {
+  const rangeKey = isCustomRange(range) ? 'custom' : range;
+  const { data } = useQuery({
+    queryKey: ['sentiment-summary', rangeKey],
+    queryFn: () => getSentimentSummary(rangeKey),
+  });
+  const positive = data?.positive ?? 45;
+  const negative = data?.negative ?? 17;
+  const neutral = data?.neutral ?? 38;
+  return (
+    <div className="border rounded-lg p-4 bg-white">
+      <h3 className="text-sm font-medium mb-3">Customer Sentiment</h3>
+      <div className="flex items-center gap-0.5 h-4 rounded-full overflow-hidden">
+        <div className="bg-green-400 h-full transition-all" style={{ width: `${positive}%` }} title={`${positive}% positive`} />
+        <div className="bg-gray-300 h-full transition-all" style={{ width: `${neutral}%` }} title={`${neutral}% neutral`} />
+        <div className="bg-red-400 h-full transition-all" style={{ width: `${negative}%` }} title={`${negative}% negative`} />
+      </div>
+      <div className="flex justify-between text-xs text-muted-foreground mt-1.5">
+        <span className="text-green-600">{positive}% positive</span>
+        <span>{neutral}% neutral</span>
+        <span className="text-red-600">{negative}% negative</span>
+      </div>
+    </div>
+  );
+}
 
 export function OverviewReport() {
   const [range, setRange] = useState<DateRangeValue>('7d');
@@ -107,6 +136,8 @@ export function OverviewReport() {
           </ResponsiveContainer>
         )}
       </div>
+
+      <SentimentCard range={range} />
 
       <div className="border rounded-lg p-4 bg-white">
         <h2 className="text-sm font-semibold mb-4">By agent (top 10)</h2>

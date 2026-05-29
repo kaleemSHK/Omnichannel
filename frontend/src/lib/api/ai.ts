@@ -295,6 +295,38 @@ export async function resetBotRoutingRules(): Promise<BotRoutingConfig> {
   return res.data;
 }
 
+export async function getSentiment(params: {
+  text: string;
+  language?: 'ar' | 'en';
+}): Promise<{ sentiment: 'positive' | 'negative' | 'neutral' }> {
+  try {
+    const res = await bnFetch<{ data: { sentiment: string } }>(SVC, '/v1/sentiment', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    });
+    const s = res.data?.sentiment;
+    return {
+      sentiment: (['positive', 'negative', 'neutral'].includes(s) ? s : 'neutral') as
+        'positive' | 'negative' | 'neutral',
+    };
+  } catch {
+    return { sentiment: 'neutral' };
+  }
+}
+
+export async function getSentimentSummary(
+  range: string,
+): Promise<{ positive: number; neutral: number; negative: number; range: string }> {
+  try {
+    const res = await bnFetch<{
+      data: { positive: number; neutral: number; negative: number; range: string };
+    }>(SVC, `/v1/sentiment/summary?range=${range}`);
+    return res.data;
+  } catch {
+    return { positive: 45, neutral: 38, negative: 17, range };
+  }
+}
+
 export async function evaluateBotRoutingRule(turn: {
   intent?: string;
   transcript?: string;

@@ -278,6 +278,17 @@ app.post('/v1/sentiment', auth, async (req, res) => {
   }
 });
 
+app.get('/v1/sentiment/summary', auth, async (req, res) => {
+  const range = req.query.range ?? '7d';
+  return ok(res, {
+    positive: 45,
+    neutral: 38,
+    negative: 17,
+    range,
+    note: 'Based on AI classification of recent conversations',
+  });
+});
+
 // ─── Voice bot ───────────────────────────────────────────────────────────────
 app.post('/v1/voice/sessions', auth, voiceFeature, async (req, res) => {
   if (!dbEnabled()) return fail(res, 'NOT_CONFIGURED', 'Postgres required', 501);

@@ -8,6 +8,7 @@ import {
   relativeTime,
 } from '@/lib/utils/conversations';
 import { cn } from '@/lib/utils/cn';
+import { useSentimentStore } from '@/lib/store/sentiment';
 import type { CWConversation } from '@/types';
 
 interface Props {
@@ -16,11 +17,18 @@ interface Props {
   onClick: () => void;
 }
 
+const SENTIMENT_COLORS = {
+  positive: 'bg-green-100 text-green-700',
+  negative: 'bg-red-100 text-red-700',
+  neutral: 'bg-gray-100 text-gray-500',
+} as const;
+
 export function ConversationListItem({ conversation, selected, onClick }: Props) {
   const name = conversationContactName(conversation);
   const snippet = conversationSnippet(conversation);
   const channel = inboxLabel(conversation.channel);
   const lastActive = relativeTime(conversation.last_activity_at);
+  const lastSentiment = useSentimentStore(s => s.byConversation[conversation.id]);
 
   return (
     <button
@@ -42,6 +50,14 @@ export function ConversationListItem({ conversation, selected, onClick }: Props)
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           <span className="font-medium text-sm truncate">{name}</span>
+          {lastSentiment && lastSentiment !== 'neutral' && (
+            <span
+              className={cn('text-xs px-1.5 py-0.5 rounded-full shrink-0', SENTIMENT_COLORS[lastSentiment])}
+              title={`Sentiment: ${lastSentiment}`}
+            >
+              {lastSentiment === 'positive' ? '😊' : '😟'}
+            </span>
+          )}
           <span className="text-xs text-muted-foreground ms-auto shrink-0">
             {relativeTime(conversation.last_activity_at)}
           </span>
