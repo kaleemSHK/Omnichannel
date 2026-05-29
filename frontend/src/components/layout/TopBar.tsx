@@ -5,6 +5,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { LogOut } from 'lucide-react';
 import { ROLE_META, type UserRole } from '@/lib/rbac';
 import { cn } from '@/lib/utils/cn';
+import { disconnectCable } from '@/lib/api/websocket';
 
 const PAGE_TITLES: Record<string, string> = {
   '/conversations': 'Conversations',
@@ -33,6 +34,13 @@ export function TopBar() {
   const roleMeta = user?.role ? ROLE_META[user.role as UserRole] : null;
 
   function handleLogout() {
+    // Tear down realtime subscriptions so a new sign-in (or shared machine)
+    // doesn't inherit the previous user's Action Cable session/token.
+    try {
+      disconnectCable();
+    } catch {
+      /* non-fatal */
+    }
     clearAuth();
     router.push('/login');
   }

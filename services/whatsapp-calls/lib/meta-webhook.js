@@ -35,8 +35,13 @@ export function verifyWebhook(req) {
 export function verifySignature(rawBody, signature) {
   const secret = (process.env.META_APP_SECRET || '').trim();
   if (!secret) {
-    // If no secret configured, skip verification in dev (warn loudly)
-    console.warn('[whatsapp] META_APP_SECRET not set — skipping signature verification');
+    // Fail CLOSED in production: an unsigned webhook must not be trusted.
+    // Only allow the unverified path in non-production to ease local testing.
+    if (process.env.NODE_ENV === 'production') {
+      console.error('[whatsapp] META_APP_SECRET not set in production — rejecting unsigned webhook');
+      return false;
+    }
+    console.warn('[whatsapp] META_APP_SECRET not set — skipping signature verification (non-production)');
     return true;
   }
   if (!signature?.startsWith('sha256=')) return false;

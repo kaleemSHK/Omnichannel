@@ -147,20 +147,59 @@ export async function updatePolicy(tenantId, id, body) {
       vals.push(body[key]);
     }
   }
-  if (!sets.length) {
-    const { rows } = await getPool().query('SELECT * FROM sla_policies WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
-    if (!rows.length) return null;
-    const { rows: t } = await getPool().query('SELECT * FROM sla_targets WHERE policy_id = $1', [id]);
-    return policyRow(rows[0], t.map(targetRow));
+
+  const p = getPool();
+  const client = await p.connect();
+  try {
+    await client.query('BEGIN');
+
+    // Verify ownership before touching anything.
+    const { rows: owned } = await client.query(
+      'SELECT * FROM sla_policies WHERE id = $1 AND tenant_id = $2',
+      [id, tenantId],
+    );
+    if (!owned.length) {
+      await client.query('ROLLBACK');
+      return null;
+    }
+    let policyRowData = owned[0];
+
+    if (sets.length) {
+      sets.push('updated_at = now()');
+      const { rows } = await client.query(
+        `UPDATE sla_policies SET ${sets.join(', ')} WHERE id = $1 AND tenant_id = $2 RETURNING *`,
+        vals,
+      );
+      policyRowData = rows[0];
+    }
+
+    // Replace targets when the caller supplies them (edit flow sends targets[]).
+    if (Array.isArray(body.targets)) {
+      await client.query('DELETE FROM sla_targets WHERE policy_id = $1', [id]);
+      for (const t of body.targets) {
+        await client.query(
+          `INSERT INTO sla_targets (policy_id, applies_when, target_type, threshold_minutes, warning_threshold_pct)
+           VALUES ($1,$2::jsonb,$3,$4,$5)`,
+          [
+            id,
+            JSON.stringify(t.appliesWhen ?? {}),
+            t.targetType,
+            t.thresholdMinutes,
+            t.warningThresholdPct ?? 80,
+          ],
+        );
+      }
+    }
+
+    await client.query('COMMIT');
+    const { rows: t } = await p.query('SELECT * FROM sla_targets WHERE policy_id = $1', [id]);
+    return policyRow(policyRowData, t.map(targetRow));
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
   }
-  sets.push('updated_at = now()');
-  const { rows } = await getPool().query(
-    `UPDATE sla_policies SET ${sets.join(', ')} WHERE id = $1 AND tenant_id = $2 RETURNING *`,
-    vals,
-  );
-  if (!rows.length) return null;
-  const { rows: t } = await getPool().query('SELECT * FROM sla_targets WHERE policy_id = $1', [id]);
-  return policyRow(rows[0], t.map(targetRow));
 }
 
 export async function deletePolicy(tenantId, id) {

@@ -94,7 +94,7 @@ app.get('/readyz', async (_req, res) => {
   }
 });
 
-app.get('/v1/tickets', async (req, res) => {
+app.get('/v1/tickets', auth, async (req, res) => {
   const accountId = resolveAccountId(req);
   if (!Number.isFinite(accountId)) return fail(res, 'VALIDATION_ERROR', 'chatwoot_account_id required');
   if (dbEnabled()) {
@@ -116,14 +116,20 @@ app.get('/v1/tickets', async (req, res) => {
   ok(res, page.map((t) => mapTicket(t, s)));
 });
 
-app.get('/v1/tickets/:id', async (req, res) => {
+app.get('/v1/tickets/:id', auth, async (req, res) => {
   const id = Number(req.params.id);
+  // Scope reads to the caller's account when it can be resolved, to prevent
+  // cross-tenant ticket access by guessing sequential ids.
+  const accountId = resolveAccountId(req);
+  const scoped = Number.isFinite(accountId) ? accountId : null;
   if (dbEnabled()) {
-    const t = await ticketRepo.getTicket(id);
+    const t = await ticketRepo.getTicket(id, scoped);
     return t ? ok(res, t) : fail(res, 'NOT_FOUND', 'Ticket not found', 404);
   }
   const s = store.load();
-  const t = s.tickets.find((x) => x.id === id);
+  const t = s.tickets.find(
+    (x) => x.id === id && (scoped === null || x.chatwootAccountId === scoped),
+  );
   return t ? ok(res, mapTicket(t, s)) : fail(res, 'NOT_FOUND', 'Ticket not found', 404);
 });
 

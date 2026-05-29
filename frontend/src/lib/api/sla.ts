@@ -7,6 +7,31 @@ import type { SLAPolicy, SLAInstance } from '@/types';
 
 const SVC = 'sla';
 
+/**
+ * The SLA service stores policies as a name + a `targets[]` array
+ * (target_type ∈ first_response | next_response | resolution, threshold in minutes).
+ * The UI works with flat tier fields, so we translate at this boundary.
+ */
+function toPolicyRequest(data: Partial<Omit<SLAPolicy, 'id' | 'tenantId'>>) {
+  const targets: { targetType: string; thresholdMinutes: number }[] = [];
+  if (data.firstResponseMinutes != null) {
+    targets.push({
+      targetType: 'first_response',
+      thresholdMinutes: Math.max(1, Math.round(data.firstResponseMinutes)),
+    });
+  }
+  if (data.resolutionHours != null) {
+    targets.push({
+      targetType: 'resolution',
+      thresholdMinutes: Math.max(1, Math.round(data.resolutionHours * 60)),
+    });
+  }
+  return {
+    ...(data.name != null ? { name: data.name } : {}),
+    ...(targets.length ? { targets } : {}),
+  };
+}
+
 export async function listPolicies(): Promise<SLAPolicy[]> {
   const res = await bnFetch<{ data: SLAPolicy[] }>(SVC, '/v1/policies');
   return res.data;
@@ -16,7 +41,7 @@ export async function createPolicy(data: Omit<SLAPolicy, 'id' | 'tenantId'>): Pr
   const res = await bnFetch<{ data: SLAPolicy }>(SVC, '/v1/policies', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
+    body: JSON.stringify(toPolicyRequest(data)),
   });
   return res.data;
 }
@@ -25,7 +50,7 @@ export async function updatePolicy(id: string, data: Partial<Omit<SLAPolicy, 'id
   const res = await bnFetch<{ data: SLAPolicy }>(SVC, `/v1/policies/${id}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
+    body: JSON.stringify(toPolicyRequest(data)),
   });
   return res.data;
 }

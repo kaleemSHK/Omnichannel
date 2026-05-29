@@ -147,22 +147,31 @@ export function useSlaPolicies() {
 
 function normalizePolicy(p: SLAPolicy): SLAPolicy {
   if (p.tier && p.firstResponseMinutes) return p;
-  const raw = p as SLAPolicy & { targets?: { thresholdMinutes?: number }[]; businessHoursCalendarId?: string };
+  const raw = p as SLAPolicy & {
+    targets?: { targetType?: string; thresholdMinutes?: number }[];
+    businessHoursCalendarId?: string;
+  };
   const name = String(p.name ?? 'Policy');
   const tier = name.toLowerCase().includes('gold')
     ? 'gold'
     : name.toLowerCase().includes('silver')
       ? 'silver'
       : 'bronze';
-  const targets = raw.targets;
-  const firstMin = targets?.[0]?.thresholdMinutes ?? 30;
+  const targets = raw.targets ?? [];
+  const firstTarget =
+    targets.find(t => t.targetType === 'first_response') ?? targets[0];
+  const resolutionTarget = targets.find(t => t.targetType === 'resolution');
+  const firstMin = firstTarget?.thresholdMinutes ?? 30;
+  const resolutionHours = resolutionTarget?.thresholdMinutes != null
+    ? Math.max(1, Math.round(resolutionTarget.thresholdMinutes / 60))
+    : Math.max(1, Math.round(firstMin / 15));
   return {
     id: String(p.id),
     tenantId: String(p.tenantId ?? '1'),
     name,
     tier: tier as SLAPolicy['tier'],
     firstResponseMinutes: firstMin,
-    resolutionHours: Math.max(1, Math.round(firstMin / 15)),
+    resolutionHours,
     escalationHours: Math.max(1, Math.round(firstMin / 30)),
     calendarId: raw.businessHoursCalendarId,
   };

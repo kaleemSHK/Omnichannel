@@ -8,6 +8,13 @@ infra/ngrok/ngrok-demo.log
 *.key
 age-recipient.txt
 
+# Secrets — never commit key material (keep the folder scaffold only)
+secrets/*
+!secrets/.gitkeep
+!secrets/README.md
+*.json.enc
+google-stt.json
+
 # Backups (never commit)
 backups/
 *.sql.gz
@@ -28,6 +35,9 @@ spec/.bundle/
 Thumbs.db
 *.log
 startup.log
+
+# Build artifacts
+*.tsbuildinfo
 
 # IDE
 .idea/

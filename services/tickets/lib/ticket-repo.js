@@ -55,9 +55,13 @@ export async function listTickets(accountId, { status } = {}) {
   return out;
 }
 
-export async function getTicket(id) {
+export async function getTicket(id, accountId = null) {
   const p = getPool();
-  const { rows } = await p.query('SELECT * FROM tickets WHERE id = $1', [id]);
+  const sql = accountId == null
+    ? 'SELECT * FROM tickets WHERE id = $1'
+    : 'SELECT * FROM tickets WHERE id = $1 AND chatwoot_account_id = $2';
+  const params = accountId == null ? [id] : [id, accountId];
+  const { rows } = await p.query(sql, params);
   if (!rows.length) return null;
   const { events, fields } = await loadExtras(id);
   return mapRow(rows[0], events, fields);

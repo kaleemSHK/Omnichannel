@@ -45,19 +45,29 @@ async function handleResponse<T>(res: Response): Promise<T> {
     return (body ?? undefined) as T;
   }
 
-  let errBody: Partial<ApiError> & { error?: string } = {};
+  let errBody: Partial<ApiError> & {
+    error?: string | { code?: string; message?: string };
+  } = {};
   try {
     errBody = (await readJsonBody(res)) ?? {};
   } catch {
     /* ignore */
   }
 
+  // BlinkOne services return { error: { code, message } }; Chatwoot returns
+  // { message } or { error: "..." }. Support all shapes so the real reason surfaces.
+  const nestedError =
+    errBody.error && typeof errBody.error === 'object' ? errBody.error : undefined;
+
   const message =
     errBody.message ??
+    nestedError?.message ??
     (typeof errBody.error === 'string' ? errBody.error : undefined) ??
     `Request failed with status ${res.status}`;
 
-  throw new BlinkoneApiError(errBody.code ?? 'HTTP_ERROR', message, res.status);
+  const code = errBody.code ?? nestedError?.code ?? 'HTTP_ERROR';
+
+  throw new BlinkoneApiError(code, message, res.status);
 }
 
 /** Exchange Chatwoot token for gateway JWT when missing or after auth flag was set. */
