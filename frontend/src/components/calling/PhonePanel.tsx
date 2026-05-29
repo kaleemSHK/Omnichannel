@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { Mic, MicOff, PauseCircle, Phone, PhoneOff, ShieldCheck } from 'lucide-react';
+import { CheckCircle, Mic, MicOff, PauseCircle, Phone, PhoneOff, ShieldCheck } from 'lucide-react';
 import { toast } from 'sonner';
 import { CallTimer } from '@/components/calling/CallTimer';
 import { useAnswerCall, useDeclineCall } from '@/lib/hooks/useCalls';
@@ -130,12 +130,68 @@ function MosBadge({ mos }: { mos: MosResult }) {
   );
 }
 
+const ACW_DURATION_S = 60;
+
+function AcwPanel() {
+  const acwCall = useCallsStore(s => s.acwCall);
+  const setAcwCall = useCallsStore(s => s.setAcwCall);
+  const [remaining, setRemaining] = useState(ACW_DURATION_S);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    if (!acwCall) return;
+    setRemaining(ACW_DURATION_S);
+    timerRef.current = setInterval(() => {
+      setRemaining(r => {
+        if (r <= 1) {
+          clearInterval(timerRef.current!);
+          setAcwCall(null);
+          return 0;
+        }
+        return r - 1;
+      });
+    }, 1000);
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [acwCall, setAcwCall]);
+
+  if (!acwCall) return null;
+
+  return (
+    <div className="fixed bottom-4 end-4 z-50 w-72 rounded-xl bg-purple-50 border border-purple-200 shadow-xl p-4 space-y-3">
+      <div className="flex items-center gap-2">
+        <div className="w-8 h-8 rounded-full bg-purple-100 text-purple-700 flex items-center justify-center">
+          <CheckCircle className="w-4 h-4" />
+        </div>
+        <div className="flex-1">
+          <p className="text-sm font-medium text-purple-900">After-Call Work</p>
+          <p className="text-xs text-purple-600">Complete wrap-up notes</p>
+        </div>
+        <span className="font-mono text-lg font-bold text-purple-700">{remaining}s</span>
+      </div>
+      <div className="h-1.5 rounded-full bg-purple-100 overflow-hidden">
+        <div
+          className="h-full bg-purple-500 transition-all duration-1000"
+          style={{ width: `${(remaining / ACW_DURATION_S) * 100}%` }}
+        />
+      </div>
+      <button
+        type="button"
+        onClick={() => { clearInterval(timerRef.current!); setAcwCall(null); }}
+        className="w-full py-1.5 rounded-lg text-xs font-medium bg-purple-600 text-white hover:bg-purple-700 transition-colors"
+      >
+        Done — Ready for next call
+      </button>
+    </div>
+  );
+}
+
 export function PhonePanel() {
   const pathname = usePathname();
   const router = useRouter();
   const onCallingPage = pathname.startsWith('/calling');
   const { user } = useAuthStore();
   const activeCall = useCallsStore(s => s.activeCall);
+  const acwCall = useCallsStore(s => s.acwCall);
   const setActiveCall = useCallsStore(s => s.setActiveCall);
   const sipControls = useCallsStore(s => s.sipControls);
   const contactCache = useCallsStore(s => s.contactCache);
@@ -212,6 +268,7 @@ export function PhonePanel() {
   }, [user?.chatwootAccountId, answer, decline, setActiveCall, sipControls]);
 
   if (!activeCall) {
+    if (acwCall) return <AcwPanel />;
     if (onCallingPage) return null;
     return (
       <div className="fixed bottom-4 end-4 z-50">

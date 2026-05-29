@@ -21,7 +21,7 @@ export async function getAgent(agentId: string): Promise<RoutingAgent> {
 
 export async function setAgentState(
   agentId: string,
-  state: 'available' | 'busy' | 'break' | 'offline',
+  state: 'available' | 'busy' | 'break' | 'offline' | 'acw',
 ): Promise<RoutingAgent> {
   const res = await bnFetch<{ data: RoutingAgent }>(SVC, `/v1/agents/${agentId}`, {
     method: 'PATCH',
@@ -116,32 +116,73 @@ export async function updateQueueSkillWeights(
 }
 
 // ─── Supervisor controls ──────────────────────────────────────────────────────
-export async function supervisorListen(
-  targetAgentId: string,
-  supervisorExt: string,
+export type SuperviseMode = 'listen' | 'whisper' | 'barge';
+
+export async function superviseCall(
+  callId: string,
+  mode: SuperviseMode,
+  supervisorId?: string,
 ): Promise<void> {
-  await bnFetch<void>(SVC, '/v1/supervise', {
+  await bnFetch<void>(SVC, `/v1/supervise/${encodeURIComponent(callId)}/mode`, {
     method: 'POST',
-    body: JSON.stringify({ mode: 'listen', targetAgentId, supervisorExt }),
+    body: JSON.stringify({ mode, supervisorId }),
   });
 }
 
-export async function supervisorWhisper(
-  targetAgentId: string,
-  supervisorExt: string,
-): Promise<void> {
-  await bnFetch<void>(SVC, '/v1/supervise', {
+export async function listSuperviseSessions(): Promise<{ callId: string; agentId: string }[]> {
+  const res = await bnFetch<{ data: { callId: string; agentId: string }[] }>(SVC, '/v1/supervise/sessions');
+  return res.data ?? [];
+}
+
+// Legacy aliases kept for backwards compat
+export const supervisorListen = (callId: string, supervisorId?: string) =>
+  superviseCall(callId, 'listen', supervisorId);
+export const supervisorWhisper = (callId: string, supervisorId?: string) =>
+  superviseCall(callId, 'whisper', supervisorId);
+export const supervisorBarge = (callId: string, supervisorId?: string) =>
+  superviseCall(callId, 'barge', supervisorId);
+
+// ─── ACW config ───────────────────────────────────────────────────────────────
+export async function getAcwConfig(): Promise<{ durationSeconds: number }> {
+  const res = await bnFetch<{ data: { durationSeconds: number } }>(SVC, '/v1/agents/acw-config');
+  return res.data ?? { durationSeconds: 60 };
+}
+
+export async function updateAcwConfig(durationSeconds: number): Promise<{ durationSeconds: number }> {
+  const res = await bnFetch<{ data: { durationSeconds: number } }>(SVC, '/v1/agents/acw-config', {
+    method: 'PUT',
+    body: JSON.stringify({ durationSeconds }),
+  });
+  return res.data ?? { durationSeconds };
+}
+
+export async function triggerAcw(agentId: string, durationSeconds?: number): Promise<void> {
+  await bnFetch<void>(SVC, '/v1/agents/acw', {
     method: 'POST',
-    body: JSON.stringify({ mode: 'whisper', targetAgentId, supervisorExt }),
+    body: JSON.stringify({ agentId, durationSeconds }),
   });
 }
 
-export async function supervisorBarge(
-  targetAgentId: string,
-  supervisorExt: string,
-): Promise<void> {
-  await bnFetch<void>(SVC, '/v1/supervise', {
+// ─── Callbacks ────────────────────────────────────────────────────────────────
+export interface CallbackRequest {
+  id: string;
+  phoneNumber: string;
+  name?: string;
+  reason?: string;
+  preferredTime?: string;
+  status: 'pending' | 'dialing' | 'completed' | 'failed';
+  createdAt: string;
+}
+
+export async function listCallbacks(): Promise<CallbackRequest[]> {
+  const res = await bnFetch<{ data: CallbackRequest[] }>('ivr', '/v1/callbacks');
+  return res.data ?? [];
+}
+
+export async function scheduleCallback(payload: Omit<CallbackRequest, 'id' | 'status' | 'createdAt'>): Promise<CallbackRequest> {
+  const res = await bnFetch<{ data: CallbackRequest }>('ivr', '/v1/callback', {
     method: 'POST',
-    body: JSON.stringify({ mode: 'barge', targetAgentId, supervisorExt }),
+    body: JSON.stringify(payload),
   });
+  return res.data;
 }

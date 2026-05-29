@@ -14,6 +14,7 @@ import {
 import { stopIncomingRingtone } from '@/lib/telephony/ringtone';
 import { presentIncomingCall, clearIncomingCallUi } from '@/lib/calling/incoming-call-ui';
 import { answerCall as apiAnswerCall, declineCall as apiDeclineCall } from '@/lib/api/calls';
+import { lookupContactAll } from '@/lib/api/connectors';
 import { toast } from 'sonner';
 import type { CallSession } from '@/types';
 
@@ -204,6 +205,18 @@ export function useJsSip() {
               'unknown';
             const callId = crypto.randomUUID();
             incomingIdRef.current = callId;
+
+            // Screen pop — async CRM lookup on caller ANI (D16)
+            if (callerNum && callerNum !== 'unknown') {
+              lookupContactAll(callerNum).then(contact => {
+                if (contact) {
+                  useCallsStore.getState().cacheContact(callerNum, contact.name ?? callerNum);
+                  window.dispatchEvent(
+                    new CustomEvent('blinkone:screen-pop', { detail: { phone: callerNum, contact } }),
+                  );
+                }
+              }).catch(() => undefined);
+            }
 
             const incomingSession = buildCallSession(
               {

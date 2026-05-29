@@ -1,4 +1,5 @@
 import express from 'express';
+import { randomUUID } from 'node:crypto';
 import { createLogger } from '../lib/logger.js';
 import { createStore } from '../lib/store.js';
 import { ok, fail, bearerAuth, requestId, errorHandler, healthRouter, gracefulShutdown } from '../lib/http.js';
@@ -315,6 +316,120 @@ app.post('/v1/bridge', auth, async (req, res) => {
 app.get('/v1/calls/:callId/state', auth, (req, res) => {
   const state = callState.get(req.params.callId);
   return state ? ok(res, state) : fail(res, 'NOT_FOUND', 'Call not found or ended', 404);
+});
+
+// ─── Time-of-Day Routing helpers (C50) ───────────────────────────────────────
+
+/** Gulf Standard Time offset: UTC+4 */
+const GULF_OFFSET_MS = 4 * 60 * 60 * 1000;
+
+/**
+ * Business hours: Sunday–Thursday, 08:00–18:00 Gulf time.
+ * Returns { open: boolean, nextOpen: ISO string }.
+ */
+function getBusinessHoursStatus() {
+  const nowUtc = Date.now();
+  const gulfMs = nowUtc + GULF_OFFSET_MS;
+  const gulf = new Date(gulfMs);
+  const dayOfWeek = gulf.getUTCDay(); // 0=Sun … 6=Sat
+  const hour = gulf.getUTCHours();
+  const minute = gulf.getUTCMinutes();
+  const minuteOfDay = hour * 60 + minute;
+
+  const isWorkDay = dayOfWeek >= 0 && dayOfWeek <= 4; // Sun=0 … Thu=4
+  const isWorkHours = minuteOfDay >= 8 * 60 && minuteOfDay < 18 * 60;
+  const open = isWorkDay && isWorkHours;
+
+  let nextOpen;
+  if (!open) {
+    // Calculate next Sunday–Thursday at 08:00 Gulf time
+    let daysAhead = 0;
+    let candidate = dayOfWeek;
+    do {
+      daysAhead++;
+      candidate = (candidate + 1) % 7;
+    } while (candidate > 4 && daysAhead < 7);
+    // If currently a work day but outside hours and before 08:00, next open is today at 08:00
+    if (isWorkDay && minuteOfDay < 8 * 60) daysAhead = 0;
+    const nextOpenGulf = new Date(gulfMs);
+    nextOpenGulf.setUTCDate(nextOpenGulf.getUTCDate() + daysAhead);
+    nextOpenGulf.setUTCHours(8, 0, 0, 0);
+    nextOpen = new Date(nextOpenGulf.getTime() - GULF_OFFSET_MS).toISOString();
+  } else {
+    nextOpen = null;
+  }
+
+  return { open, nextOpen };
+}
+
+/**
+ * GET /v1/schedule — Returns whether the contact centre is currently open.
+ */
+app.get('/v1/schedule', async (_req, res) => {
+  return ok(res, getBusinessHoursStatus());
+});
+
+/**
+ * POST /v1/inbound/check-hours — TwiML after-hours gate.
+ * Returns TwiML if outside business hours so callers can be informed and disconnected.
+ */
+app.post('/v1/inbound/check-hours', async (req, res) => {
+  const { open } = getBusinessHoursStatus();
+  if (open) {
+    res.type('text/xml');
+    return res.send('<Response/>');
+  }
+  res.type('text/xml');
+  return res.send(`<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say language="ar-SA">شكراً لاتصالك. مكتبنا مغلق حالياً. ساعات العمل من الأحد إلى الخميس، من الثامنة صباحاً حتى السادسة مساءً.</Say>
+  <Say>Thank you for calling. Our office is currently closed. Business hours are Sunday through Thursday, 8am to 6pm.</Say>
+  <Hangup/>
+</Response>`);
+});
+
+// ─── Callback Scheduling (C74) ────────────────────────────────────────────────
+
+/** In-memory callback queue — replace with DB persistence in production. */
+const callbackQueue = [];
+
+/**
+ * POST /v1/callback — Schedule a callback request.
+ */
+app.post('/v1/callback', auth, async (req, res) => {
+  const { phoneNumber, preferredTime, name, reason } = req.body ?? {};
+  if (!phoneNumber) return fail(res, 'VALIDATION_ERROR', 'phoneNumber required');
+  const tenantId = resolveTenantId(req);
+  const cb = {
+    id: randomUUID(),
+    tenantId,
+    phoneNumber,
+    preferredTime: preferredTime ?? null,
+    name: name ?? null,
+    reason: reason ?? null,
+    status: 'pending',
+    createdAt: new Date().toISOString(),
+  };
+  callbackQueue.push(cb);
+  return ok(res, cb, 201);
+});
+
+/**
+ * GET /v1/callbacks — List all pending/completed callbacks for the tenant.
+ */
+app.get('/v1/callbacks', auth, async (req, res) => {
+  const tenantId = resolveTenantId(req);
+  return ok(res, callbackQueue.filter((c) => String(c.tenantId) === String(tenantId)));
+});
+
+/**
+ * PATCH /v1/callbacks/:id — Update callback status or details (e.g. mark as completed).
+ */
+app.patch('/v1/callbacks/:id', auth, async (req, res) => {
+  const cb = callbackQueue.find((c) => c.id === req.params.id);
+  if (!cb) return fail(res, 'NOT_FOUND', 'Callback not found', 404);
+  Object.assign(cb, req.body ?? {});
+  return ok(res, cb);
 });
 
 app.use(errorHandler(log));

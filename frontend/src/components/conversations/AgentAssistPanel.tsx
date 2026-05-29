@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { ChevronDown, ChevronUp } from 'lucide-react';
-import { classifyConversation, queryRAG, suggestReply, summarizeConversation } from '@/lib/api/ai';
+import { CheckCircle2, ChevronDown, ChevronUp, Circle } from 'lucide-react';
+import { classifyConversation, getNextAction, queryRAG, suggestReply, summarizeConversation, type NextActionStep } from '@/lib/api/ai';
 import { useMessages } from '@/lib/hooks/useConversations';
 import { useSentiment } from '@/lib/hooks/useSentiment';
 import { useSentimentStore } from '@/lib/store/sentiment';
@@ -51,10 +51,12 @@ export function AgentAssistPanel({ conversationId, contactId }: Props) {
   const [suggestOpen, setSuggestOpen] = useState(true);
   const [ragOpen, setRagOpen] = useState(true);
   const [insightsOpen, setInsightsOpen] = useState(true);
+  const [scriptOpen, setScriptOpen] = useState(true);
   const [crmOpen, setCrmOpen] = useState(true);
   const [slaOpen, setSlaOpen] = useState(true);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [summaryText, setSummaryText] = useState('');
+  const [scriptSteps, setScriptSteps] = useState<NextActionStep[]>([]);
 
   const { data: suggestion, isLoading: suggestLoading } = useQuery({
     queryKey: ['suggestReply', conversationId, messages.length],
@@ -100,6 +102,21 @@ export function AgentAssistPanel({ conversationId, contactId }: Props) {
       }
     },
     enabled: !!lastInbound,
+  });
+
+  const { data: nextAction } = useQuery({
+    queryKey: ['next-action', conversationId],
+    queryFn: async () => {
+      const payload = toSuggestPayload(messages);
+      const result = await getNextAction({
+        conversationId: String(conversationId),
+        messages: payload,
+      });
+      setScriptSteps(result.steps);
+      return result;
+    },
+    enabled: !!conversationId && messages.length > 0,
+    staleTime: 60_000,
   });
 
   const { data: insights } = useQuery({
@@ -240,6 +257,43 @@ export function AgentAssistPanel({ conversationId, contactId }: Props) {
         >
           {summarize.isPending ? 'Summarizing…' : 'Summarize'}
         </Button>
+      </Section>
+
+      <Section title="Agent Script" open={scriptOpen} onToggle={() => setScriptOpen(v => !v)}>
+        {nextAction?.script && (
+          <p className="text-xs text-muted-foreground italic mb-2 border-s-2 border-brand-primary ps-2">
+            {nextAction.script}
+          </p>
+        )}
+        {nextAction?.escalate && (
+          <p className="text-xs text-amber-600 font-medium mb-2">⚠ Supervisor escalation recommended</p>
+        )}
+        <ol className="space-y-1.5">
+          {scriptSteps.map((step, i) => (
+            <li key={step.id} className="flex items-start gap-2">
+              <button
+                type="button"
+                onClick={() =>
+                  setScriptSteps(prev =>
+                    prev.map(s => s.id === step.id ? { ...s, done: !s.done } : s),
+                  )
+                }
+                className="mt-0.5 shrink-0 text-muted-foreground hover:text-brand-primary transition-colors"
+              >
+                {step.done
+                  ? <CheckCircle2 className="w-4 h-4 text-green-500" />
+                  : <Circle className="w-4 h-4" />}
+              </button>
+              <div className={step.done ? 'opacity-50' : ''}>
+                <p className="text-xs font-medium">{i + 1}. {step.label}</p>
+                <p className="text-xs text-muted-foreground">{step.description}</p>
+              </div>
+            </li>
+          ))}
+          {!scriptSteps.length && (
+            <li className="text-xs text-muted-foreground">Loading guidance…</li>
+          )}
+        </ol>
       </Section>
 
       <Section title="SLA" open={slaOpen} onToggle={() => setSlaOpen(v => !v)}>

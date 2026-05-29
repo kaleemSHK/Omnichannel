@@ -33,6 +33,7 @@ function mapAgent(agent: RoutingAgent) {
     busy: 'busy',
     break: 'busy',
     offline: 'offline',
+    acw: 'busy',
   };
   return {
     id: agent.id,

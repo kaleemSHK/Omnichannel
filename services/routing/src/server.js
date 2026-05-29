@@ -17,7 +17,7 @@ import { completeCall } from '../lib/route-complete.js';
 import { getRealtimeDashboard } from '../lib/dashboards.js';
 import { getAgentReports } from '../lib/reports.js';
 import { superviseSetMode, listSuperviseSessions } from '../lib/supervise.js';
-import { getQueueStats, listAgentStates } from '../lib/redis-state.js';
+import { getQueueStats, listAgentStates, getAgentState, setAgentState } from '../lib/redis-state.js';
 import { startQueueWorker } from '../lib/queue-worker.js';
 import { attachRealtimeWs } from '../lib/realtime-ws.js';
 
@@ -45,7 +45,7 @@ function telephonyWrite(req, res, next) {
   return telephonyFeature(req, res, next);
 }
 
-const STATUSES = ['available', 'busy', 'away', 'offline'];
+const STATUSES = ['available', 'busy', 'away', 'offline', 'acw'];
 
 function useDbRedis() {
   return dbEnabled() && redisEnabled();
@@ -390,6 +390,51 @@ app.delete('/v1/agents/:agentId/skills/:skill', auth, telephonyWrite, async (req
   } catch (e) {
     return fail(res, 'INTERNAL_ERROR', e.message, 500);
   }
+});
+
+// ─── ACW (After-Call-Work) state management (C65) ────────────────────────────
+
+/** In-memory ACW duration config per tenant (replace with DB in production). */
+const acwConfigs = new Map(); // tenantId -> { durationSeconds }
+
+/**
+ * POST /v1/agents/acw — set agent to ACW state for N seconds, then auto-return to available.
+ */
+app.post('/v1/agents/acw', auth, async (req, res) => {
+  const { agentId, durationSeconds = 60 } = req.body ?? {};
+  if (!agentId) return fail(res, 'VALIDATION_ERROR', 'agentId required');
+  const tenantId = resolveTenantId(req);
+  if (!redisEnabled()) return fail(res, 'NOT_CONFIGURED', 'Redis required for ACW state', 501);
+  try {
+    await setAgentState(tenantId, agentId, { status: 'acw' });
+    const dur = Math.max(0, Math.min(300, Number(durationSeconds)));
+    setTimeout(async () => {
+      try {
+        const current = await getAgentState(tenantId, agentId);
+        if (current?.status === 'acw') await setAgentState(tenantId, agentId, { status: 'available' });
+      } catch {
+        /* non-fatal — agent may have gone offline */
+      }
+    }, dur * 1000);
+    return ok(res, { agentId, state: 'acw', durationSeconds: dur });
+  } catch (e) {
+    if (e.code === 'VALIDATION_ERROR') return fail(res, 'VALIDATION_ERROR', e.message, 400);
+    return fail(res, 'INTERNAL_ERROR', e.message, 500);
+  }
+});
+
+/** GET /v1/agents/acw-config — retrieve ACW auto-clear duration for tenant. */
+app.get('/v1/agents/acw-config', auth, async (req, res) => {
+  const tenantId = resolveTenantId(req);
+  return ok(res, acwConfigs.get(String(tenantId)) ?? { durationSeconds: 60 });
+});
+
+/** PUT /v1/agents/acw-config — set ACW auto-clear duration (0–300 s) for tenant. */
+app.put('/v1/agents/acw-config', auth, async (req, res) => {
+  const tenantId = resolveTenantId(req);
+  const { durationSeconds = 60 } = req.body ?? {};
+  acwConfigs.set(String(tenantId), { durationSeconds: Math.max(0, Math.min(300, Number(durationSeconds))) });
+  return ok(res, acwConfigs.get(String(tenantId)));
 });
 
 /** PATCH /v1/queues/:id/skill-weights — update best_match weight multipliers */

@@ -31,7 +31,7 @@ export function queueRedisKey(tenantId, queueKey) {
   return tenantRedisKey(tenantId, 'routing', 'queue', queueKey);
 }
 
-const STATUSES = new Set(['available', 'busy', 'away', 'offline']);
+const STATUSES = new Set(['available', 'busy', 'away', 'offline', 'acw']);
 
 /**
  * @param {string} tenantId

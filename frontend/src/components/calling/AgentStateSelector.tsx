@@ -12,6 +12,7 @@ const STATE_COLORS: Record<AgentState, string> = {
   busy: 'bg-amber-500',
   break: 'bg-pink-500',
   offline: 'bg-gray-400',
+  acw: 'bg-purple-500',
 };
 
 export function AgentStateSelector() {

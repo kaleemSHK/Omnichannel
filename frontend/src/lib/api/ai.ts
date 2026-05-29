@@ -295,6 +295,46 @@ export async function resetBotRoutingRules(): Promise<BotRoutingConfig> {
   return res.data;
 }
 
+export interface NextActionStep {
+  id: string;
+  label: string;
+  description: string;
+  done: boolean;
+}
+
+export interface NextActionResult {
+  steps: NextActionStep[];
+  script: string;
+  escalate: boolean;
+}
+
+export async function getNextAction(params: {
+  conversationId: string;
+  messages: { role: 'user' | 'assistant'; content: string }[];
+  category?: string;
+  intent?: string;
+}): Promise<NextActionResult> {
+  try {
+    const res = await bnFetch<{ data: NextActionResult }>(SVC, '/v1/next-action', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    });
+    return res.data;
+  } catch {
+    return {
+      steps: [
+        { id: '1', label: 'Greet customer', description: 'Introduce yourself and confirm identity', done: false },
+        { id: '2', label: 'Verify account', description: 'Ask for account number or email', done: false },
+        { id: '3', label: 'Understand issue', description: 'Listen and paraphrase the concern', done: false },
+        { id: '4', label: 'Resolve or escalate', description: 'Apply solution or escalate to tier 2', done: false },
+        { id: '5', label: 'Close & survey', description: 'Confirm resolution and offer survey', done: false },
+      ],
+      script: '',
+      escalate: false,
+    };
+  }
+}
+
 export async function getSentiment(params: {
   text: string;
   language?: 'ar' | 'en';

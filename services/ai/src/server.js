@@ -451,6 +451,64 @@ app.post('/v1/bot-routing/evaluate', auth, async (req, res) => {
   }
 });
 
+// ─── AI Next Best Action (D21) ───────────────────────────────────────────────
+
+function defaultSteps(category) {
+  const base = [
+    { id: '1', label: 'Greet customer', description: 'Introduce yourself and confirm customer identity', done: false },
+    { id: '2', label: 'Verify account', description: 'Ask for account number or email to pull up record', done: false },
+    { id: '3', label: 'Understand issue', description: "Listen and paraphrase the customer's concern", done: false },
+    { id: '4', label: 'Resolve or escalate', description: 'Apply solution from knowledge base or escalate to tier 2', done: false },
+    { id: '5', label: 'Close & survey', description: 'Confirm resolution and offer satisfaction survey', done: false },
+  ];
+  return base;
+}
+
+/**
+ * POST /v1/next-action
+ * Agent assist: given recent conversation messages, returns next best action steps,
+ * a suggested opening script line, and an escalation flag.
+ */
+app.post('/v1/next-action', auth, agentAssist, async (req, res) => {
+  const { conversationId, messages = [], category, intent } = req.body ?? {};
+  const tenantId = resolveTenantId(req);
+
+  const context = messages.slice(-5).map((m) => `${m.role}: ${m.content}`).join('\n');
+  const prompt = `You are a contact center agent assist AI. Based on this conversation, provide the next best action steps.
+Category: ${category ?? 'general'}
+Intent: ${intent ?? 'unknown'}
+Recent messages:
+${context}
+
+Return a JSON object with:
+- steps: array of 3-5 action steps (each with: id, label, description, done: false)
+- script: opening line suggestion
+- escalate: boolean (true if supervisor needed)`;
+
+  try {
+    const result = await chatCompletions(tenantId, {
+      messages: [{ role: 'user', content: prompt }],
+      model: process.env.OPENAI_FAST_MODEL || 'gpt-4o-mini',
+      maxTokens: 400,
+    });
+    const raw = JSON.parse(result?.choices?.[0]?.message?.content ?? result?.content ?? '{}');
+    return ok(res, {
+      conversationId: conversationId ?? null,
+      steps: Array.isArray(raw.steps) && raw.steps.length ? raw.steps : defaultSteps(category),
+      script: raw.script ?? '',
+      escalate: raw.escalate ?? false,
+    });
+  } catch {
+    // Graceful fallback — LLM unavailable or parse error
+    return ok(res, {
+      conversationId: conversationId ?? null,
+      steps: defaultSteps(category),
+      script: '',
+      escalate: false,
+    });
+  }
+});
+
 // Chatwoot events (integration fan-in stub)
 app.post('/v1/events', async (req, res) => {
   const tenantId = resolveTenantId(req);

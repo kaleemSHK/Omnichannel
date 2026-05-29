@@ -136,7 +136,7 @@ export interface CDRFilters {
 }
 
 // ─── Routing sidecar ───────────────────────────────────────────────────────────
-export type AgentState = 'available' | 'busy' | 'break' | 'offline';
+export type AgentState = 'available' | 'busy' | 'break' | 'offline' | 'acw';
 
 /** Sprint 1 G01: Proficiency-weighted skill entry */
 export interface AgentSkill {
