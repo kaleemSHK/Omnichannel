@@ -200,6 +200,12 @@ app.get('/v1/agents', auth, async (req, res) => {
   return ok(res, agents);
 });
 
+// Static /v1/agents/* routes must be declared BEFORE the dynamic :agentId route
+app.get('/v1/agents/acw-config', auth, async (req, res) => {
+  const tenantId = resolveTenantId(req);
+  return ok(res, acwConfigs.get(String(tenantId)) ?? { durationSeconds: 60 });
+});
+
 app.get('/v1/agents/:agentId', auth, async (req, res) => {
   const tenantId = resolveTenantId(req);
   if (useDbRedis()) {
