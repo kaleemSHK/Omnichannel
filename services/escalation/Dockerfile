@@ -3,6 +3,7 @@ WORKDIR /app
 COPY escalation/package.json .
 RUN npm install --production
 COPY _shared/lib ./_shared/lib/
+RUN ln -s /app/_shared /_shared
 COPY escalation/lib/ ./lib/
 COPY escalation/db/ ./db/
 COPY escalation/src/ ./src/

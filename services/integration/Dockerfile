@@ -3,6 +3,7 @@ WORKDIR /app
 COPY integration/package.json .
 RUN npm install --production
 COPY _shared/lib ./_shared/lib/
+RUN ln -s /app/_shared /_shared
 COPY integration/lib/ ./lib/
 COPY integration/db/ ./db/
 COPY integration/src/ ./src/

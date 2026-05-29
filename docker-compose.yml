@@ -174,7 +174,7 @@ services:
       - "127.0.0.1:8787:8787"
 
   platform:
-    build: { context: ./services/platform }
+    build: { context: ./services, dockerfile: platform/Dockerfile }
     restart: unless-stopped
     environment:
       PORT:     "8790"
@@ -216,7 +216,7 @@ services:
     expose: ["8802"]
 
   tickets:
-    build: { context: ./services/tickets }
+    build: { context: ./services, dockerfile: tickets/Dockerfile }
     restart: unless-stopped
     environment:
       PORT:                  "8791"
@@ -508,7 +508,7 @@ services:
     expose: ["8803"]
 
   recording:
-    build: { context: ./services/recording }
+    build: { context: ./services, dockerfile: recording/Dockerfile }
     restart: unless-stopped
     environment:
       PORT:              "8799"
