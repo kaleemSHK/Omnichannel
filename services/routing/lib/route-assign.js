@@ -1,7 +1,7 @@
 import * as queueRepo from './queue-repo.js';
 import * as agentRepo from './agent-repo.js';
 import { selectAgent } from './selection.js';
-import { dequeueCall, setAgentState, peekNextCall } from './redis-state.js';
+import { dequeueCall, setAgentState, peekNextCall, claimAgent, releaseAgentClaim } from './redis-state.js';
 import { setCallMeta, getCallMeta } from './call-meta.js';
 import { notifyBridge } from './ari-notify.js';
 
@@ -42,11 +42,32 @@ export async function assignCall(tenantId, { callId, queueKey, agentId, queueId 
     agent = picked;
   }
 
-  await setAgentState(tenantId, agent.agentId, {
-    status: 'busy',
-    currentCallId: cid,
-    occupancy: (agent.occupancy ?? 0) + 1,
-  });
+  // Atomically claim the agent with a Redis NX lock to prevent two concurrent
+  // route requests from assigning the same agent (TOCTOU race condition).
+  const claimed = await claimAgent(tenantId, agent.agentId, cid);
+  if (!claimed) {
+    // Another request grabbed this agent between selectAgent() and here.
+    const err = new Error('Agent not available');
+    err.code = 'AGENT_UNAVAILABLE';
+    throw err;
+  }
+
+  try {
+    await setAgentState(tenantId, agent.agentId, {
+      status: 'busy',
+      currentCallId: cid,
+      occupancy: (agent.occupancy ?? 0) + 1,
+    });
+  } catch (e) {
+    // State update failed — release the lock so the agent isn't stranded.
+    await releaseAgentClaim(tenantId, agent.agentId);
+    throw e;
+  }
+
+  // Lock is intentionally kept until setAgentState persists 'busy' to Redis,
+  // after which the agent state itself prevents re-selection.  Release it now.
+  await releaseAgentClaim(tenantId, agent.agentId);
+
   await dequeueCall(tenantId, queue.queueKey, cid);
 
   const sessionId = `cs-${tenantId}-${cid}`;

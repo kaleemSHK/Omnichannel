@@ -74,6 +74,21 @@ function isTwilioVoiceWebhook(path) {
 
 const JWT_SECRET = (process.env.JWT_SECRET || '').trim();
 
+// ─── Fail-fast: critical secrets must be present at startup ───────────────────
+if (!JWT_SECRET) {
+  // eslint-disable-next-line no-console
+  console.error('[FATAL] JWT_SECRET is not set. Gateway cannot start without it.');
+  process.exit(1);
+}
+
+// ─── CORS allowed origins (locked-down for production) ────────────────────────
+const CORS_ORIGINS = new Set(
+  (process.env.CORS_ORIGINS || process.env.FRONTEND_URL || 'http://localhost')
+    .split(',')
+    .map((o) => o.trim().replace(/\/$/, ''))
+    .filter(Boolean),
+);
+
 /** Paths where browser sends gateway JWT; upstream expects service TOKEN + tenant headers. */
 const JWT_PROXY_PREFIXES = [
   ['/api/calls', 'calls'],
@@ -93,6 +108,9 @@ function signTenantHeaders(payload) {
   const tenantId = String(payload.tenant_id ?? '');
   const userId = String(payload.sub ?? '');
   const roles = Array.isArray(payload.roles) ? payload.roles.join(',') : '';
+  // JWT_SECRET is validated non-empty at startup; guard here prevents silent
+  // unsigned header bypass if called in an unexpected code path.
+  if (!JWT_SECRET) throw new Error('JWT_SECRET not configured');
   const sig = createHmac('sha256', JWT_SECRET)
     .update(`${tenantId}:${userId}:${roles}`)
     .digest('hex');
@@ -167,10 +185,6 @@ function authenticateGatewayJwt(req, res, next) {
     return next();
   }
 
-  if (!JWT_SECRET) {
-    return res.status(500).json({ error: { code: 'CONFIG_ERROR', message: 'JWT_SECRET not configured' } });
-  }
-
   try {
     const payload = jwt.verify(bearer, JWT_SECRET);
     const headerTenant = req.headers['x-blinkone-tenant-id'];
@@ -185,7 +199,13 @@ function authenticateGatewayJwt(req, res, next) {
       return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Cross-tenant access denied' } });
     }
     req.gatewayAuth = { payload, serviceToken };
-    const signed = signTenantHeaders(payload);
+    let signed;
+    try {
+      signed = signTenantHeaders(payload);
+    } catch (sigErr) {
+      log.error({ err: sigErr.message }, 'signTenantHeaders failed');
+      return res.status(500).json({ error: { code: 'CONFIG_ERROR', message: 'Gateway misconfigured' } });
+    }
     for (const [k, v] of Object.entries(signed)) {
       req.headers[k] = v;
     }
@@ -202,7 +222,25 @@ const WEBHOOK_SECRET = (process.env.CHATWOOT_WEBHOOK_SECRET || '').trim();
 // ─── App ──────────────────────────────────────────────────────────────────────
 const app = express();
 app.disable('x-powered-by');
+// Trust the single nginx reverse-proxy in front of us so that
+// req.ip and X-Forwarded-For reflect the real client address.
+app.set('trust proxy', 1);
 mountMetrics(app, 'gateway');
+
+// ─── CORS (locked to CORS_ORIGINS) ───────────────────────────────────────────
+app.use((req, res, next) => {
+  const origin = req.headers.origin || '';
+  if (origin && CORS_ORIGINS.has(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Authorization,Content-Type,X-Request-Id,api_access_token,api-access-token,x-api-access-token,X-Blinkone-Tenant-Id');
+    res.setHeader('Access-Control-Max-Age', '86400');
+  }
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
 
 // Correlation ID + request logger
 app.use((req, res, next) => {
@@ -221,6 +259,7 @@ app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'gateway', u
 function proxy(target, prefix, overrideToken) {
   return createProxyMiddleware({
     target,
+    changeOrigin: true,
     pathRewrite: (p) => p.replace(new RegExp(`^${prefix}`), '') || '/',
     on: {
       proxyReq: (pr, req) => {
@@ -248,6 +287,7 @@ function proxy(target, prefix, overrideToken) {
 function passthroughProxy(target, prefix) {
   return createProxyMiddleware({
     target,
+    changeOrigin: true,
     pathRewrite: (path) => prefix + path,
     on: {
       proxyReq: (pr, req) => { pr.setHeader('X-Request-Id', req.requestId || ''); },
@@ -310,10 +350,7 @@ app.post('/api/auth/token', authRateLimitMiddleware(), express.json(), async (re
   if (!cwToken) {
     return res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'api_access_token header required' } });
   }
-  const secret = (process.env.JWT_SECRET || '').trim();
-  if (!secret) {
-    return res.status(500).json({ error: { code: 'CONFIG_ERROR', message: 'JWT_SECRET not configured' } });
-  }
+  // JWT_SECRET is guaranteed non-empty (fail-fast at startup)
 
   try {
     const profileRes = await fetch(`${U.chatwoot}/api/v1/profile`, {
@@ -359,7 +396,7 @@ app.post('/api/auth/token', authRateLimitMiddleware(), express.json(), async (re
                 cw_token:      cwToken,
                 roles,
               },
-              secret,
+              JWT_SECRET,
               { expiresIn: 5 * 60, issuer: 'blinkone-gateway' },
             );
             return res.status(200).json({ mfa_required: true, mfa_token: challengeToken });
@@ -378,7 +415,7 @@ app.post('/api/auth/token', authRateLimitMiddleware(), express.json(), async (re
         roles,
         account_id: accountId,
       },
-      secret,
+      JWT_SECRET,
       { expiresIn, issuer: 'blinkone-gateway' },
     );
 
@@ -405,13 +442,10 @@ app.post('/api/auth/mfa', authRateLimitMiddleware(), express.json(), async (req,
   if (!mfaToken || !String(code ?? '').trim()) {
     return res.status(400).json({ error: { code: 'VALIDATION_ERROR', message: 'mfa_token and code required' } });
   }
-  const secret = (process.env.JWT_SECRET || '').trim();
-  if (!secret) {
-    return res.status(500).json({ error: { code: 'CONFIG_ERROR', message: 'JWT_SECRET not configured' } });
-  }
+  // JWT_SECRET is guaranteed non-empty (fail-fast at startup)
   let challenge;
   try {
-    challenge = jwt.verify(mfaToken, secret, { issuer: 'blinkone-gateway' });
+    challenge = jwt.verify(mfaToken, JWT_SECRET, { issuer: 'blinkone-gateway' });
   } catch {
     return res.status(401).json({ error: { code: 'INVALID_TOKEN', message: 'Invalid or expired MFA challenge token' } });
   }
@@ -448,7 +482,7 @@ app.post('/api/auth/mfa', authRateLimitMiddleware(), express.json(), async (req,
   const expiresIn = 12 * 60 * 60;
   const token = jwt.sign(
     { sub: String(userId), tenant_id: tenantId, roles, account_id: accountId },
-    secret,
+    JWT_SECRET,
     { expiresIn, issuer: 'blinkone-gateway' },
   );
 
@@ -644,7 +678,7 @@ app.post('/api/webhooks/email', (req, res) => {
     })
     .catch((e) => {
       log.error({ err: e.message }, 'email webhook forward failed');
-      res.status(502).json({ error: { code: 'UPSTREAM_ERROR', message: e.message } });
+      res.status(502).json({ error: { code: 'BAD_GATEWAY', message: 'Email webhook upstream unavailable' } });
     });
 });
 

@@ -133,8 +133,13 @@ function rateLimitMiddleware(group = 'default') {
  */
 function authRateLimitMiddleware() {
   return function authRateLimitHandler(req, res, next) {
+    // Use the last trusted IP from X-Forwarded-For (set by nginx) to avoid
+    // spoofing: an attacker can prepend arbitrary IPs, but the rightmost hop
+    // added by our nginx is trustworthy. Fall back to socket address when nginx
+    // is not in the path (direct connections in dev).
+    const fwdFor = req.headers['x-forwarded-for'];
     const ip =
-      req.headers['x-forwarded-for']?.split(',')[0]?.trim() ||
+      (fwdFor ? fwdFor.split(',').map((s) => s.trim()).filter(Boolean).pop() : null) ||
       req.socket?.remoteAddress ||
       'unknown';
 

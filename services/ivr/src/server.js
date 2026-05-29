@@ -459,9 +459,9 @@ app.get('/v1/surveys', auth, async (req, res) => {
 });
 
 app.post('/v1/surveys/:id/respond', async (req, res) => {
-  // Public — called from IVR DTMF or chat link
+  // Public — called from IVR DTMF or chat link (tenantId from header or query)
   const { score, comment, conversationId } = req.body ?? {};
-  const tenantId = req.headers['x-blinkone-tenant-id'] ?? '1';
+  const tenantId = req.headers['x-blinkone-tenant-id'] ?? req.query.tenant ?? req.body?.tenantId ?? 'default';
   const response = {
     id: randomUUID(),
     surveyId: req.params.id,
@@ -514,7 +514,7 @@ app.post('/v1/ivr/survey-record', async (req, res) => {
   const scoreMap = { '1': 5, '2': 4, '3': 3, '4': 2 };
   const score = scoreMap[digit] ?? null;
   if (score && surveyId) {
-    const tenantId = '1';
+    const tenantId = req.headers['x-blinkone-tenant-id'] ?? req.query.tenant ?? 'default';
     if (!surveyResponses.has(tenantId)) surveyResponses.set(tenantId, []);
     surveyResponses.get(tenantId).push({
       id: randomUUID(), surveyId, tenantId,

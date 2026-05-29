@@ -36,13 +36,43 @@ async function dailyCounters(tenantId) {
   }
 }
 
+const EMPTY_DASHBOARD = (tenantId) => ({
+  agents: [],
+  queues: [],
+  handledToday: 0,
+  missedToday: 0,
+  totalToday: 0,
+  updatedAt: new Date().toISOString(),
+  tenantId,
+  totalWaiting: 0,
+});
+
 export async function getRealtimeDashboard(tenantId) {
-  const queues = await queueRepo.listQueues(tenantId);
-  const agents = await agentRepo.listAgents(tenantId);
+  let queues = [];
+  let agents = [];
+
+  try {
+    queues = await queueRepo.listQueues(tenantId);
+  } catch {
+    // DB unavailable — return safe empty dashboard instead of throwing
+    return EMPTY_DASHBOARD(tenantId);
+  }
+
+  try {
+    agents = await agentRepo.listAgents(tenantId);
+  } catch {
+    agents = [];
+  }
+
   const queueStats = [];
 
   for (const q of queues) {
-    const live = await getQueueStats(tenantId, q.queueKey);
+    let live = { waiting: 0, calls: [] };
+    try {
+      live = await getQueueStats(tenantId, q.queueKey);
+    } catch {
+      // Redis unavailable — treat queue as empty
+    }
     const busyOnQueue = agents.filter(
       (a) =>
         a.status === 'busy' &&

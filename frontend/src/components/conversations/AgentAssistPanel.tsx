@@ -110,12 +110,16 @@ export function AgentAssistPanel({ conversationId, contactId }: Props) {
     queryKey: ['next-action', conversationId],
     queryFn: async () => {
       const payload = toSuggestPayload(messages);
-      const result = await getNextAction({
-        conversationId: String(conversationId),
-        messages: payload,
-      });
-      setScriptSteps(result.steps);
-      return result;
+      try {
+        const result = await getNextAction({
+          conversationId: String(conversationId),
+          messages: payload,
+        });
+        setScriptSteps(result.steps);
+        return result;
+      } catch {
+        return null;
+      }
     },
     enabled: !!conversationId && messages.length > 0,
     staleTime: 60_000,

@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, Play, Pause, Megaphone } from 'lucide-react';
+import { toast } from 'sonner';
 import { bnFetch } from '@/lib/api/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -60,16 +61,19 @@ export function CampaignPanel() {
   const create = useMutation({
     mutationFn: () => createCampaign(form),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['campaigns'] }); setShowForm(false); setForm({ name: '', type: 'sms', messageTemplate: '' }); },
+    onError: () => toast.error('Failed to create campaign. Please try again.'),
   });
 
   const start = useMutation({
     mutationFn: startCampaign,
     onSuccess: () => qc.invalidateQueries({ queryKey: ['campaigns'] }),
+    onError: () => toast.error('Failed to start campaign.'),
   });
 
   const pause = useMutation({
     mutationFn: pauseCampaign,
     onSuccess: () => qc.invalidateQueries({ queryKey: ['campaigns'] }),
+    onError: () => toast.error('Failed to pause campaign.'),
   });
 
   return (

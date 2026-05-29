@@ -100,7 +100,9 @@ export function useRealtimeWallboard() {
       if (destroyed) return;
 
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const url = `${protocol}//${window.location.host}/ws/routing/v1/realtime?tenant_id=${encodeURIComponent(tenantId)}`;
+      const { tokens } = useAuthStore.getState();
+      const token = tokens?.gatewayJwt ?? '';
+      const url = `${protocol}//${window.location.host}/ws/routing/v1/realtime?tenant_id=${encodeURIComponent(tenantId)}&token=${encodeURIComponent(token)}`;
       const ws = new WebSocket(url);
       wsRef.current = ws;
 

@@ -36,6 +36,8 @@ export function useSentiment(messages: CWMessage[]) {
           timestamp: new Date().toISOString(),
         },
       ]);
+    }).catch(() => {
+      // getSentiment failure is non-fatal — keep the last known sentiment
     });
   }, [messages]);
 

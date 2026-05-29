@@ -153,14 +153,18 @@ function legacyPolicies(req, res) {
 async function legacyCreatePolicy(req, res) {
   const { name, firstResponseMinutes, resolveMinutes } = req.body ?? {};
   if (!name?.trim()) return fail(res, 'VALIDATION_ERROR', 'name required');
+  const frMin = firstResponseMinutes != null ? Number(firstResponseMinutes) : null;
+  const resMin = resolveMinutes != null ? Number(resolveMinutes) : null;
+  if (frMin !== null && !Number.isFinite(frMin)) return fail(res, 'VALIDATION_ERROR', 'firstResponseMinutes must be a number');
+  if (resMin !== null && !Number.isFinite(resMin)) return fail(res, 'VALIDATION_ERROR', 'resolveMinutes must be a number');
   ok(
     res,
     await legacyStore.withStore((s) => {
       const p = {
         id: s.seq.nextPolicy++,
         name: name.trim(),
-        firstResponseMinutes: Number(firstResponseMinutes),
-        resolveMinutes: Number(resolveMinutes),
+        firstResponseMinutes: frMin,
+        resolveMinutes: resMin,
         createdAt: new Date().toISOString(),
       };
       s.policies.push(p);

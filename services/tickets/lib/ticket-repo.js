@@ -102,6 +102,8 @@ export async function createTicket(body) {
   return getTicket(ticket.id);
 }
 
+const STATUS_LIST = ['open', 'pending', 'in-progress', 'resolved'];
+
 export async function updateTicket(id, body) {
   const p = getPool();
   const existing = await getTicket(id);
@@ -113,7 +115,19 @@ export async function updateTicket(id, body) {
     sets.push(`${col} = $${params.length}`);
   };
   if (body.title?.trim()) add('title', body.title.trim().slice(0, 500));
-  if (body.status) add('status', body.status);
+  if (body.status) {
+    if (!STATUS_LIST.includes(body.status)) {
+      const err = new Error(`Invalid status: ${body.status}`);
+      err.code = 'VALIDATION_ERROR';
+      throw err;
+    }
+    if (existing.status === 'resolved' && body.status === 'open') {
+      const err = new Error('Cannot reopen resolved ticket — use status pending or in-progress');
+      err.code = 'INVALID_TRANSITION';
+      throw err;
+    }
+    add('status', body.status);
+  }
   if (body.priority) add('priority', body.priority);
   if (body.department) add('department', body.department.slice(0, 120));
   if (body.assignedTo) add('assigned_to', body.assignedTo.slice(0, 200));

@@ -109,7 +109,11 @@ app.get('/v1/tickets', async (req, res) => {
   const s = store.load();
   let list = s.tickets.filter((t) => t.chatwootAccountId === accountId);
   if (req.query.status) list = list.filter((t) => t.status === req.query.status);
-  ok(res, list.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt)).map((t) => mapTicket(t, s)));
+  const limit = Math.min(Math.max(1, Number(req.query.limit) || 100), 500);
+  const offset = Math.max(0, Number(req.query.offset) || 0);
+  const sorted = list.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+  const page = sorted.slice(offset, offset + limit);
+  ok(res, page.map((t) => mapTicket(t, s)));
 });
 
 app.get('/v1/tickets/:id', async (req, res) => {
@@ -218,6 +222,8 @@ app.patch('/v1/tickets/:id', auth, async (req, res) => {
       }
       return ok(res, t);
     } catch (e) {
+      if (e.code === 'VALIDATION_ERROR') return fail(res, 'VALIDATION_ERROR', e.message, 400);
+      if (e.code === 'INVALID_TRANSITION') return fail(res, 'INVALID_TRANSITION', e.message, 422);
       log.error({ err: e.message }, 'patch ticket');
       return fail(res, 'INTERNAL_ERROR', 'Failed', 500);
     }
@@ -228,7 +234,10 @@ app.patch('/v1/tickets/:id', auth, async (req, res) => {
       if (!t) throw Object.assign(new Error(), { code: 404 });
       const { title, status, priority, department, assignedTo, customFields } = req.body ?? {};
       if (title?.trim()) t.title = title.trim().slice(0, 500);
-      if (status) t.status = norm(status, STATUS, t.status);
+      if (status) {
+        if (t.status === 'resolved' && status === 'open') throw Object.assign(new Error('Cannot reopen resolved ticket — use status pending or in-progress'), { code: 'INVALID_TRANSITION' });
+        t.status = norm(status, STATUS, t.status);
+      }
       if (priority) t.priority = norm(priority, PRIORITY, t.priority);
       if (department) t.department = department.slice(0, 120);
       if (assignedTo) t.assignedTo = assignedTo.slice(0, 200);
@@ -247,6 +256,7 @@ app.patch('/v1/tickets/:id', auth, async (req, res) => {
     ok(res, mapTicket(t, s));
   } catch (e) {
     if (e.code === 404) return fail(res, 'NOT_FOUND', 'Ticket not found', 404);
+    if (e.code === 'INVALID_TRANSITION') return fail(res, 'INVALID_TRANSITION', e.message, 422);
     log.error(e);
     fail(res, 'INTERNAL_ERROR', 'Failed', 500);
   }
@@ -461,12 +471,20 @@ app.get('/v1/fields', auth, async (req, res) => {
   }
 });
 
+const FIELD_TYPES = ['text', 'number', 'boolean', 'select', 'date'];
+
 app.post('/v1/fields', auth, async (req, res) => {
   if (!dbEnabled()) return fail(res, 'NOT_CONFIGURED', 'Postgres not configured', 503);
   const tenantId = resolveTenantId(req);
   const { field_key, label, field_type, options, required, sort_order } = req.body ?? {};
   if (!field_key || !label || !field_type) {
     return fail(res, 'VALIDATION_ERROR', 'field_key, label, and field_type are required');
+  }
+  if (!FIELD_TYPES.includes(String(field_type))) {
+    return fail(res, 'VALIDATION_ERROR', `field_type must be one of: ${FIELD_TYPES.join(', ')}`);
+  }
+  if (field_type === 'select' && (!Array.isArray(options) || options.length === 0)) {
+    return fail(res, 'VALIDATION_ERROR', 'options (non-empty array) required for select fields');
   }
   try {
     const row = await fieldDefRepo.createFieldDefinition(tenantId, {
@@ -647,15 +665,21 @@ app.post('/v1/tickets/:id/reply-email', auth, async (req, res) => {
 // Cross-channel event aggregation — replace with DB persistence in production
 const journeyEvents = new Map(); // `${tenantId}:${contactId}` -> events[]
 
+const JOURNEY_CHANNELS = ['chat', 'email', 'voice', 'sms', 'whatsapp', 'api', 'unknown'];
+
 app.post('/v1/journey/event', auth, async (req, res) => {
   const tenantId = String(resolveTenantId(req));
   const { contactId, channel, eventType, summary, metadata } = req.body ?? {};
   if (!contactId || !eventType) return fail(res, 'VALIDATION_ERROR', 'contactId and eventType required');
+  const normalizedChannel = (channel ?? 'unknown').toLowerCase();
+  if (!JOURNEY_CHANNELS.includes(normalizedChannel)) {
+    return fail(res, 'VALIDATION_ERROR', `channel must be one of: ${JOURNEY_CHANNELS.join(', ')}`);
+  }
   const key = `${tenantId}:${contactId}`;
   if (!journeyEvents.has(key)) journeyEvents.set(key, []);
   const event = {
     id: randomUUID(),
-    contactId, channel: channel ?? 'unknown', eventType, summary: summary ?? '',
+    contactId, channel: normalizedChannel, eventType, summary: summary ?? '',
     metadata: metadata ?? {}, timestamp: new Date().toISOString(),
   };
   journeyEvents.get(key).push(event);

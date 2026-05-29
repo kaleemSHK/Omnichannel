@@ -206,6 +206,17 @@ app.get('/v1/agents/acw-config', auth, async (req, res) => {
   return ok(res, acwConfigs.get(String(tenantId)) ?? { durationSeconds: 60 });
 });
 
+/** GET /v1/agents/skills — all agents with proficiency skills for tenant */
+app.get('/v1/agents/skills', auth, async (req, res) => {
+  if (!dbEnabled()) return fail(res, 'NOT_CONFIGURED', 'Postgres required', 501);
+  try {
+    return ok(res, await listAgentsWithSkills(resolveTenantId(req)));
+  } catch (e) {
+    log.error({ err: e.message }, 'list agents with skills');
+    return fail(res, 'INTERNAL_ERROR', 'Failed to list agents with skills', 500);
+  }
+});
+
 app.get('/v1/agents/:agentId', auth, async (req, res) => {
   const tenantId = resolveTenantId(req);
   if (useDbRedis()) {
@@ -345,17 +356,6 @@ app.post('/v1/agents/:agentId/state', auth, telephonyWrite, async (req, res) => 
 
 // ─── Agent skill proficiency (Sprint 1 G01) ──────────────────────────────────
 
-/** GET /v1/agents/skills — all agents with proficiency skills for tenant */
-app.get('/v1/agents/skills', auth, async (req, res) => {
-  if (!dbEnabled()) return fail(res, 'NOT_CONFIGURED', 'Postgres required', 501);
-  try {
-    return ok(res, await listAgentsWithSkills(resolveTenantId(req)));
-  } catch (e) {
-    log.error({ err: e.message }, 'list agents with skills');
-    return fail(res, 'INTERNAL_ERROR', 'Failed to list agents with skills', 500);
-  }
-});
-
 /** GET /v1/agents/:agentId/skills — skills for one agent */
 app.get('/v1/agents/:agentId/skills', auth, async (req, res) => {
   if (!dbEnabled()) return fail(res, 'NOT_CONFIGURED', 'Postgres required', 501);
@@ -427,12 +427,6 @@ app.post('/v1/agents/acw', auth, async (req, res) => {
     if (e.code === 'VALIDATION_ERROR') return fail(res, 'VALIDATION_ERROR', e.message, 400);
     return fail(res, 'INTERNAL_ERROR', e.message, 500);
   }
-});
-
-/** GET /v1/agents/acw-config — retrieve ACW auto-clear duration for tenant. */
-app.get('/v1/agents/acw-config', auth, async (req, res) => {
-  const tenantId = resolveTenantId(req);
-  return ok(res, acwConfigs.get(String(tenantId)) ?? { durationSeconds: 60 });
 });
 
 /** PUT /v1/agents/acw-config — set ACW auto-clear duration (0–300 s) for tenant. */

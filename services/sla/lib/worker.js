@@ -44,6 +44,11 @@ export function startSlaWorker(intervalMs = 30_000) {
           warningThresholdPct: row.warning_threshold_pct,
         };
 
+        if (!inst.dueAt) {
+          log.warn({ instanceId: inst.id }, 'sla instance missing dueAt — skipping');
+          continue;
+        }
+
         if (inst.status === 'active' || inst.status === 'warning_sent') {
           const warnAt = warningAt(inst.dueAt, inst.startedAt, inst.warningThresholdPct, calendar);
           if (inst.status === 'active' && now >= new Date(warnAt)) {

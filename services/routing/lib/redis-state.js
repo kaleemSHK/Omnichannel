@@ -31,6 +31,36 @@ export function queueRedisKey(tenantId, queueKey) {
   return tenantRedisKey(tenantId, 'routing', 'queue', queueKey);
 }
 
+/** Key used to hold an exclusive claim on an agent during assignment. */
+export function agentLockKey(tenantId, agentId) {
+  return tenantRedisKey(tenantId, 'routing', 'agent-lock', agentId);
+}
+
+/**
+ * Atomically claim an agent for assignment using a Redis NX lock.
+ * Returns true if the lock was acquired (agent is yours to assign),
+ * false if another routing thread beat you to it.
+ *
+ * The lock auto-expires after AGENT_LOCK_TTL_SEC (default 10 s) so a
+ * crashed worker never permanently blocks an agent.
+ */
+export async function claimAgent(tenantId, agentId, callId) {
+  const r = await connectRedis();
+  if (!r) return true; // no Redis — single-process mode, no contention
+  const ttl = parseInt(process.env.AGENT_LOCK_TTL_SEC || '10', 10);
+  const result = await r.set(agentLockKey(tenantId, agentId), callId, { NX: true, EX: ttl });
+  return result === 'OK';
+}
+
+/**
+ * Release the agent claim lock (called after setAgentState succeeds or on error).
+ */
+export async function releaseAgentClaim(tenantId, agentId) {
+  const r = await connectRedis();
+  if (!r) return;
+  await r.del(agentLockKey(tenantId, agentId));
+}
+
 const STATUSES = new Set(['available', 'busy', 'away', 'offline', 'acw']);
 
 /**
@@ -92,7 +122,14 @@ export async function listAgentStates(tenantId) {
   const r = await connectRedis();
   if (!r) return [];
   const pattern = agentRedisKey(tenantId, '*');
-  const keys = await r.keys(pattern);
+  // Use SCAN instead of KEYS to avoid blocking the Redis event loop on large keyspaces
+  const keys = [];
+  let cursor = 0;
+  do {
+    const reply = await r.scan(cursor, { MATCH: pattern, COUNT: 100 });
+    cursor = reply.cursor;
+    keys.push(...reply.keys);
+  } while (cursor !== 0);
   if (!keys.length) return [];
   const vals = await r.mGet(keys);
   return vals.filter(Boolean).map((v) => JSON.parse(v));

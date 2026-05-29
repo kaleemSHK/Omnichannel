@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, BarChart3, MessageSquare } from 'lucide-react';
+import { toast } from 'sonner';
 import { bnFetch } from '@/lib/api/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -54,6 +55,7 @@ export function SurveyWorkspace() {
   const create = useMutation({
     mutationFn: () => createSurvey({ name, type }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['surveys'] }); setName(''); },
+    onError: () => toast.error('Failed to create survey. Please try again.'),
   });
 
   return (

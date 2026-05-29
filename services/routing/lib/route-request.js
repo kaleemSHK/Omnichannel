@@ -7,22 +7,34 @@ import { resolveOverflowQueue, transferCallToQueue } from './overflow.js';
 
 // ─── VIP / AI-Driven Priority Scoring (C53/C54) ───────────────────────────────
 
+/** Milliseconds before the VIP AI lookup is abandoned to keep routing fast. */
+const VIP_LOOKUP_TIMEOUT_MS = parseInt(process.env.VIP_LOOKUP_TIMEOUT_MS || '2000', 10);
+
 /**
  * Query the AI classify endpoint with the caller's ANI to determine VIP status.
  * Returns a priority score: 10 = VIP/enterprise/priority, 0 = normal.
+ *
+ * A hard timeout (VIP_LOOKUP_TIMEOUT_MS, default 2 s) prevents a slow or
+ * unresponsive AI service from blocking call routing.
  */
 async function getCallerPriority(tenantId, ani) {
   if (!ani) return 0;
   const AI_URL = (process.env.AI_URL || 'http://ai:8793').replace(/\/$/, '');
   const AI_TOKEN = (process.env.AI_TOKEN || '').trim();
   if (!AI_TOKEN) return 0;
+
+  const timeoutPromise = new Promise((resolve) =>
+    setTimeout(() => resolve(null), VIP_LOOKUP_TIMEOUT_MS),
+  );
+
   try {
-    const res = await fetch(`${AI_URL}/v1/classify/ticket`, {
+    const fetchPromise = fetch(`${AI_URL}/v1/classify/ticket`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${AI_TOKEN}` },
       body: JSON.stringify({ subject: ani, description: `Caller ANI: ${ani}` }),
     });
-    if (!res.ok) return 0;
+    const res = await Promise.race([fetchPromise, timeoutPromise]);
+    if (!res || !res.ok) return 0;
     const json = await res.json();
     // If AI classifies as VIP/enterprise/priority, return high score
     const cat = (json.data?.category ?? '').toLowerCase();

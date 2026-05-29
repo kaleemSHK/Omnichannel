@@ -102,7 +102,8 @@ export async function rulesForTrigger(tenantId, trigger) {
   const { rows } = await getPool().query(
     `SELECT r.* FROM escalation_rules r
      JOIN escalation_rulesets s ON s.id = r.ruleset_id
-     WHERE s.tenant_id = $1 AND s.enabled = true AND r.enabled = true AND r.trigger = $2`,
+     WHERE s.tenant_id = $1 AND s.enabled = true AND r.enabled = true AND r.trigger = $2
+     ORDER BY r.priority ASC NULLS LAST, r.id ASC`,
     [tenantId, trigger],
   );
   return rows.map(ruleRow);
