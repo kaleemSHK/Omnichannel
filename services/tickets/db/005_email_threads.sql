@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS email_threads (
   ticket_id    BIGINT     NOT NULL REFERENCES tickets (id) ON DELETE CASCADE,
   message_id   TEXT       NOT NULL,           -- full RFC 2822 Message-ID incl. angle brackets
   in_reply_to  TEXT,                          -- In-Reply-To header (single ID)
-  references   TEXT[],                        -- References header (ordered list of IDs)
+  email_references  TEXT[],                   -- References header (ordered list of IDs)
   direction    TEXT       NOT NULL DEFAULT 'inbound'
                CHECK (direction IN ('inbound','outbound')),
   subject      TEXT,
