@@ -497,7 +497,7 @@ services:
       - '127.0.0.1:8798:8798'
 
   whatsapp-calls:
-    build: { context: ./services/whatsapp-calls }
+    build: { context: ./services, dockerfile: whatsapp-calls/Dockerfile }
     restart: unless-stopped
     environment:
       PORT:                      "8803"
