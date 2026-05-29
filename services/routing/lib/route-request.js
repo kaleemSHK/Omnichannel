@@ -5,6 +5,34 @@ import { assignCall } from './route-assign.js';
 import { setCallMeta } from './call-meta.js';
 import { resolveOverflowQueue, transferCallToQueue } from './overflow.js';
 
+// ─── VIP / AI-Driven Priority Scoring (C53/C54) ───────────────────────────────
+
+/**
+ * Query the AI classify endpoint with the caller's ANI to determine VIP status.
+ * Returns a priority score: 10 = VIP/enterprise/priority, 0 = normal.
+ */
+async function getCallerPriority(tenantId, ani) {
+  if (!ani) return 0;
+  const AI_URL = (process.env.AI_URL || 'http://ai:8793').replace(/\/$/, '');
+  const AI_TOKEN = (process.env.AI_TOKEN || '').trim();
+  if (!AI_TOKEN) return 0;
+  try {
+    const res = await fetch(`${AI_URL}/v1/classify/ticket`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${AI_TOKEN}` },
+      body: JSON.stringify({ subject: ani, description: `Caller ANI: ${ani}` }),
+    });
+    if (!res.ok) return 0;
+    const json = await res.json();
+    // If AI classifies as VIP/enterprise/priority, return high score
+    const cat = (json.data?.category ?? '').toLowerCase();
+    if (cat.includes('vip') || cat.includes('enterprise') || cat.includes('priority')) return 10;
+    return 0;
+  } catch {
+    return 0;
+  }
+}
+
 // ─── IVR1: per-call skill override ────────────────────────────────────────────
 
 /**
@@ -72,8 +100,13 @@ export async function handleRouteRequest(tenantId, body) {
     ...(skillOverride ? { skillOverride } : {}),
   });
 
+  // VIP priority scoring — query AI classify with ANI before skill match
+  const ani = body.callerId ?? body.ani ?? null;
+  const aiPriority = await getCallerPriority(tenantId, ani);
+  const vipBoost = aiPriority >= 10;
+
   const statsBefore = await getQueueStats(tenantId, queueKey);
-  if (queue.maxDepth != null && statsBefore.waiting >= queue.maxDepth) {
+  if (queue.maxDepth != null && statsBefore.waiting >= queue.maxDepth && !vipBoost) {
     const overflow = await resolveOverflowQueue(tenantId, queue);
     if (overflow) {
       const moved = await transferCallToQueue(tenantId, callId, queue, overflow, 'max_depth');
@@ -108,7 +141,7 @@ export async function handleRouteRequest(tenantId, body) {
     }
   }
 
-  const priority = Number(body.priority ?? 0);
+  const priority = vipBoost ? Math.max(Number(body.priority ?? 0), 10) : Number(body.priority ?? 0);
   const { position, depth } = await enqueueCall(tenantId, queueKey, callId, priority);
 
   await queueRepo.recordDecision({
@@ -122,6 +155,7 @@ export async function handleRouteRequest(tenantId, body) {
       depth,
       callerId: body.callerId ?? null,
       priority,
+      ...(vipBoost ? { vip: true, aiPriority } : {}),
       ...(skillOverride ? { skillOverride } : {}),
     },
   });

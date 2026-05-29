@@ -401,6 +401,34 @@ app.delete('/v1/api-keys/:id', auth, async (req, res) => {
   return res.status(204).end();
 });
 
+// ─── B12: Integration Marketplace catalog ────────────────────────────────────
+// Static catalog of available connectors; filter by category or status.
+
+const MARKETPLACE_CATALOG = [
+  { id: 'salesforce',   name: 'Salesforce CRM',            category: 'crm',       description: 'Sync contacts, leads, and cases with Salesforce',           logoUrl: '/logos/salesforce.png',  setupWizard: true,  authType: 'oauth2',  status: 'available'   },
+  { id: 'dynamics365',  name: 'Microsoft Dynamics 365',    category: 'crm',       description: 'Integrate with Microsoft Dynamics for customer data',         logoUrl: '/logos/dynamics.png',    setupWizard: true,  authType: 'oauth2',  status: 'available'   },
+  { id: 'sap-b1',       name: 'SAP Business One',          category: 'erp',       description: 'Connect SAP B1 for order and account data',                 logoUrl: '/logos/sap.png',         setupWizard: false, authType: 'api_key', status: 'available'   },
+  { id: 'oracle-fusion',name: 'Oracle Fusion',             category: 'erp',       description: 'Oracle Fusion Cloud ERP integration',                       logoUrl: '/logos/oracle.png',      setupWizard: false, authType: 'api_key', status: 'beta'        },
+  { id: 'generic-rest', name: 'Generic REST Connector',    category: 'custom',    description: 'Connect any REST API with custom field mapping',            logoUrl: '/logos/api.png',         setupWizard: true,  authType: 'api_key', status: 'available'   },
+  { id: 'whatsapp',     name: 'WhatsApp Business',         category: 'messaging', description: 'Send and receive WhatsApp messages via Meta API',           logoUrl: '/logos/whatsapp.png',    setupWizard: true,  authType: 'api_key', status: 'available'   },
+  { id: 'zendesk',      name: 'Zendesk',                   category: 'helpdesk',  description: 'Sync tickets and contacts with Zendesk',                    logoUrl: '/logos/zendesk.png',     setupWizard: false, authType: 'api_key', status: 'coming_soon' },
+  { id: 'hubspot',      name: 'HubSpot',                   category: 'crm',       description: 'Connect HubSpot CRM for contact and deal sync',            logoUrl: '/logos/hubspot.png',     setupWizard: false, authType: 'oauth2',  status: 'coming_soon' },
+];
+
+app.get('/v1/marketplace', auth, async (req, res) => {
+  const { category, status } = req.query;
+  let catalog = MARKETPLACE_CATALOG;
+  if (category) catalog = catalog.filter(c => c.category === category);
+  if (status)   catalog = catalog.filter(c => c.status   === status);
+  return ok(res, catalog);
+});
+
+app.get('/v1/marketplace/:id', auth, async (req, res) => {
+  const item = MARKETPLACE_CATALOG.find(c => c.id === req.params.id);
+  if (!item) return fail(res, 'NOT_FOUND', 'Connector not found', 404);
+  return ok(res, item);
+});
+
 app.use(errorHandler(log));
 
 async function boot() {

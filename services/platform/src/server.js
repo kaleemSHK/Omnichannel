@@ -217,9 +217,72 @@ app.get('/v1/audit', auth, (req, res) => {
   ok(res, events);
 });
 
-// ─── MFA / TOTP — Sprint 2 M01 ───────────────────────────────────────────────
+// ─── Native TOTP endpoints — D93 ─────────────────────────────────────────────
+// Lightweight TOTP setup/verify/enable/disable for tenants not using Keycloak.
+// Delegates secret generation + storage to the existing mfaStore.
 
 const MFA_ISSUER = (process.env.MFA_ISSUER || 'BlinkOne').trim();
+
+function resolveTenantId(req) {
+  const h = req.headers['x-blinkone-tenant-id'];
+  if (typeof h === 'string' && h.trim()) return h.trim();
+  if (req.query?.tenant_id) return String(req.query.tenant_id);
+  if (req.body?.tenantId) return String(req.body.tenantId);
+  return 'default';
+}
+
+app.post('/v1/totp/setup', auth, async (req, res) => {
+  const { userId } = req.body ?? {};
+  if (!userId) return fail(res, 'VALIDATION_ERROR', 'userId required');
+  const tenantId = resolveTenantId(req);
+  try {
+    const secret = generateSecret();
+    const label = String(userId);
+    await mfaStore.startEnrollment(tenantId, userId, { secret, label });
+    const otpauth_url = totpUri(secret, label, MFA_ISSUER);
+    const qr_data_url = `https://chart.googleapis.com/chart?chs=200x200&chld=M|0&cht=qr&chl=${encodeURIComponent(otpauth_url)}`;
+    return ok(res, { secret, otpauth_url, qr_data_url });
+  } catch (e) {
+    return fail(res, 'TOTP_ERROR', e.message, 500);
+  }
+});
+
+app.post('/v1/totp/verify', auth, async (req, res) => {
+  const { userId, token } = req.body ?? {};
+  if (!userId || !token) return fail(res, 'VALIDATION_ERROR', 'userId and token required');
+  const tenantId = resolveTenantId(req);
+  try {
+    const enrollment = mfaStore.getEnrollment(tenantId, userId);
+    if (!enrollment) return ok(res, { valid: false });
+    const valid = verifyTOTP(enrollment.secret, String(token));
+    return ok(res, { valid });
+  } catch (e) {
+    return fail(res, 'TOTP_ERROR', e.message, 500);
+  }
+});
+
+app.post('/v1/totp/enable', auth, async (req, res) => {
+  const { userId, token } = req.body ?? {};
+  if (!userId || !token) return fail(res, 'VALIDATION_ERROR', 'userId and token required');
+  const tenantId = resolveTenantId(req);
+  try {
+    const enrollment = mfaStore.getEnrollment(tenantId, userId);
+    if (!enrollment) throw new Error('No pending TOTP enrollment — call /v1/totp/setup first');
+    if (!verifyTOTP(enrollment.secret, String(token))) throw new Error('Invalid TOTP token');
+    await mfaStore.confirmEnrollment(tenantId, userId);
+    return ok(res, { enabled: true });
+  } catch (e) {
+    return fail(res, 'TOTP_ERROR', e.message, 400);
+  }
+});
+
+app.delete('/v1/totp/:userId', auth, async (req, res) => {
+  const tenantId = resolveTenantId(req);
+  await mfaStore.deleteEnrollment(tenantId, req.params.userId);
+  return ok(res, { disabled: true });
+});
+
+// ─── MFA / TOTP — Sprint 2 M01 ───────────────────────────────────────────────
 
 /**
  * GET /v1/mfa/status?user_id=&tenant_id=

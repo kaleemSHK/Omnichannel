@@ -432,6 +432,105 @@ app.patch('/v1/callbacks/:id', auth, async (req, res) => {
   return ok(res, cb);
 });
 
+// ─── Post-Call Surveys (C144) ─────────────────────────────────────────────────
+
+// In-memory survey store (replace with DB later)
+const surveys = new Map(); // tenantId -> []
+const surveyResponses = new Map(); // tenantId -> []
+
+app.post('/v1/surveys', auth, async (req, res) => {
+  const tenantId = String(resolveTenantId(req));
+  const { name, type = 'csat', questions = [] } = req.body ?? {};
+  if (!name) return fail(res, 'VALIDATION_ERROR', 'name required');
+  const survey = {
+    id: randomUUID(),
+    tenantId, name, type, questions,
+    active: true,
+    createdAt: new Date().toISOString(),
+  };
+  if (!surveys.has(tenantId)) surveys.set(tenantId, []);
+  surveys.get(tenantId).push(survey);
+  return ok(res, survey, 201);
+});
+
+app.get('/v1/surveys', auth, async (req, res) => {
+  const tenantId = String(resolveTenantId(req));
+  return ok(res, surveys.get(tenantId) ?? []);
+});
+
+app.post('/v1/surveys/:id/respond', async (req, res) => {
+  // Public — called from IVR DTMF or chat link
+  const { score, comment, conversationId } = req.body ?? {};
+  const tenantId = req.headers['x-blinkone-tenant-id'] ?? '1';
+  const response = {
+    id: randomUUID(),
+    surveyId: req.params.id,
+    tenantId,
+    conversationId: conversationId ?? null,
+    score: score != null ? Number(score) : null,
+    comment: comment ?? null,
+    createdAt: new Date().toISOString(),
+  };
+  if (!surveyResponses.has(String(tenantId))) surveyResponses.set(String(tenantId), []);
+  surveyResponses.get(String(tenantId)).push(response);
+  return ok(res, response, 201);
+});
+
+app.get('/v1/surveys/:id/responses', auth, async (req, res) => {
+  const tenantId = String(resolveTenantId(req));
+  const all = surveyResponses.get(tenantId) ?? [];
+  return ok(res, all.filter(r => r.surveyId === req.params.id));
+});
+
+app.get('/v1/surveys/summary', auth, async (req, res) => {
+  const tenantId = String(resolveTenantId(req));
+  const all = surveyResponses.get(tenantId) ?? [];
+  const scored = all.filter(r => r.score != null);
+  const avg = scored.length ? scored.reduce((s, r) => s + r.score, 0) / scored.length : null;
+  return ok(res, {
+    totalResponses: all.length,
+    avgScore: avg != null ? Math.round(avg * 10) / 10 : null,
+    csatPercent: scored.length ? Math.round(scored.filter(r => r.score >= 4).length / scored.length * 100) : null,
+  });
+});
+
+// IVR TwiML for post-call survey
+app.post('/v1/ivr/survey-twiml', async (req, res) => {
+  const { surveyId } = req.query;
+  res.type('text/xml');
+  res.send(`<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Gather numDigits="1" action="/ivr/v1/ivr/survey-record?surveyId=${surveyId}" method="POST">
+    <Say language="ar-SA">كيف تقيّم خدمتنا اليوم؟ اضغط ١ لممتاز، ٢ لجيد، ٣ لمقبول، ٤ لضعيف</Say>
+    <Say>Rate our service: Press 1 for Excellent, 2 for Good, 3 for Fair, 4 for Poor</Say>
+  </Gather>
+  <Hangup/>
+</Response>`);
+});
+
+app.post('/v1/ivr/survey-record', async (req, res) => {
+  const { surveyId } = req.query;
+  const digit = req.body?.Digits ?? '';
+  const scoreMap = { '1': 5, '2': 4, '3': 3, '4': 2 };
+  const score = scoreMap[digit] ?? null;
+  if (score && surveyId) {
+    const tenantId = '1';
+    if (!surveyResponses.has(tenantId)) surveyResponses.set(tenantId, []);
+    surveyResponses.get(tenantId).push({
+      id: randomUUID(), surveyId, tenantId,
+      score, comment: null, conversationId: null,
+      createdAt: new Date().toISOString(),
+    });
+  }
+  res.type('text/xml');
+  res.send(`<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say language="ar-SA">شكراً لتقييمك. وداعاً.</Say>
+  <Say>Thank you for your feedback. Goodbye.</Say>
+  <Hangup/>
+</Response>`);
+});
+
 app.use(errorHandler(log));
 
 const ariEnabled = process.env.ASTERISK_ARI_ENABLED === '1' || process.env.ASTERISK_ARI_ENABLED === 'true';

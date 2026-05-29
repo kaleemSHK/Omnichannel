@@ -22,6 +22,9 @@ import {
   ShieldCheck,
   Database,
   KeyRound,
+  Megaphone,
+  Store,
+  BarChart3,
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store/auth';
 import { can } from '@/lib/rbac';
@@ -42,9 +45,14 @@ const NAV_ITEMS = [
   { id: 'bot-routing', label: 'Bot Routing Rules', icon: Bot, group: 'Automation' },
   { id: 'macros', label: 'Macros', icon: BookOpen, group: 'Automation' },
   { id: 'canned', label: 'Canned Responses', icon: MessageSquare, group: 'Automation' },
+  { id: 'campaigns', label: 'Campaigns', icon: Megaphone, group: 'Automation' },
+  { id: 'surveys', label: 'Surveys', icon: BarChart3, group: 'Automation' },
+  { id: 'vip-callers', label: 'VIP Callers', icon: Star, group: 'Workspace' },
   { id: 'mfa', label: 'Two-Factor Auth', icon: ShieldCheck, group: 'Security' },
+  { id: 'totp', label: 'Authenticator App', icon: ShieldCheck, group: 'Security' },
   { id: 'branding', label: 'Branding', icon: Palette, group: 'Platform' },
   { id: 'integrations', label: 'Integrations', icon: Puzzle, group: 'Integrations' },
+  { id: 'marketplace', label: 'Marketplace', icon: Store, group: 'Integrations' },
   { id: 'crm-connectors', label: 'CRM & ERP', icon: Database, group: 'Integrations' },
   { id: 'webhooks', label: 'Webhooks', icon: Webhook, group: 'Integrations' },
   { id: 'api-keys', label: 'API Keys', icon: KeyRound, group: 'Integrations' },

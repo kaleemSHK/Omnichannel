@@ -15,6 +15,7 @@ import { Dialog } from '@/components/ui/Dialog';
 import { cn } from '@/lib/utils/cn';
 import { CRMLookupCard } from './CRMLookupCard';
 import { SLAConversationBadge } from '@/components/sla/SLAConversationBadge';
+import { JourneyTimeline } from '@/components/contacts/JourneyTimeline';
 import type { CWMessage } from '@/types';
 
 interface Props {
@@ -54,6 +55,7 @@ export function AgentAssistPanel({ conversationId, contactId }: Props) {
   const [scriptOpen, setScriptOpen] = useState(true);
   const [crmOpen, setCrmOpen] = useState(true);
   const [slaOpen, setSlaOpen] = useState(true);
+  const [journeyOpen, setJourneyOpen] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [summaryText, setSummaryText] = useState('');
   const [scriptSteps, setScriptSteps] = useState<NextActionStep[]>([]);
@@ -303,6 +305,12 @@ export function AgentAssistPanel({ conversationId, contactId }: Props) {
       {contactId && (
         <Section title="CRM Contact" open={crmOpen} onToggle={() => setCrmOpen(v => !v)}>
           <CRMLookupCard contactId={contactId} />
+        </Section>
+      )}
+
+      {contactId && (
+        <Section title="Customer Journey" open={journeyOpen} onToggle={() => setJourneyOpen(v => !v)}>
+          <JourneyTimeline contactId={contactId} />
         </Section>
       )}
 

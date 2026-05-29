@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import express from 'express';
 import { createLogger } from '../lib/logger.js';
+import { createCampaign, getCampaigns, getCampaign, updateCampaignStatus } from '../lib/campaign.js';
 import { createStore } from '../lib/store.js';
 import { ok, fail, bearerAuth, requestId, errorHandler, healthRouter, gracefulShutdown } from '../lib/http.js';
 import { mountMetrics, registry } from '../_shared/lib/metrics-middleware.js';
@@ -626,6 +627,42 @@ app.patch('/v1/sessions/:id', auth, pstnFeature, async (req, res) => {
     log.error(e);
     fail(res, 'INTERNAL_ERROR', 'Failed', 500);
   }
+});
+
+// ─── Outbound Campaigns (C113/C114/C115) ─────────────────────────────────────
+
+app.get('/v1/campaigns', auth, async (req, res) => {
+  return ok(res, getCampaigns(resolveTenantId(req)));
+});
+
+app.post('/v1/campaigns', auth, async (req, res) => {
+  const { name } = req.body ?? {};
+  if (!name) return fail(res, 'VALIDATION_ERROR', 'name required');
+  const c = createCampaign(resolveTenantId(req), req.body);
+  return ok(res, c, 201);
+});
+
+app.post('/v1/campaigns/:id/start', auth, async (req, res) => {
+  const tenantId = resolveTenantId(req);
+  const c = getCampaign(tenantId, req.params.id);
+  if (!c) return fail(res, 'NOT_FOUND', 'Campaign not found', 404);
+  updateCampaignStatus(tenantId, req.params.id, 'running');
+  log.info({ campaignId: c.id, name: c.name, targets: c.targets.length }, 'campaign started');
+  return ok(res, c);
+});
+
+app.post('/v1/campaigns/:id/pause', auth, async (req, res) => {
+  const tenantId = resolveTenantId(req);
+  const c = getCampaign(tenantId, req.params.id);
+  if (!c) return fail(res, 'NOT_FOUND', 'Campaign not found', 404);
+  updateCampaignStatus(tenantId, req.params.id, 'paused');
+  return ok(res, c);
+});
+
+app.get('/v1/campaigns/:id', auth, async (req, res) => {
+  const c = getCampaign(resolveTenantId(req), req.params.id);
+  if (!c) return fail(res, 'NOT_FOUND', 'Campaign not found', 404);
+  return ok(res, c);
 });
 
 app.use(errorHandler(log));

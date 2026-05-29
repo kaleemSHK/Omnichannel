@@ -567,6 +567,29 @@ app.post('/v1/supervise/:callId/mode', auth, telephonyWrite, async (req, res) =>
   }
 });
 
+// ─── VIP Caller Registry (C53/C54) ───────────────────────────────────────────
+const vipCallers = new Map(); // tenantId -> Set of phone numbers
+
+app.get('/v1/vip', auth, async (req, res) => {
+  const tenantId = String(resolveTenantId(req));
+  return ok(res, { phones: [...(vipCallers.get(tenantId) ?? [])] });
+});
+
+app.post('/v1/vip', auth, async (req, res) => {
+  const tenantId = String(resolveTenantId(req));
+  const { phone } = req.body ?? {};
+  if (!phone) return fail(res, 'VALIDATION_ERROR', 'phone required');
+  if (!vipCallers.has(tenantId)) vipCallers.set(tenantId, new Set());
+  vipCallers.get(tenantId).add(phone);
+  return ok(res, { added: phone });
+});
+
+app.delete('/v1/vip/:phone', auth, async (req, res) => {
+  const tenantId = String(resolveTenantId(req));
+  vipCallers.get(tenantId)?.delete(req.params.phone);
+  return ok(res, { removed: req.params.phone });
+});
+
 /** Legacy round-robin (file store dev fallback). */
 app.post('/v1/route', auth, telephonyWrite, async (req, res) => {
   const { tenantId = 0, queue, skills = [] } = req.body ?? {};

@@ -642,6 +642,33 @@ app.post('/v1/tickets/:id/reply-email', auth, async (req, res) => {
   });
 });
 
+// ─── Customer Journey Timeline (D74) ─────────────────────────────────────────
+
+// Cross-channel event aggregation — replace with DB persistence in production
+const journeyEvents = new Map(); // `${tenantId}:${contactId}` -> events[]
+
+app.post('/v1/journey/event', auth, async (req, res) => {
+  const tenantId = String(resolveTenantId(req));
+  const { contactId, channel, eventType, summary, metadata } = req.body ?? {};
+  if (!contactId || !eventType) return fail(res, 'VALIDATION_ERROR', 'contactId and eventType required');
+  const key = `${tenantId}:${contactId}`;
+  if (!journeyEvents.has(key)) journeyEvents.set(key, []);
+  const event = {
+    id: randomUUID(),
+    contactId, channel: channel ?? 'unknown', eventType, summary: summary ?? '',
+    metadata: metadata ?? {}, timestamp: new Date().toISOString(),
+  };
+  journeyEvents.get(key).push(event);
+  return ok(res, event, 201);
+});
+
+app.get('/v1/journey/:contactId', auth, async (req, res) => {
+  const tenantId = String(resolveTenantId(req));
+  const key = `${tenantId}:${req.params.contactId}`;
+  const events = (journeyEvents.get(key) ?? []).sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+  return ok(res, events);
+});
+
 app.use(errorHandler(log));
 
 async function main() {

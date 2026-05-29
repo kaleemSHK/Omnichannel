@@ -1,4 +1,4 @@
-import { Body, Controller, Post, Req, UnauthorizedException } from '@nestjs/common';
+import { Body, Controller, Get, Post, Req, UnauthorizedException, HttpException } from '@nestjs/common';
 import { createHmac } from 'node:crypto';
 import jwt from 'jsonwebtoken';
 import type { FastifyRequest } from 'fastify';
@@ -12,11 +12,50 @@ const loginSchema = z.object({
   password: z.string().min(1),
 });
 
+// ─── D91: Login attempt tracking + account lockout ────────────────────────────
+// In-memory store (replace with Redis for HA deployments).
+interface LockEntry { count: number; lockedUntil: number | null }
+const loginAttempts = new Map<string, LockEntry>();
+
+function checkLoginAttempts(key: string): { blocked: boolean; retryAfter?: number } {
+  const entry = loginAttempts.get(key);
+  if (!entry) return { blocked: false };
+  if (entry.lockedUntil && Date.now() < entry.lockedUntil) {
+    return { blocked: true, retryAfter: Math.ceil((entry.lockedUntil - Date.now()) / 1000) };
+  }
+  return { blocked: false };
+}
+
+function recordLoginFailure(key: string): void {
+  const entry = loginAttempts.get(key) ?? { count: 0, lockedUntil: null };
+  entry.count += 1;
+  if (entry.count >= 5) {
+    entry.lockedUntil = Date.now() + 15 * 60 * 1000; // 15 min lockout
+    entry.count = 0;
+  }
+  loginAttempts.set(key, entry);
+}
+
+function clearLoginAttempts(key: string): void {
+  loginAttempts.delete(key);
+}
+
 @Controller('auth')
 export class AuthController {
   @Post('login')
   async login(@Body() body: unknown, @Req() req: FastifyRequest) {
     const { email, password } = loginSchema.parse(body);
+
+    // D91: Check lockout before attempting auth
+    const attemptKey = `${req.ip}:${email}`;
+    const lockCheck = checkLoginAttempts(attemptKey);
+    if (lockCheck.blocked) {
+      throw new HttpException(
+        { error: { code: 'LOCKED', message: `Too many attempts. Retry in ${lockCheck.retryAfter}s` } },
+        429,
+      );
+    }
+
     const chatwootUrl = (process.env.CHATWOOT_BASE_URL ?? 'http://chatwoot:3000').replace(/\/$/, '');
 
     const res = await fetch(`${chatwootUrl}/auth/sign_in`, {
@@ -27,6 +66,8 @@ export class AuthController {
 
     if (!res.ok) {
       log.warn({ email, status: res.status }, 'chatwoot login failed');
+      // D91: Record failure for lockout tracking
+      recordLoginFailure(attemptKey);
       throw new UnauthorizedException('Invalid credentials');
     }
 
@@ -35,6 +76,9 @@ export class AuthController {
     };
     const user = data.data;
     if (!user?.id) throw new UnauthorizedException('Invalid session payload');
+
+    // D91: Clear failed attempts on successful login
+    clearLoginAttempts(attemptKey);
 
     let tenantId = String(user.account_id ?? user.id);
     let branding: Record<string, unknown> | undefined;
@@ -72,6 +116,18 @@ export class AuthController {
         request_id: req.id,
       },
     };
+  }
+
+  // D91: Anomalous login pattern detection — list currently locked accounts
+  @Get('login-lockouts')
+  getLoginLockouts() {
+    const locked: Array<{ key: string; lockedUntil: string }> = [];
+    for (const [key, entry] of loginAttempts) {
+      if (entry.lockedUntil && Date.now() < entry.lockedUntil) {
+        locked.push({ key, lockedUntil: new Date(entry.lockedUntil).toISOString() });
+      }
+    }
+    return { locked };
   }
 }
 

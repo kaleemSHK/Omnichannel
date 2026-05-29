@@ -348,6 +348,43 @@ app.get('/v1/play/:token', (req, res) => {
   ok(res, { recordingId: r.id, storageBackend: r.storageBackend, storageKey: r.storageKey });
 });
 
+// ─── C140: Compliance recording policy + retention endpoints ─────────────────
+// Per-tenant retention and WORM policy management.
+// compliancePolicies is in-memory; persist to DB / MinIO bucket config for prod.
+
+const compliancePolicies = new Map(); // tenantId -> { retentionDays, wormEnabled, enforce }
+
+app.get('/v1/compliance/policy', auth, async (req, res) => {
+  const tenantId = String(resolveTenantId(req));
+  return ok(res, compliancePolicies.get(tenantId) ?? { retentionDays: 365, wormEnabled: false, enforce: false });
+});
+
+app.put('/v1/compliance/policy', auth, async (req, res) => {
+  const tenantId = String(resolveTenantId(req));
+  const { retentionDays = 365, wormEnabled = false, enforce = false } = req.body ?? {};
+  compliancePolicies.set(tenantId, { retentionDays: Number(retentionDays), wormEnabled: !!wormEnabled, enforce: !!enforce });
+  return ok(res, compliancePolicies.get(tenantId));
+});
+
+app.get('/v1/compliance/report', auth, async (req, res) => {
+  const tenantId = String(resolveTenantId(req));
+  const policy = compliancePolicies.get(tenantId) ?? { retentionDays: 365, wormEnabled: false, enforce: false };
+  const allRecs = (store.load().recordings ?? []).filter(
+    (r) => String(r.chatwootAccountId ?? r.tenantId) === tenantId,
+  );
+  const cutoff = new Date(Date.now() - policy.retentionDays * 86400 * 1000);
+  const retainedCount = allRecs.filter((r) => new Date(r.createdAt ?? 0) >= cutoff).length;
+  const purgeEligibleCount = allRecs.length - retainedCount;
+  return ok(res, {
+    policy,
+    generatedAt: new Date().toISOString(),
+    totalRecordings: allRecs.length,
+    retainedCount,
+    purgeEligibleCount,
+    note: 'Enable MinIO Object Lock on the recordings bucket for WORM enforcement',
+  });
+});
+
 app.use(errorHandler(log));
 const server = app.listen(PORT, '0.0.0.0', () =>
   log.info({ port: PORT, storage: STORAGE, minioStub: process.env.MINIO_STUB }, 'recording started'),

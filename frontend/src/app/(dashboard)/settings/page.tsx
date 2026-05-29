@@ -22,8 +22,13 @@ import { BrandingSection } from '@/components/settings/BrandingSection';
 import { SkillsManagerSection } from '@/components/settings/SkillsManagerSection';
 import { BotRoutingRules } from '@/components/ai/BotRoutingRules';
 import { MfaSetupPanel } from '@/components/settings/MfaSetupPanel';
+import { MfaTotpSection } from '@/components/settings/MfaTotpSection';
+import { CampaignPanel } from '@/components/settings/CampaignPanel';
 import { CRMConnectorsPanel } from '@/components/settings/CRMConnectorsPanel';
+import { IntegrationMarketplace } from '@/components/settings/IntegrationMarketplace';
 import { ApiKeysSection } from '@/components/settings/ApiKeysSection';
+import { SurveyWorkspace } from '@/components/surveys/SurveyWorkspace';
+import { VipCallerPanel } from '@/components/routing/VipCallerPanel';
 
 export default function SettingsPage() {
   const [view, setView] = useState<SettingsView>('profile');
@@ -44,6 +49,11 @@ export default function SettingsPage() {
     macros: <MacrosSection />,
     canned: <CannedSection />,
     mfa: <MfaSetupPanel />,
+    totp: <MfaTotpSection />,
+    campaigns: <CampaignPanel />,
+    surveys: <SurveyWorkspace />,
+    'vip-callers': <VipCallerPanel />,
+    marketplace: <IntegrationMarketplace />,
     branding: <BrandingSection />,
     'skills-manager': <SkillsManagerSection />,
     integrations: <IntegrationsSection />,
