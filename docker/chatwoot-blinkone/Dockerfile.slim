@@ -1,0 +1,17 @@
+# BlinkOne SLIM Chatwoot overlay.
+#
+# Restores ONLY the server-side pieces the standalone BlinkOne (Next.js) app
+# depends on: the call-event Action Cable channel + the internal broadcast
+# ingress. It deliberately SKIPS the Vue dashboard overlay and the 8-10 GB
+# Vite asset rebuild (the standalone app does not use Chatwoot's dashboard),
+# so this image builds in seconds.
+FROM chatwoot/chatwoot:v4.13.0-ce
+USER root
+WORKDIR /app
+
+# Cable channel the BlinkOne app subscribes to: { channel: 'BlinkoneCallChannel' }
+COPY chatwoot-fork-overlay/app/channels/blinkone_call_channel.rb /app/app/channels/blinkone_call_channel.rb
+
+# Internal broadcast ingress (POST /blinkone/api/v1/calls/broadcast) + route.
+COPY docker/chatwoot-blinkone/slim/blinkone_calls_broadcast_controller.rb /app/app/controllers/blinkone_calls_broadcast_controller.rb
+COPY docker/chatwoot-blinkone/slim/blinkone_slim_routes.rb /app/config/initializers/blinkone_slim_routes.rb

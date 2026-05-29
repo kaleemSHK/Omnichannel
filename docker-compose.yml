@@ -80,6 +80,8 @@ services:
       FRONTEND_URL:           ${FRONTEND_URL:-http://localhost}
       ENABLE_ACCOUNT_SIGNUP:  "false"
       ACTION_CABLE_ALLOWED_REQUEST_ORIGINS: ${FRONTEND_URL:-http://localhost},http://127.0.0.1
+      # Shared secret the calls service signs broadcast posts with (X-Blinkone-Internal-Token).
+      CHATWOOT_BOT_TOKEN: ${CHATWOOT_BOT_TOKEN:-}
       IVR_TOKEN:      ${IVR_TOKEN}
       SLA_TOKEN:      ${SLA_TOKEN}
       ESCALATION_TOKEN: ${ESCALATION_TOKEN}
