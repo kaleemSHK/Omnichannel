@@ -7,16 +7,19 @@ interface AuthState {
   user: BlinkoneUser | null;
   tokens: AuthTokens | null;
   hydrated: boolean;
+  pushToken: string | null;
   setAuth: (user: BlinkoneUser, tokens: AuthTokens) => Promise<void>;
   clearAuth: () => Promise<void>;
   updateTokens: (tokens: AuthTokens) => Promise<void>;
   hydrate: () => Promise<void>;
+  setPushToken: (token: string) => void;
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   tokens: null,
   hydrated: false,
+  pushToken: null,
 
   hydrate: async () => {
     const stored = await loadTokens();
@@ -48,4 +51,6 @@ export const useAuthStore = create<AuthState>((set) => ({
     await saveTokens(tokens);
     set((s) => ({ ...s, tokens }));
   },
+
+  setPushToken: (token) => set({ pushToken: token }),
 }));

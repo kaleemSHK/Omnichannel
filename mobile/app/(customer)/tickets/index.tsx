@@ -1,4 +1,4 @@
-import { FlatList, RefreshControl } from 'react-native';
+import { FlatList, RefreshControl, Text, TouchableOpacity } from 'react-native';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
@@ -24,7 +24,18 @@ export default function CustomerTickets() {
 
   return (
     <SafeAreaView className="flex-1 bg-bg" edges={['top']}>
-      <AppHeader title={t('customer.my_tickets')} onBack={() => router.back()} />
+      <AppHeader
+        title={t('customer.my_tickets')}
+        onBack={() => router.back()}
+        right={
+          <TouchableOpacity
+            onPress={() => router.push('/(customer)/tickets/new' as never)}
+            className="ml-2 px-3 py-1 bg-brand rounded-lg"
+          >
+            <Text className="text-white text-sm font-semibold">+ New</Text>
+          </TouchableOpacity>
+        }
+      />
       {isLoading ? (
         <View className="px-5 gap-3 mt-4">
           {[1, 2, 3].map((i) => (

@@ -31,6 +31,13 @@ export default function CustomerLayout() {
         }}
       />
       <Tabs.Screen
+        name="chat/index"
+        options={{
+          title: t('customer.my_chats'),
+          tabBarIcon: tabIcon('chatbubble-outline', 'chatbubble'),
+        }}
+      />
+      <Tabs.Screen
         name="tickets/index"
         options={{
           title: t('customer.my_tickets'),
@@ -40,6 +47,7 @@ export default function CustomerLayout() {
       {/* Hidden screens — accessible via router.push, not as tabs */}
       <Tabs.Screen name="chat/[id]" options={{ href: null }} />
       <Tabs.Screen name="tickets/[id]" options={{ href: null }} />
+      <Tabs.Screen name="tickets/new" options={{ href: null }} />
     </Tabs>
   );
 }

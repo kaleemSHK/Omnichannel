@@ -45,6 +45,20 @@ export default function AgentLayout() {
         }}
       />
       <Tabs.Screen
+        name="dial"
+        options={{
+          title: t('agent.dialpad'),
+          tabBarIcon: tabIcon('keypad-outline', 'keypad'),
+        }}
+      />
+      <Tabs.Screen
+        name="contacts"
+        options={{
+          title: t('agent.contacts'),
+          tabBarIcon: tabIcon('people-outline', 'people'),
+        }}
+      />
+      <Tabs.Screen
         name="settings"
         options={{
           title: t('agent.settings'),
