@@ -75,7 +75,7 @@ app.post('/v1/policies', auth, slaFeature, async (req, res) => {
     targets = [];
     if (firstResponseMinutes) targets.push({ targetType: 'first_response', thresholdMinutes: Number(firstResponseMinutes), appliesWhen: {} });
     if (resolutionHours) targets.push({ targetType: 'resolution', thresholdMinutes: Number(resolutionHours) * 60, appliesWhen: {} });
-    if (escalationHours) targets.push({ targetType: 'escalation', thresholdMinutes: Number(escalationHours) * 60, appliesWhen: {} });
+    // 'escalation' is not a valid target_type in the DB — skip it
   }
   try {
     return ok(res, await repo.createPolicy(resolveTenantId(req), { ...body, targets: targets ?? [] }), 201);
