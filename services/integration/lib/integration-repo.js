@@ -394,14 +394,62 @@ export async function retryDelivery(tenantId, deliveryId) {
   return deliverOne(deliveryId);
 }
 
-export async function createApiKey(tenantId, name, actorId) {
-  const raw = `bnk_${randomUUID().replace(/-/g, '')}`;
+export async function createApiKey(tenantId, name, actorId, scopes = ['read']) {
+  const raw    = `bnk_${randomUUID().replace(/-/g, '')}`;
   const prefix = raw.slice(0, 12);
-  const hash = createHash('sha256').update(raw).digest('hex');
+  const hash   = createHash('sha256').update(raw).digest('hex');
   const { rows } = await getPool().query(
-    `INSERT INTO integration_api_keys (tenant_id, name, key_prefix, key_hash) VALUES ($1,$2,$3,$4) RETURNING id, name, key_prefix, created_at`,
-    [tenantId, name, prefix, hash],
+    `INSERT INTO integration_api_keys (tenant_id, name, key_prefix, key_hash, scopes)
+     VALUES ($1,$2,$3,$4,$5)
+     RETURNING id, name, key_prefix, scopes, created_at`,
+    [tenantId, name, prefix, hash, scopes],
   );
   await writeAudit({ tenantId, actorId, action: 'api_key.create', targetType: 'api_key', targetId: rows[0].id });
   return { ...rows[0], key: raw };
+}
+
+export async function listApiKeys(tenantId) {
+  const { rows } = await tenantQuery(
+    getPool(),
+    tenantId,
+    `SELECT id, name, key_prefix, scopes, created_at
+     FROM integration_api_keys
+     WHERE revoked_at IS NULL
+     ORDER BY created_at DESC`,
+    [],
+  );
+  return rows.map(r => ({
+    id:        r.id,
+    name:      r.name,
+    keyPrefix: r.key_prefix,
+    scopes:    r.scopes,
+    createdAt: r.created_at,
+  }));
+}
+
+export async function revokeApiKey(tenantId, id, actorId) {
+  const { rowCount } = await tenantQuery(
+    getPool(),
+    tenantId,
+    `UPDATE integration_api_keys SET revoked_at = now()
+     WHERE id = $1 AND revoked_at IS NULL`,
+    [id],
+  );
+  if (!rowCount) return false;
+  await writeAudit({ tenantId, actorId, action: 'api_key.revoke', targetType: 'api_key', targetId: id });
+  return true;
+}
+
+export async function renameApiKey(tenantId, id, name, actorId) {
+  const { rows } = await tenantQuery(
+    getPool(),
+    tenantId,
+    `UPDATE integration_api_keys SET name = $1
+     WHERE id = $2 AND revoked_at IS NULL
+     RETURNING id, name, key_prefix, scopes, created_at`,
+    [name.trim(), id],
+  );
+  if (!rows.length) return null;
+  await writeAudit({ tenantId, actorId, action: 'api_key.rename', targetType: 'api_key', targetId: id, after: { name } });
+  return { id: rows[0].id, name: rows[0].name, keyPrefix: rows[0].key_prefix, scopes: rows[0].scopes, createdAt: rows[0].created_at };
 }

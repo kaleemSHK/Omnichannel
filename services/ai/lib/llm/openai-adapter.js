@@ -1,5 +1,24 @@
 import { redactMessages } from '../pii/redactor.js';
 
+/** Deterministic bag-of-words vector so RAG works without OpenAI (dev/demo). */
+function stubEmbedVector(text) {
+  const vec = new Float32Array(1536);
+  const words = String(text)
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((w) => w.length > 2);
+  for (const w of words) {
+    let h = 0;
+    for (let i = 0; i < w.length; i++) h = ((h << 5) - h + w.charCodeAt(i)) | 0;
+    const idx = Math.abs(h) % 1536;
+    vec[idx] += 1;
+  }
+  let norm = 0;
+  for (let i = 0; i < vec.length; i++) norm += vec[i] * vec[i];
+  norm = Math.sqrt(norm) || 1;
+  return Array.from(vec, (v) => v / norm);
+}
+
 const DEFAULT_BASE = () => (process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1').replace(/\/$/, '');
 
 export function createOpenAiAdapter({ apiKey, baseUrl = DEFAULT_BASE() }) {
@@ -11,7 +30,7 @@ export function createOpenAiAdapter({ apiKey, baseUrl = DEFAULT_BASE() }) {
         return { content: `[STUB] ${last.slice(0, 120)}`, usage: { prompt_tokens: 0, completion_tokens: 0 } };
       },
       async embed(texts) {
-        return texts.map(() => Array(1536).fill(0).map((_, i) => (i < 10 ? 0.01 : 0)));
+        return texts.map((text) => stubEmbedVector(text));
       },
     };
   }

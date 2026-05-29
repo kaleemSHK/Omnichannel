@@ -17,10 +17,35 @@ function chunkText(text) {
 
 export async function listCollections(tenantId) {
   const { rows } = await getPool().query(
-    `SELECT id, name, language, created_at FROM rag_collections WHERE tenant_id = $1 ORDER BY name`,
+    `SELECT c.id, c.name, c.language, c.created_at,
+            COUNT(d.id)::int AS doc_count
+     FROM rag_collections c
+     LEFT JOIN rag_documents d ON d.collection_id = c.id AND d.tenant_id = c.tenant_id
+     WHERE c.tenant_id = $1
+     GROUP BY c.id
+     ORDER BY c.name`,
     [tenantId],
   );
   return rows;
+}
+
+export async function listDocuments(tenantId, collectionId) {
+  const { rows } = await getPool().query(
+    `SELECT id, collection_id, source_type, source_ref, chunk_count, status, created_at, indexed_at, metadata
+     FROM rag_documents
+     WHERE tenant_id = $1 AND collection_id = $2
+     ORDER BY created_at DESC`,
+    [tenantId, collectionId],
+  );
+  return rows;
+}
+
+export async function findCollectionByName(tenantId, name) {
+  const { rows } = await getPool().query(
+    `SELECT id, name, language FROM rag_collections WHERE tenant_id = $1 AND name = $2 LIMIT 1`,
+    [tenantId, name],
+  );
+  return rows[0] ?? null;
 }
 
 export async function createCollection(tenantId, { name, language }) {
@@ -60,7 +85,9 @@ export async function indexDocument(tenantId, { collection_id, source_type, sour
   return { index_job_id: docId, chunk_count: chunks.length };
 }
 
-export async function queryRag(tenantId, { collection_id, query, top_k = 5, min_score = 0.72 }) {
+export async function queryRag(tenantId, { collection_id, query, top_k = 5, min_score }) {
+  const defaultMin = parseFloat(process.env.RAG_MIN_SCORE || '0.35');
+  const threshold = min_score ?? defaultMin;
   const adapter = await resolveAdapter(tenantId);
   const [qEmb] = await adapter.embed([query]);
   const vec = `[${qEmb.join(',')}]`;
@@ -77,7 +104,7 @@ export async function queryRag(tenantId, { collection_id, query, top_k = 5, min_
 
   return {
     chunks: rows
-      .filter((r) => Number(r.score) >= min_score)
+      .filter((r) => Number(r.score) >= threshold)
       .map((r) => ({
         chunk_id: r.chunk_id,
         content: r.content,
