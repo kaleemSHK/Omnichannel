@@ -1,19 +1,18 @@
-import { View, Text, ScrollView, TouchableOpacity, Animated, RefreshControl } from 'react-native';
-import { useRef, useState, useEffect } from 'react';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, RefreshControl } from 'react-native';
+import { useState } from 'react';
 import { useNavigation } from '@react-navigation/native';
 import type { CompositeNavigationProp } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
-import { hapticImpact, hapticSelection } from '@/lib/haptics';
 import { useAuthStore } from '@/store/auth';
 import { useCallsStore } from '@/store/calls';
 import { setAgentState as apiSetAgentState } from '@/api/routing';
 import { listConversations } from '@/api/conversations';
 import { Avatar } from '@/components/layout/Avatar';
-import { OfflineBanner } from '@/components/layout/OfflineBanner';
+import { C } from '@/lib/ui';
+import { hapticSelection } from '@/lib/haptics';
 import type { AgentState } from '@/types';
 import type { AgentStackParamList, AgentTabParamList } from '@/navigation/types';
 
@@ -22,45 +21,22 @@ type AgentNav = CompositeNavigationProp<
   NativeStackNavigationProp<AgentStackParamList>
 >;
 
-const STATE_OPTIONS: { key: AgentState; label: string; color: string; emoji: string }[] = [
-  { key: 'available', label: 'agent.available', color: '#48bb78', emoji: '🟢' },
-  { key: 'break',     label: 'agent.break',     color: '#f6ad55', emoji: '🟡' },
-  { key: 'busy',      label: 'agent.busy',      color: '#fc8181', emoji: '🔴' },
-  { key: 'offline',   label: 'agent.offline',   color: '#5a6170', emoji: '⚫' },
+const STATES: { key: AgentState; label: string; color: string; bg: string }[] = [
+  { key: 'available', label: 'Available',  color: C.green,  bg: C.greenBg },
+  { key: 'break',     label: 'On Break',   color: C.amber,  bg: C.amberBg },
+  { key: 'busy',      label: 'Busy',       color: C.red,    bg: C.redBg },
+  { key: 'offline',   label: 'Offline',    color: C.textMute, bg: C.bgMuted },
 ];
 
-function KPICard({ label, value, color, icon, loading }: {
-  label: string; value: string | number; color: string; icon: string; loading?: boolean;
-}) {
-  const scale = useRef(new Animated.Value(0.92)).current;
-  useEffect(() => {
-    Animated.spring(scale, { toValue: 1, useNativeDriver: true, delay: 50 }).start();
-  }, [scale]);
-  return (
-    <Animated.View style={{ transform: [{ scale }], flex: 1 }}>
-      <View className="bg-surface-card border border-surface-border rounded-2xl p-4">
-        <Text style={{ fontSize: 22, marginBottom: 6 }}>{icon}</Text>
-        {loading ? (
-          <View className="h-7 w-10 bg-surface rounded-lg mb-1" />
-        ) : (
-          <Text style={{ color, fontSize: 26, fontWeight: '800', marginBottom: 2 }}>{value}</Text>
-        )}
-        <Text className="text-text-muted" style={{ fontSize: 11 }}>{label}</Text>
-      </View>
-    </Animated.View>
-  );
-}
-
 export default function AgentDashboard() {
-  const { t } = useTranslation();
   const navigation = useNavigation<AgentNav>();
   const user = useAuthStore((s) => s.user);
   const agentState = useCallsStore((s) => s.agentState);
   const setAgentState = useCallsStore((s) => s.setAgentState);
   const [refreshing, setRefreshing] = useState(false);
-  const stateInfo = STATE_OPTIONS.find((s) => s.key === agentState) ?? STATE_OPTIONS[3];
+  const stateInfo = STATES.find((s) => s.key === agentState) ?? STATES[3];
 
-  const { data: openConvs, isLoading: convLoading, refetch } = useQuery({
+  const { data: openConvs, isLoading, refetch } = useQuery({
     queryKey: ['conversations', 'open'],
     queryFn: () => listConversations({ status: 'open' }),
     staleTime: 30_000,
@@ -75,116 +51,129 @@ export default function AgentDashboard() {
   const pendingCount = pendingConvs?.data?.length ?? 0;
   const unreadCount = (openConvs?.data ?? []).reduce((sum, c) => sum + (c.unread_count ?? 0), 0);
 
-  async function handleStateChange(state: AgentState) {
+  async function changeState(state: AgentState) {
     hapticSelection();
     setAgentState(state);
-    try {
-      if (user) await apiSetAgentState(String(user.id), state);
-    } catch { /* local state updated */ }
+    try { if (user) await apiSetAgentState(String(user.id), state); } catch {}
   }
 
-  async function onRefresh() {
-    setRefreshing(true);
-    await refetch();
-    setRefreshing(false);
-  }
+  async function onRefresh() { setRefreshing(true); await refetch(); setRefreshing(false); }
+
+  const kpis = [
+    { label: 'Open', value: openCount, color: C.green, bg: C.greenBg, icon: '💬' },
+    { label: 'Pending', value: pendingCount, color: C.amber, bg: C.amberBg, icon: '⏳' },
+    { label: 'Unread', value: unreadCount, color: C.red, bg: C.redBg, icon: '🔔' },
+  ];
+
+  const quickLinks = [
+    { icon: '💬', label: 'Conversations', sub: `${openCount} open`, screen: 'Conversations' as const, color: C.brand, bg: C.brandLight },
+    { icon: '📞', label: 'Call History', sub: 'Recent calls', screen: 'Calls' as const, color: '#7C3AED', bg: '#EDE9FE' },
+    { icon: '🎯', label: 'Dial Pad', sub: 'Make a call', screen: 'Dial' as const, color: '#0891B2', bg: '#E0F2FE' },
+    { icon: '👥', label: 'Contacts', sub: 'Search contacts', screen: 'Contacts' as const, color: '#D97706', bg: '#FEF3C7' },
+  ];
 
   return (
-    <SafeAreaView className="flex-1 bg-bg">
-      <OfflineBanner />
+    <SafeAreaView style={s.screen}>
       <ScrollView
-        className="flex-1"
-        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 40 }}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#63b3ed" />}
+        contentContainerStyle={s.scroll}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.brand} />}
         showsVerticalScrollIndicator={false}
       >
         {/* Header */}
-        <View className="flex-row items-center mb-6">
-          <Avatar name={user?.name ?? ''} imageUrl={user?.avatarUrl} size={48} online={agentState === 'available'} />
-          <View className="ml-3 flex-1">
-            <Text className="text-text-primary font-bold text-base">{user?.name ?? 'Agent'}</Text>
-            <Text className="text-text-muted text-xs">{user?.email}</Text>
+        <View style={s.header}>
+          <View style={s.headerLeft}>
+            <Avatar name={user?.name ?? ''} imageUrl={user?.avatarUrl} size={46} online={agentState === 'available'} />
+            <View style={{ marginLeft: 12 }}>
+              <Text style={s.userName}>{user?.name ?? 'Agent'}</Text>
+              <Text style={s.userEmail} numberOfLines={1}>{user?.email}</Text>
+            </View>
           </View>
-          {/* Status pill */}
-          <TouchableOpacity
-            onPress={() => {
-              const next = STATE_OPTIONS[(STATE_OPTIONS.findIndex(s => s.key === agentState) + 1) % STATE_OPTIONS.length];
-              handleStateChange(next.key);
-            }}
-            className="flex-row items-center gap-1.5 rounded-full px-3 py-1.5 border"
-            style={{ borderColor: stateInfo.color + '44', backgroundColor: stateInfo.color + '18' }}
-          >
-            <View className="w-2 h-2 rounded-full" style={{ backgroundColor: stateInfo.color }} />
-            <Text style={{ color: stateInfo.color, fontSize: 12, fontWeight: '600' }}>{t(stateInfo.label)}</Text>
-          </TouchableOpacity>
+          <View style={[s.statePill, { backgroundColor: stateInfo.bg }]}>
+            <View style={[s.stateDot, { backgroundColor: stateInfo.color }]} />
+            <Text style={[s.stateLabel, { color: stateInfo.color }]}>{stateInfo.label}</Text>
+          </View>
         </View>
 
-        {/* KPI Cards */}
-        <Text className="text-text-muted text-xs uppercase tracking-widest mb-3">My Queues</Text>
-        <View className="flex-row gap-3 mb-6">
-          <KPICard label="Open" value={openCount} color="#48bb78" icon="💬" loading={convLoading} />
-          <KPICard label="Pending" value={pendingCount} color="#f6ad55" icon="⏳" loading={convLoading} />
-          <KPICard label="Unread" value={unreadCount} color="#fc8181" icon="🔔" loading={convLoading} />
+        {/* KPI cards */}
+        <Text style={s.sectionLabel}>MY QUEUES</Text>
+        <View style={s.kpiRow}>
+          {kpis.map((k) => (
+            <View key={k.label} style={[s.kpiCard, { backgroundColor: k.bg }]}>
+              <Text style={{ fontSize: 22, marginBottom: 6 }}>{k.icon}</Text>
+              <Text style={[s.kpiValue, { color: k.color }]}>{isLoading ? '—' : k.value}</Text>
+              <Text style={[s.kpiLabel, { color: k.color }]}>{k.label}</Text>
+            </View>
+          ))}
         </View>
 
         {/* Status selector */}
-        <Text className="text-text-muted text-xs uppercase tracking-widest mb-3">Set Status</Text>
-        <View className="flex-row gap-2 mb-6 flex-wrap">
-          {STATE_OPTIONS.map((opt) => {
+        <Text style={s.sectionLabel}>SET STATUS</Text>
+        <View style={s.stateRow}>
+          {STATES.map((opt) => {
             const active = agentState === opt.key;
             return (
               <TouchableOpacity
                 key={opt.key}
-                onPress={() => handleStateChange(opt.key)}
-                className="flex-row items-center gap-2 px-4 py-2.5 rounded-2xl border"
-                style={{
-                  borderColor: active ? opt.color : 'rgba(255,255,255,0.08)',
-                  backgroundColor: active ? opt.color + '20' : 'transparent',
-                }}
+                onPress={() => changeState(opt.key)}
+                activeOpacity={0.85}
+                style={[s.stateBtn, active && { backgroundColor: opt.bg, borderColor: opt.color }]}
               >
-                <View className="w-2 h-2 rounded-full" style={{ backgroundColor: opt.color }} />
-                <Text style={{ color: active ? opt.color : '#9099aa', fontSize: 13, fontWeight: active ? '700' : '400' }}>
-                  {t(opt.label)}
-                </Text>
+                <View style={[s.stateDotSm, { backgroundColor: opt.color }]} />
+                <Text style={[s.stateBtnLabel, active && { color: opt.color, fontWeight: '700' }]}>{opt.label}</Text>
               </TouchableOpacity>
             );
           })}
         </View>
 
-        {/* Quick access */}
-        <Text className="text-text-muted text-xs uppercase tracking-widest mb-3">Quick Access</Text>
-        <View className="gap-2.5">
-          {[
-            { icon: '💬', label: 'Conversations', sub: `${openCount} open`, screen: 'Conversations' as const, color: '#48bb78' },
-            { icon: '📞', label: 'Call History', sub: 'Recent calls', screen: 'Calls' as const, color: '#63b3ed' },
-            { icon: '🎯', label: 'Dial Pad', sub: 'Make a call', screen: 'Dial' as const, color: '#a78bfa' },
-            { icon: '👥', label: 'Contacts', sub: 'Search contacts', screen: 'Contacts' as const, color: '#f6ad55' },
-          ].map((item) => {
-            const scale = useRef(new Animated.Value(1)).current;
-            return (
-              <Animated.View key={item.screen} style={{ transform: [{ scale }] }}>
-                <TouchableOpacity
-                  onPress={() => { hapticSelection(); navigation.navigate(item.screen); }}
-                  onPressIn={() => Animated.spring(scale, { toValue: 0.97, useNativeDriver: true, speed: 40 }).start()}
-                  onPressOut={() => Animated.spring(scale, { toValue: 1, useNativeDriver: true, speed: 20 }).start()}
-                  activeOpacity={1}
-                  className="flex-row items-center bg-surface-card border border-surface-border rounded-2xl p-4"
-                >
-                  <View className="w-11 h-11 rounded-2xl items-center justify-center mr-4"
-                    style={{ backgroundColor: item.color + '18' }}>
-                    <Text style={{ fontSize: 22 }}>{item.icon}</Text>
-                  </View>
-                  <View className="flex-1">
-                    <Text className="text-text-primary font-semibold text-sm">{item.label}</Text>
-                    <Text className="text-text-muted text-xs mt-0.5">{item.sub}</Text>
-                  </View>
-                  <Text className="text-text-muted text-lg">›</Text>
-                </TouchableOpacity>
-              </Animated.View>
-            );
-          })}
+        {/* Quick links */}
+        <Text style={s.sectionLabel}>QUICK ACCESS</Text>
+        <View style={s.links}>
+          {quickLinks.map((item) => (
+            <TouchableOpacity
+              key={item.screen}
+              onPress={() => { hapticSelection(); navigation.navigate(item.screen); }}
+              activeOpacity={0.85}
+              style={s.linkCard}
+            >
+              <View style={[s.linkIcon, { backgroundColor: item.bg }]}>
+                <Text style={{ fontSize: 22 }}>{item.icon}</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={s.linkLabel}>{item.label}</Text>
+                <Text style={s.linkSub}>{item.sub}</Text>
+              </View>
+              <Text style={s.linkArrow}>›</Text>
+            </TouchableOpacity>
+          ))}
         </View>
       </ScrollView>
     </SafeAreaView>
   );
 }
+
+const s = StyleSheet.create({
+  screen:       { flex: 1, backgroundColor: C.bg },
+  scroll:       { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 40 },
+  header:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 },
+  headerLeft:   { flexDirection: 'row', alignItems: 'center', flex: 1 },
+  userName:     { fontSize: 16, fontWeight: '700', color: C.text },
+  userEmail:    { fontSize: 12, color: C.textSub, marginTop: 1 },
+  statePill:    { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999 },
+  stateDot:     { width: 8, height: 8, borderRadius: 4 },
+  stateLabel:   { fontSize: 12, fontWeight: '600' },
+  sectionLabel: { fontSize: 11, fontWeight: '700', color: C.textMute, letterSpacing: 1, marginBottom: 10, marginTop: 8 },
+  kpiRow:       { flexDirection: 'row', gap: 10, marginBottom: 20 },
+  kpiCard:      { flex: 1, borderRadius: 16, padding: 14, alignItems: 'center' },
+  kpiValue:     { fontSize: 28, fontWeight: '800', marginBottom: 2 },
+  kpiLabel:     { fontSize: 11, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
+  stateRow:     { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 20 },
+  stateBtn:     { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1.5, borderColor: C.border, backgroundColor: C.bgCard },
+  stateDotSm:   { width: 8, height: 8, borderRadius: 4 },
+  stateBtnLabel:{ fontSize: 13, color: C.textSub },
+  links:        { gap: 10 },
+  linkCard:     { flexDirection: 'row', alignItems: 'center', backgroundColor: C.bgCard, borderRadius: 16, padding: 16, borderWidth: 1, borderColor: C.border, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 6, elevation: 2, gap: 14 },
+  linkIcon:     { width: 48, height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  linkLabel:    { fontSize: 15, fontWeight: '600', color: C.text, marginBottom: 2 },
+  linkSub:      { fontSize: 12, color: C.textSub },
+  linkArrow:    { fontSize: 22, color: C.textMute },
+});

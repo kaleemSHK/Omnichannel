@@ -1,103 +1,102 @@
 import { useState } from 'react';
-import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  KeyboardAvoidingView,
-  Platform,
-  ActivityIndicator,
-} from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, ActivityIndicator, StyleSheet } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useTranslation } from 'react-i18next';
 import { loginWithPassword } from '@/api/auth';
 import { useAuthStore } from '@/store/auth';
+import { C } from '@/lib/ui';
 import type { RootStackParamList } from '@/navigation/types';
 
 export default function LoginScreen() {
-  const { t } = useTranslation();
   const setAuth = useAuthStore((s) => s.setAuth);
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   async function handleLogin() {
-    if (!email.trim() || !password) {
-      setError('Please enter your email and password');
-      return;
-    }
-    setLoading(true);
-    setError('');
+    if (!email.trim() || !password) { setError('Please enter your email and password'); return; }
+    setLoading(true); setError('');
     try {
       const { user, tokens } = await loginWithPassword(email.trim(), password);
       await setAuth(user, tokens);
       navigation.reset({ index: 0, routes: [{ name: 'Agent' }] });
     } catch (e) {
-      setError(e instanceof Error ? e.message : t('common.error'));
-    } finally {
-      setLoading(false);
-    }
+      setError(e instanceof Error ? e.message : 'Login failed. Please try again.');
+    } finally { setLoading(false); }
   }
 
   return (
-    <SafeAreaView className="flex-1 bg-bg">
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        className="flex-1 justify-center px-6"
-      >
-        <Text className="text-brand text-3xl font-bold mb-1">{t('auth.blinkone')}</Text>
-        <Text className="text-text-secondary text-sm mb-10">{t('auth.welcome_back')}</Text>
+    <SafeAreaView style={s.screen}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={s.kav}>
+        {/* Logo */}
+        <View style={s.logoRow}>
+          <View style={s.logoBox}><Text style={s.logoLetter}>B</Text></View>
+          <View>
+            <Text style={s.brand}>BlinkOne</Text>
+            <Text style={s.sub}>Agent Sign In</Text>
+          </View>
+        </View>
 
-        <Text className="text-text-secondary text-xs mb-1 uppercase tracking-widest">{t('auth.email')}</Text>
+        {/* Email */}
+        <Text style={s.label}>Email Address</Text>
         <TextInput
-          value={email}
-          onChangeText={setEmail}
+          value={email} onChangeText={setEmail}
           placeholder="agent@company.com"
-          placeholderTextColor="#5a6170"
-          keyboardType="email-address"
-          autoCapitalize="none"
-          autoCorrect={false}
-          className="bg-surface-card border border-surface-border rounded-xl px-4 py-3.5 text-text-primary mb-4"
+          placeholderTextColor={C.textMute}
+          keyboardType="email-address" autoCapitalize="none" autoCorrect={false}
+          style={s.input}
         />
 
-        <Text className="text-text-secondary text-xs mb-1 uppercase tracking-widest">{t('auth.password')}</Text>
+        {/* Password */}
+        <Text style={[s.label, { marginTop: 16 }]}>Password</Text>
         <TextInput
-          value={password}
-          onChangeText={setPassword}
-          placeholder="••••••••"
-          placeholderTextColor="#5a6170"
+          value={password} onChangeText={setPassword}
+          placeholder="Enter your password"
+          placeholderTextColor={C.textMute}
           secureTextEntry
-          className="bg-surface-card border border-surface-border rounded-xl px-4 py-3.5 text-text-primary mb-2"
+          style={s.input}
           onSubmitEditing={handleLogin}
           returnKeyType="done"
         />
 
-        {!!error && <Text className="text-danger text-sm mb-4">{error}</Text>}
+        {!!error && (
+          <View style={s.errorBox}>
+            <Text style={s.errorText}>⚠ {error}</Text>
+          </View>
+        )}
 
-        <TouchableOpacity
-          onPress={handleLogin}
-          disabled={loading}
-          className="bg-brand rounded-xl py-4 items-center mt-2 active:opacity-80"
-        >
-          {loading ? (
-            <ActivityIndicator color="#000" />
-          ) : (
-            <Text className="text-black font-bold text-base">{t('auth.login')}</Text>
-          )}
+        {/* Sign in button */}
+        <TouchableOpacity onPress={handleLogin} disabled={loading} style={[s.btn, loading && s.btnDisabled]} activeOpacity={0.85}>
+          {loading ? <ActivityIndicator color="#fff" /> : <Text style={s.btnText}>Sign In</Text>}
         </TouchableOpacity>
 
-        <TouchableOpacity
-          onPress={() => navigation.navigate('Auth', { screen: 'SelectRole' })}
-          className="mt-6 items-center"
-        >
-          <Text className="text-text-muted text-sm">← Back</Text>
+        {/* Back */}
+        <TouchableOpacity onPress={() => navigation.navigate('Auth', { screen: 'SelectRole' })} style={s.back}>
+          <Text style={s.backText}>← Back to role selection</Text>
         </TouchableOpacity>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
+
+const s = StyleSheet.create({
+  screen:   { flex: 1, backgroundColor: C.bg },
+  kav:      { flex: 1, justifyContent: 'center', paddingHorizontal: 24 },
+  logoRow:  { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 40 },
+  logoBox:  { width: 52, height: 52, borderRadius: 16, backgroundColor: C.brand, alignItems: 'center', justifyContent: 'center', shadowColor: C.brand, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.3, shadowRadius: 12, elevation: 6 },
+  logoLetter:{ color: '#fff', fontSize: 24, fontWeight: '800' },
+  brand:    { fontSize: 22, fontWeight: '800', color: C.text },
+  sub:      { fontSize: 13, color: C.textSub, marginTop: 2 },
+  label:    { fontSize: 12, fontWeight: '600', color: C.textSub, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.6 },
+  input:    { backgroundColor: C.bgCard, borderWidth: 1.5, borderColor: C.border, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14, fontSize: 15, color: C.text, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 4, elevation: 1 },
+  errorBox: { backgroundColor: '#FEF2F2', borderRadius: 12, padding: 12, marginTop: 12, borderWidth: 1, borderColor: '#FECACA' },
+  errorText:{ color: C.red, fontSize: 13 },
+  btn:      { backgroundColor: C.brand, borderRadius: 14, paddingVertical: 16, alignItems: 'center', marginTop: 24, shadowColor: C.brand, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.3, shadowRadius: 12, elevation: 6 },
+  btnDisabled:{ opacity: 0.7 },
+  btnText:  { color: '#fff', fontSize: 16, fontWeight: '700' },
+  back:     { alignItems: 'center', marginTop: 24 },
+  backText: { color: C.textSub, fontSize: 14 },
+});

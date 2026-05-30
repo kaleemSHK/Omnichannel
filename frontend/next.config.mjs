@@ -27,6 +27,15 @@ const nextConfig = {
         source: '/proxy/api/:path*',
         destination: `${gatewayUpstream}/api/:path*`,
       },
+      // Mobile app customer portal — proxy to gateway (Nginx regex doesn't catch this)
+      {
+        source: '/api/customer/:path*',
+        destination: `${gatewayUpstream}/api/customer/:path*`,
+      },
+      {
+        source: '/api/recordings/:path*',
+        destination: `${gatewayUpstream}/api/recordings/:path*`,
+      },
     ];
   },
   async headers() {
