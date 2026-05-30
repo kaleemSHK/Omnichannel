@@ -18,12 +18,17 @@ export default function CustomerHome() {
   const { makeCall } = useSip();
   const activeCall = useCallsStore((s) => s.activeCall);
   const incomingCalls = useCallsStore((s) => s.incomingCalls);
+  const sipRegistered = useCallsStore((s) => s.sipRegistered);
   const { requestMic } = usePermissions();
   const [calling, setCalling] = useState(false);
 
   async function handleCallSupport() {
     const granted = await requestMic();
     if (!granted) { Alert.alert('Microphone Required', 'Please grant microphone permission.'); return; }
+    if (!sipRegistered) {
+      Alert.alert('Connecting…', 'SIP is still connecting. Please wait a few seconds and try again.');
+      return;
+    }
     hapticImpact('medium');
     setCalling(true);
     makeCall(SUPPORT_EXT);
@@ -45,13 +50,13 @@ export default function CustomerHome() {
 
         {/* Call Support */}
         <TouchableOpacity onPress={handleCallSupport} disabled={calling} activeOpacity={0.85}
-          style={[s.card, { backgroundColor: C.green, borderColor: C.green, marginBottom: 12 }]}>
+          style={[s.card, { backgroundColor: sipRegistered ? C.green : '#94A3B8', borderColor: 'transparent', marginBottom: 12 }]}>
           <Text style={{ fontSize: 40, marginBottom: 8 }}>📞</Text>
           <Text style={[s.cardTitle, { color: '#fff' }]}>
             {calling ? t('customer.calling') : t('customer.call_support')}
           </Text>
-          <Text style={[s.cardSub, { color: 'rgba(255,255,255,0.8)' }]}>
-            {calling ? 'Connecting you to an agent…' : 'Talk to us right now'}
+          <Text style={[s.cardSub, { color: 'rgba(255,255,255,0.85)' }]}>
+            {calling ? 'Connecting you to an agent…' : sipRegistered ? 'Talk to us right now' : 'Connecting to phone system…'}
           </Text>
         </TouchableOpacity>
 
