@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { View, Text, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, Alert, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { useSip } from '@/providers/sip-context';
@@ -9,6 +9,7 @@ import { useCallsStore } from '@/store/calls';
 import { usePermissions } from '@/hooks/usePermissions';
 import { AppHeader } from '@/components/layout/AppHeader';
 import { useEffect } from 'react';
+import { C } from '@/lib/ui';
 
 const DIALPAD: (string | { label: string; sub: string })[][] = [
   ['1', '2', '3'],
@@ -50,29 +51,25 @@ export default function AgentDial() {
   }
 
   return (
-    <SafeAreaView className="flex-1 bg-bg" edges={['top']}>
+    <SafeAreaView style={styles.screen} edges={['top']}>
       <AppHeader title={t('agent.dialpad')} />
 
       {/* Number display */}
-      <View className="items-center px-6 mt-6 mb-8">
-        <Text
-          className="text-text-primary text-4xl font-light tracking-widest min-h-[48px]"
-          numberOfLines={1}
-          adjustsFontSizeToFit
-        >
+      <View style={styles.numberDisplay}>
+        <Text style={styles.numberText} numberOfLines={1} adjustsFontSizeToFit>
           {number || ' '}
         </Text>
         {number.length > 0 && (
-          <TouchableOpacity onPress={backspace} className="mt-2 p-2">
-            <Text className="text-text-muted text-base">⌫</Text>
+          <TouchableOpacity onPress={backspace} style={styles.backspaceBtn}>
+            <Text style={styles.backspaceText}>⌫</Text>
           </TouchableOpacity>
         )}
       </View>
 
       {/* Dial pad grid */}
-      <View className="px-10 gap-4">
+      <View style={styles.dialGrid}>
         {DIALPAD.map((row, ri) => (
-          <View key={ri} className="flex-row justify-between">
+          <View key={ri} style={styles.dialRow}>
             {row.map((cell) => {
               const digit = typeof cell === 'string' ? cell : cell.label;
               const sub = typeof cell === 'string' ? '' : cell.sub;
@@ -80,10 +77,11 @@ export default function AgentDial() {
                 <TouchableOpacity
                   key={digit}
                   onPress={() => press(digit)}
-                  className="w-20 h-20 rounded-full bg-surface-card border border-surface-border items-center justify-center"
+                  style={styles.dialKey}
+                  activeOpacity={0.7}
                 >
-                  <Text className="text-text-primary text-2xl font-medium">{digit}</Text>
-                  {sub ? <Text className="text-text-muted text-[10px] tracking-widest">{sub}</Text> : null}
+                  <Text style={styles.dialDigit}>{digit}</Text>
+                  {sub ? <Text style={styles.dialSub}>{sub}</Text> : null}
                 </TouchableOpacity>
               );
             })}
@@ -92,16 +90,85 @@ export default function AgentDial() {
       </View>
 
       {/* Call button */}
-      <View className="items-center mt-8">
+      <View style={styles.callBtnContainer}>
         <TouchableOpacity
           onPress={handleCall}
           disabled={!number.trim()}
-          className="w-20 h-20 rounded-full items-center justify-center"
-          style={{ backgroundColor: number.trim() ? '#48bb78' : '#2d3748' }}
+          style={[styles.callBtn, { backgroundColor: number.trim() ? C.green : '#2d3748' }]}
         >
-          <Text className="text-3xl">📞</Text>
+          <Text style={styles.callBtnIcon}>📞</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: C.bg,
+  },
+  numberDisplay: {
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    marginTop: 24,
+    marginBottom: 32,
+  },
+  numberText: {
+    color: C.text,
+    fontSize: 36,
+    fontWeight: '300',
+    letterSpacing: 4,
+    minHeight: 48,
+  },
+  backspaceBtn: {
+    marginTop: 8,
+    padding: 8,
+  },
+  backspaceText: {
+    color: C.textMute,
+    fontSize: 16,
+  },
+  dialGrid: {
+    paddingHorizontal: 40,
+    gap: 16,
+  },
+  dialRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  dialKey: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: C.bgCard,
+    borderWidth: 1,
+    borderColor: C.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dialDigit: {
+    color: C.text,
+    fontSize: 24,
+    fontWeight: '500',
+  },
+  dialSub: {
+    color: C.textMute,
+    fontSize: 10,
+    letterSpacing: 1.5,
+  },
+  callBtnContainer: {
+    alignItems: 'center',
+    marginTop: 32,
+  },
+  callBtn: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  callBtnIcon: {
+    fontSize: 30,
+  },
+});

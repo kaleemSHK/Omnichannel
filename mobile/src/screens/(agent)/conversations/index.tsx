@@ -93,7 +93,7 @@ export default function AgentConversations() {
           data={conversations}
           keyExtractor={(item) => String(item.id)}
           renderItem={({ item }) => (
-            <ConvCard item={item} onPress={() => navigation.navigate('ConversationDetail', { conversationId: item.id })} />
+            <ConvCard item={item} onPress={() => navigation.navigate('ConversationDetail', { id: String(item.id) })} />
           )}
           refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={C.brand} />}
           contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: 40 }}

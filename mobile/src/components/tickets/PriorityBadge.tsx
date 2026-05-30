@@ -1,21 +1,37 @@
-import { Text, View } from 'react-native';
+import { Text, View, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { Ticket } from '@/types';
+import { C } from '@/lib/ui';
 
-const COLORS: Record<Ticket['priority'], string> = {
-  p1: 'bg-danger/20 text-danger',
-  p2: 'bg-warning/20 text-warning',
-  p3: 'bg-brand/20 text-brand',
-  p4: 'bg-text-muted/20 text-text-muted',
+type PriorityColors = { bg: string; text: string };
+
+const COLORS: Record<Ticket['priority'], PriorityColors> = {
+  p1: { bg: C.redBg, text: C.red },
+  p2: { bg: C.amberBg, text: C.amber },
+  p3: { bg: C.brandLight, text: C.brand },
+  p4: { bg: C.bgMuted, text: C.textMute },
 };
 
 export function PriorityBadge({ priority }: { priority: Ticket['priority'] }) {
   const { t } = useTranslation();
-  const [bg, text] = (COLORS[priority] ?? COLORS.p4).split(' ');
+  const colors = COLORS[priority] ?? COLORS.p4;
 
   return (
-    <View className={`px-2 py-0.5 rounded-full ${bg}`}>
-      <Text className={`text-xs font-semibold uppercase ${text}`}>{t(`ticket.${priority}`)}</Text>
+    <View style={[styles.badge, { backgroundColor: colors.bg }]}>
+      <Text style={[styles.text, { color: colors.text }]}>{t(`ticket.${priority}`)}</Text>
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  badge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 999,
+  },
+  text: {
+    fontSize: 12,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+  },
+});

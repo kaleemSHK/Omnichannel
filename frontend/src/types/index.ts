@@ -12,6 +12,7 @@ export interface BlinkoneUser {
 export interface AuthTokens {
   accessToken: string;     // Chatwoot user_access_token
   gatewayJwt: string;      // BlinkOne gateway JWT (tenant_id + roles)
+  pubsubToken?: string;    // Chatwoot ActionCable channel auth token
 }
 
 // ─── Chatwoot core types ───────────────────────────────────────────────────────

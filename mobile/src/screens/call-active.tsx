@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, Modal, Pressable } from 'react-native';
+import { View, Text, TouchableOpacity, Modal, Pressable, StyleSheet } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
@@ -7,6 +7,7 @@ import { useCallsStore } from '@/store/calls';
 import { useSip } from '@/providers/sip-context';
 import { hapticImpact, hapticSelection } from '@/lib/haptics';
 import { setSpeakerphoneOn } from '@/lib/audio';
+import { C } from '@/lib/ui';
 
 function formatSec(sec: number): string {
   const m = Math.floor(sec / 60).toString().padStart(2, '0');
@@ -80,64 +81,66 @@ export default function CallActiveScreen() {
   ];
 
   return (
-    <SafeAreaView className="flex-1 bg-bg items-center justify-between py-10 px-6">
-      <View className="items-center mt-8">
-        <View className="w-24 h-24 rounded-full bg-surface-card border-2 border-brand items-center justify-center mb-6">
-          <Text className="text-5xl">{activeCall?.direction === 'inbound' ? '📲' : '📞'}</Text>
+    <SafeAreaView style={styles.screen}>
+      {/* Caller info */}
+      <View style={styles.callerSection}>
+        <View style={styles.callerAvatar}>
+          <Text style={styles.callerAvatarIcon}>
+            {activeCall?.direction === 'inbound' ? '📲' : '📞'}
+          </Text>
         </View>
-        <Text className="text-text-primary text-2xl font-bold">
+        <Text style={styles.callerPhone}>
           {activeCall?.customerPhone ?? 'Unknown'}
         </Text>
-        <Text className="text-base mt-2" style={{ color: isOnHold ? '#f6ad55' : '#48bb78' }}>
+        <Text style={[styles.callStatus, { color: isOnHold ? C.amber : C.green }]}>
           {isOnHold ? '⏸ On Hold' : `● ${formatSec(callDurationSec)}`}
         </Text>
       </View>
 
-      <View className="w-full">
-        <View className="flex-row justify-around mb-8 flex-wrap gap-y-4">
+      {/* Controls */}
+      <View style={styles.controlsSection}>
+        <View style={styles.controlsGrid}>
           {controls.map((ctrl) => (
-            <TouchableOpacity key={ctrl.label} onPress={ctrl.onPress} className="items-center w-1/4">
-              <View
-                className="w-16 h-16 rounded-full items-center justify-center mb-2"
-                style={{
-                  backgroundColor: ctrl.active ? 'rgba(99,179,237,0.2)' : undefined,
-                  borderWidth: 1,
-                  borderColor: ctrl.active ? '#63b3ed' : 'rgba(255,255,255,0.1)',
-                }}
-              >
-                <Text className="text-2xl">{ctrl.icon}</Text>
+            <TouchableOpacity key={ctrl.label} onPress={ctrl.onPress} style={styles.controlItem}>
+              <View style={[
+                styles.controlBtn,
+                {
+                  backgroundColor: ctrl.active ? 'rgba(37,99,235,0.15)' : 'transparent',
+                  borderColor: ctrl.active ? C.brand : C.border,
+                },
+              ]}>
+                <Text style={styles.controlIcon}>{ctrl.icon}</Text>
               </View>
-              <Text className="text-text-muted text-xs text-center">{ctrl.label}</Text>
+              <Text style={styles.controlLabel}>{ctrl.label}</Text>
             </TouchableOpacity>
           ))}
         </View>
 
         <TouchableOpacity
           onPress={handleEndCall}
-          className="rounded-full py-5 items-center active:opacity-80"
-          style={{ backgroundColor: '#e53e3e' }}
+          style={styles.endCallBtn}
+          activeOpacity={0.8}
         >
-          <Text className="text-white font-bold text-lg">📵 {t('call.end')}</Text>
+          <Text style={styles.endCallText}>📵 {t('call.end')}</Text>
         </TouchableOpacity>
       </View>
 
+      {/* DTMF Modal */}
       <Modal visible={showDtmf} transparent animationType="slide" onRequestClose={() => setShowDtmf(false)}>
-        <Pressable className="flex-1 bg-black/60" onPress={() => setShowDtmf(false)} />
-        <View className="bg-bg rounded-t-3xl px-6 pt-4 pb-10">
-          <View className="w-10 h-1 bg-surface-border rounded-full mx-auto mb-4" />
-          <Text className="text-text-muted text-center text-sm mb-2 font-mono tracking-widest min-h-[24px]">
-            {dtmfPressed || ' '}
-          </Text>
-          <View className="gap-3">
+        <Pressable style={styles.dtmfBackdrop} onPress={() => setShowDtmf(false)} />
+        <View style={styles.dtmfSheet}>
+          <View style={styles.dtmfHandle} />
+          <Text style={styles.dtmfDisplay}>{dtmfPressed || ' '}</Text>
+          <View style={styles.dtmfGrid}>
             {DTMF_KEYS.map((row, ri) => (
-              <View key={ri} className="flex-row justify-between">
+              <View key={ri} style={styles.dtmfRow}>
                 {row.map((digit) => (
                   <TouchableOpacity
                     key={digit}
                     onPress={() => handleDtmf(digit)}
-                    className="w-20 h-16 rounded-xl bg-surface-card border border-surface-border items-center justify-center"
+                    style={styles.dtmfKey}
                   >
-                    <Text className="text-text-primary text-xl font-medium">{digit}</Text>
+                    <Text style={styles.dtmfKeyText}>{digit}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
@@ -148,3 +151,134 @@ export default function CallActiveScreen() {
     </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: C.bg,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 40,
+    paddingHorizontal: 24,
+  },
+  callerSection: {
+    alignItems: 'center',
+    marginTop: 32,
+  },
+  callerAvatar: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    backgroundColor: C.bgCard,
+    borderWidth: 2,
+    borderColor: C.brand,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 24,
+  },
+  callerAvatarIcon: {
+    fontSize: 48,
+  },
+  callerPhone: {
+    color: C.text,
+    fontSize: 24,
+    fontWeight: '700',
+  },
+  callStatus: {
+    fontSize: 16,
+    marginTop: 8,
+  },
+  controlsSection: {
+    width: '100%',
+  },
+  controlsGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginBottom: 32,
+    flexWrap: 'wrap',
+    rowGap: 16,
+  },
+  controlItem: {
+    alignItems: 'center',
+    width: '25%',
+  },
+  controlBtn: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+    borderWidth: 1,
+  },
+  controlIcon: {
+    fontSize: 24,
+  },
+  controlLabel: {
+    color: C.textMute,
+    fontSize: 12,
+    textAlign: 'center',
+  },
+  endCallBtn: {
+    backgroundColor: C.red,
+    borderRadius: 999,
+    paddingVertical: 20,
+    alignItems: 'center',
+  },
+  endCallText: {
+    color: C.textWhite,
+    fontWeight: '700',
+    fontSize: 18,
+  },
+  dtmfBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+  },
+  dtmfSheet: {
+    backgroundColor: C.bg,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 24,
+    paddingTop: 16,
+    paddingBottom: 40,
+  },
+  dtmfHandle: {
+    width: 40,
+    height: 4,
+    backgroundColor: C.border,
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
+  dtmfDisplay: {
+    color: C.textMute,
+    textAlign: 'center',
+    fontSize: 14,
+    marginBottom: 8,
+    fontVariant: ['tabular-nums'],
+    minHeight: 24,
+    letterSpacing: 2,
+  },
+  dtmfGrid: {
+    gap: 12,
+  },
+  dtmfRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  dtmfKey: {
+    width: 80,
+    height: 64,
+    borderRadius: 12,
+    backgroundColor: C.bgCard,
+    borderWidth: 1,
+    borderColor: C.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dtmfKeyText: {
+    color: C.text,
+    fontSize: 20,
+    fontWeight: '500',
+  },
+});

@@ -1,5 +1,6 @@
-import { View, Text } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import { Button } from '@/components/ui/Button';
+import { C } from '@/lib/ui';
 
 interface EmptyStateProps {
   icon: string;
@@ -10,9 +11,9 @@ interface EmptyStateProps {
 
 export function EmptyState({ icon, message, actionLabel, onAction }: EmptyStateProps) {
   return (
-    <View className="flex-1 items-center justify-center px-8 py-16">
-      <Text className="text-5xl mb-4">{icon}</Text>
-      <Text className="text-text-secondary text-center text-base mb-6">{message}</Text>
+    <View style={styles.container}>
+      <Text style={styles.icon}>{icon}</Text>
+      <Text style={styles.message}>{message}</Text>
       {actionLabel && onAction ? (
         <Button variant="primary" size="md" onPress={onAction}>
           {actionLabel}
@@ -21,3 +22,23 @@ export function EmptyState({ icon, message, actionLabel, onAction }: EmptyStateP
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+    paddingVertical: 64,
+  },
+  icon: {
+    fontSize: 48,
+    marginBottom: 16,
+  },
+  message: {
+    color: C.textSub,
+    textAlign: 'center',
+    fontSize: 16,
+    marginBottom: 24,
+  },
+});

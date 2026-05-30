@@ -1,5 +1,6 @@
 import React, { Component, type ReactNode } from 'react';
-import { View, Text } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
+import { C } from '@/lib/ui';
 
 interface Props {
   children: ReactNode;
@@ -19,12 +20,32 @@ export class ErrorBoundary extends Component<Props, State> {
   render() {
     if (this.state.hasError) {
       return (
-        <View className="flex-1 bg-bg items-center justify-center p-6">
-          <Text className="text-danger text-lg font-bold mb-2">Something went wrong</Text>
-          <Text className="text-text-secondary text-center">Please restart the app.</Text>
+        <View style={styles.container}>
+          <Text style={styles.title}>Something went wrong</Text>
+          <Text style={styles.subtitle}>Please restart the app.</Text>
         </View>
       );
     }
     return this.props.children;
   }
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: C.bg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  title: {
+    color: C.red,
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 8,
+  },
+  subtitle: {
+    color: C.textSub,
+    textAlign: 'center',
+  },
+});

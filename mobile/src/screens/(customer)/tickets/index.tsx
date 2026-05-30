@@ -1,4 +1,4 @@
-import { FlatList, RefreshControl, Text, TouchableOpacity, View } from 'react-native';
+import { FlatList, RefreshControl, Text, TouchableOpacity, View, StyleSheet } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -11,6 +11,7 @@ import { useTickets } from '@/hooks/useTickets';
 import { loadCustomerSession } from '@/lib/storage';
 import { useEffect, useState } from 'react';
 import type { CustomerStackParamList } from '@/navigation/types';
+import { C } from '@/lib/ui';
 
 export default function CustomerTickets() {
   const { t } = useTranslation();
@@ -25,22 +26,22 @@ export default function CustomerTickets() {
   const tickets = data?.data ?? [];
 
   return (
-    <SafeAreaView className="flex-1 bg-bg" edges={['top']}>
+    <SafeAreaView style={styles.screen} edges={['top']}>
       <AppHeader
         title={t('customer.my_tickets')}
         right={
           <TouchableOpacity
             onPress={() => navigation.navigate('NewTicket')}
-            className="ml-2 px-3 py-1 bg-brand rounded-lg"
+            style={styles.newBtn}
           >
-            <Text className="text-white text-sm font-semibold">+ New</Text>
+            <Text style={styles.newBtnText}>+ New</Text>
           </TouchableOpacity>
         }
       />
       {isLoading ? (
-        <View className="px-5 gap-3 mt-4">
+        <View style={styles.skeletonContainer}>
           {[1, 2, 3].map((i) => (
-            <Skeleton key={i} className="h-20 rounded-xl" />
+            <Skeleton key={i} style={{ height: 80, borderRadius: 12 }} />
           ))}
         </View>
       ) : tickets.length === 0 ? (
@@ -55,10 +56,34 @@ export default function CustomerTickets() {
               onPress={() => navigation.navigate('TicketDetail', { id: item.id })}
             />
           )}
-          refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor="#63b3ed" />}
+          refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={C.brand} />}
           contentContainerStyle={{ padding: 20, gap: 12 }}
         />
       )}
     </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: C.bg,
+  },
+  newBtn: {
+    marginLeft: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    backgroundColor: C.brand,
+    borderRadius: 8,
+  },
+  newBtnText: {
+    color: C.textWhite,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  skeletonContainer: {
+    paddingHorizontal: 20,
+    gap: 12,
+    marginTop: 16,
+  },
+});

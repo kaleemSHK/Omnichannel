@@ -90,6 +90,9 @@ export function useMessages(conversationId: number | null) {
       }
     },
     enabled: !!conversationId,
+    refetchInterval: isDemoDataEnabled() ? false : 3000,
+    refetchIntervalInBackground: false,
+    staleTime: 1000,
   });
 }
 

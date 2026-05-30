@@ -23,6 +23,9 @@ export function useMessages(conversationId: number) {
     queryKey: ['messages', conversationId],
     queryFn: () => fetchMessages(conversationId),
     enabled: conversationId > 0,
+    refetchInterval: 3000,
+    refetchIntervalInBackground: false,
+    staleTime: 1000,
   });
 
   const mutation = useMutation({

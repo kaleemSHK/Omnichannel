@@ -1,4 +1,4 @@
-import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -11,6 +11,7 @@ import { setAgentState as apiSetAgentState } from '@/api/routing';
 import { Avatar } from '@/components/layout/Avatar';
 import { AppHeader } from '@/components/layout/AppHeader';
 import type { AgentState } from '@/types';
+import { C } from '@/lib/ui';
 
 import type { RootStackParamList } from '@/navigation/types';
 
@@ -48,63 +49,198 @@ export default function AgentSettings() {
   }
 
   return (
-    <SafeAreaView className="flex-1 bg-bg" edges={['top']}>
+    <SafeAreaView style={styles.screen} edges={['top']}>
       <AppHeader title={t('agent.settings')} />
-      <ScrollView className="flex-1 px-5 py-4">
-        <View className="flex-row items-center mb-8 bg-surface-card border border-surface-border rounded-xl p-4">
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
+        {/* Profile card */}
+        <View style={styles.profileCard}>
           <Avatar name={user?.name ?? ''} imageUrl={user?.avatarUrl} size={56} online={sipRegistered} />
-          <View className="ml-4 flex-1">
-            <Text className="text-text-primary font-bold text-lg">{user?.name}</Text>
-            <Text className="text-text-secondary text-sm">{user?.email}</Text>
-            <Text className="text-brand text-xs mt-1 capitalize">{user?.role?.replace('_', ' ')}</Text>
+          <View style={styles.profileInfo}>
+            <Text style={styles.profileName}>{user?.name}</Text>
+            <Text style={styles.profileEmail}>{user?.email}</Text>
+            <Text style={styles.profileRole}>{user?.role?.replace('_', ' ')}</Text>
           </View>
         </View>
 
-        <Text className="text-text-muted text-xs uppercase tracking-widest mb-2">Status</Text>
-        <View className="flex-row flex-wrap gap-2 mb-6">
-          {STATE_OPTIONS.map((state) => (
-            <TouchableOpacity
-              key={state}
-              onPress={() => handleStateChange(state)}
-              className={`px-3 py-2 rounded-full border ${
-                agentState === state ? 'bg-brand border-brand' : 'border-surface-border'
-              }`}
-            >
-              <Text className={`text-xs ${agentState === state ? 'text-black font-bold' : 'text-text-secondary'}`}>
-                {t(`agent.${state}` as 'agent.available')}
-              </Text>
-            </TouchableOpacity>
-          ))}
+        {/* Status */}
+        <Text style={styles.sectionLabel}>Status</Text>
+        <View style={styles.stateRow}>
+          {STATE_OPTIONS.map((state) => {
+            const active = agentState === state;
+            return (
+              <TouchableOpacity
+                key={state}
+                onPress={() => handleStateChange(state)}
+                style={[styles.stateChip, active ? styles.stateChipActive : styles.stateChipInactive]}
+              >
+                <Text style={[styles.stateChipText, active ? styles.stateChipTextActive : styles.stateChipTextInactive]}>
+                  {t(`agent.${state}` as 'agent.available')}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
 
-        <Text className="text-text-muted text-xs uppercase tracking-widest mb-2">Language</Text>
-        <View className="flex-row gap-2 mb-6">
+        {/* Language */}
+        <Text style={styles.sectionLabel}>Language</Text>
+        <View style={styles.langRow}>
           {(['en', 'ar'] as const).map((lang) => (
             <TouchableOpacity
               key={lang}
               onPress={() => changeLang(lang)}
-              className="flex-1 bg-surface-card border border-surface-border rounded-xl py-3 items-center active:opacity-70"
+              style={styles.langBtn}
+              activeOpacity={0.7}
             >
-              <Text className="text-text-primary font-medium">{lang === 'en' ? 'English' : 'العربية'}</Text>
+              <Text style={styles.langText}>{lang === 'en' ? 'English' : 'العربية'}</Text>
             </TouchableOpacity>
           ))}
         </View>
 
-        <Text className="text-text-muted text-xs uppercase tracking-widest mb-2">SIP</Text>
-        <View className="bg-surface-card border border-surface-border rounded-xl p-4 mb-8 flex-row items-center">
-          <View className={`w-2 h-2 rounded-full mr-2 ${sipRegistered ? 'bg-success' : 'bg-danger'}`} />
-          <Text className="text-text-primary text-sm">
+        {/* SIP */}
+        <Text style={styles.sectionLabel}>SIP</Text>
+        <View style={styles.sipCard}>
+          <View style={[styles.sipDot, { backgroundColor: sipRegistered ? C.green : C.red }]} />
+          <Text style={styles.sipText}>
             {sipRegistered ? 'Registered on WSS' : 'Not registered'}
           </Text>
         </View>
 
-        <TouchableOpacity
-          onPress={handleLogout}
-          className="bg-danger/20 border border-danger/40 rounded-xl py-4 items-center active:opacity-70"
-        >
-          <Text className="text-danger font-bold">{t('common.logout')}</Text>
+        {/* Logout */}
+        <TouchableOpacity onPress={handleLogout} style={styles.logoutBtn} activeOpacity={0.7}>
+          <Text style={styles.logoutText}>{t('common.logout')}</Text>
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: C.bg,
+  },
+  scroll: {
+    flex: 1,
+    paddingHorizontal: 20,
+  },
+  scrollContent: {
+    paddingTop: 16,
+    paddingBottom: 32,
+  },
+  profileCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 32,
+    backgroundColor: C.bgCard,
+    borderWidth: 1,
+    borderColor: C.border,
+    borderRadius: 12,
+    padding: 16,
+  },
+  profileInfo: {
+    marginLeft: 16,
+    flex: 1,
+  },
+  profileName: {
+    color: C.text,
+    fontWeight: '700',
+    fontSize: 18,
+  },
+  profileEmail: {
+    color: C.textSub,
+    fontSize: 14,
+  },
+  profileRole: {
+    color: C.brand,
+    fontSize: 12,
+    marginTop: 4,
+    textTransform: 'capitalize',
+  },
+  sectionLabel: {
+    color: C.textMute,
+    fontSize: 12,
+    textTransform: 'uppercase',
+    letterSpacing: 1.5,
+    marginBottom: 8,
+  },
+  stateRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 24,
+  },
+  stateChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  stateChipActive: {
+    backgroundColor: C.brand,
+    borderColor: C.brand,
+  },
+  stateChipInactive: {
+    backgroundColor: 'transparent',
+    borderColor: C.border,
+  },
+  stateChipText: {
+    fontSize: 12,
+  },
+  stateChipTextActive: {
+    color: C.textWhite,
+    fontWeight: '700',
+  },
+  stateChipTextInactive: {
+    color: C.textSub,
+  },
+  langRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 24,
+  },
+  langBtn: {
+    flex: 1,
+    backgroundColor: C.bgCard,
+    borderWidth: 1,
+    borderColor: C.border,
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  langText: {
+    color: C.text,
+    fontWeight: '500',
+  },
+  sipCard: {
+    backgroundColor: C.bgCard,
+    borderWidth: 1,
+    borderColor: C.border,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 32,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  sipDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 8,
+  },
+  sipText: {
+    color: C.text,
+    fontSize: 14,
+  },
+  logoutBtn: {
+    backgroundColor: C.redBg,
+    borderWidth: 1,
+    borderColor: C.red,
+    borderRadius: 12,
+    paddingVertical: 16,
+    alignItems: 'center',
+  },
+  logoutText: {
+    color: C.red,
+    fontWeight: '700',
+  },
+});

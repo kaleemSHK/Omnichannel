@@ -26,6 +26,7 @@ export interface ChaiwootAuthResponse {
     name: string;
     avatar_url: string;
     id: number;
+    pubsub_token: string;   // ActionCable RoomChannel auth token
   };
 }
 
@@ -120,7 +121,7 @@ export async function loginWithPassword(payload: LoginPayload): Promise<
       mfa_required: true,
       mfa_token: challenge.mfa_token,
       user: partialUser,
-      tokens: { accessToken: cwToken, gatewayJwt: '' },
+      tokens: { accessToken: cwToken, gatewayJwt: '', pubsubToken: cw.data.pubsub_token },
     };
   }
 
@@ -138,7 +139,7 @@ export async function loginWithPassword(payload: LoginPayload): Promise<
 
   return {
     user,
-    tokens: { accessToken: cwToken, gatewayJwt: gw.token },
+    tokens: { accessToken: cwToken, gatewayJwt: gw.token, pubsubToken: cw.data.pubsub_token },
   };
 }
 

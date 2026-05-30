@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, Alert, ActivityIndicator, StyleSheet } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppHeader } from '@/components/layout/AppHeader';
 import { createTicket } from '@/api/tickets';
 import { createCustomerTicket } from '@/api/customer';
 import { loadCustomerSession, loadPrefs } from '@/lib/storage';
+import { C } from '@/lib/ui';
 
 const PRIORITIES = [
   { label: 'low', value: 'p4' },
@@ -14,6 +15,13 @@ const PRIORITIES = [
   { label: 'urgent', value: 'p1' },
 ] as const;
 type PriorityValue = (typeof PRIORITIES)[number]['value'];
+
+const PRIORITY_COLORS: Record<string, string> = {
+  p4: C.green,
+  p3: C.brand,
+  p2: C.amber,
+  p1: C.red,
+};
 
 export default function NewTicket() {
   const navigation = useNavigation();
@@ -55,69 +63,133 @@ export default function NewTicket() {
     }
   }
 
-  const PRIORITY_COLORS: Record<string, string> = {
-    p4: '#48bb78',
-    p3: '#63b3ed',
-    p2: '#f6ad55',
-    p1: '#fc8181',
-  };
-
   return (
-    <SafeAreaView className="flex-1 bg-bg" edges={['top']}>
+    <SafeAreaView style={styles.screen} edges={['top']}>
       <AppHeader title="New Support Ticket" onBack={() => navigation.goBack()} />
-      <ScrollView className="flex-1 px-5 pt-4" keyboardShouldPersistTaps="handled">
-        <Text className="text-text-muted text-xs uppercase tracking-widest mb-1">Subject *</Text>
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+        <Text style={styles.fieldLabel}>Subject *</Text>
         <TextInput
           value={subject}
           onChangeText={setSubject}
           placeholder="Describe your issue briefly"
-          placeholderTextColor="#5a6170"
-          className="bg-surface-card border border-surface-border rounded-xl px-4 py-3 text-text-primary mb-4"
+          placeholderTextColor={C.textMute}
+          style={styles.input}
         />
 
-        <Text className="text-text-muted text-xs uppercase tracking-widest mb-1">Description</Text>
+        <Text style={styles.fieldLabel}>Description</Text>
         <TextInput
           value={description}
           onChangeText={setDescription}
           placeholder="Provide more details (optional)"
-          placeholderTextColor="#5a6170"
+          placeholderTextColor={C.textMute}
           multiline
           numberOfLines={4}
           textAlignVertical="top"
-          className="bg-surface-card border border-surface-border rounded-xl px-4 py-3 text-text-primary mb-4 h-28"
+          style={[styles.input, styles.textArea]}
         />
 
-        <Text className="text-text-muted text-xs uppercase tracking-widest mb-2">Priority</Text>
-        <View className="flex-row gap-2 mb-8 flex-wrap">
-          {PRIORITIES.map((p) => (
-            <TouchableOpacity
-              key={p.value}
-              onPress={() => setPriority(p.value)}
-              className={`px-4 py-2 rounded-full border ${priority === p.value ? 'border-brand' : 'border-surface-border'}`}
-              style={priority === p.value ? { backgroundColor: PRIORITY_COLORS[p.value] + '22' } : {}}
-            >
-              <Text
-                className="text-sm font-medium capitalize"
-                style={{ color: priority === p.value ? PRIORITY_COLORS[p.value] : '#5a6170' }}
+        <Text style={styles.fieldLabel}>Priority</Text>
+        <View style={styles.priorityRow}>
+          {PRIORITIES.map((p) => {
+            const active = priority === p.value;
+            const color = PRIORITY_COLORS[p.value];
+            return (
+              <TouchableOpacity
+                key={p.value}
+                onPress={() => setPriority(p.value)}
+                style={[
+                  styles.priorityChip,
+                  {
+                    borderColor: active ? color : C.border,
+                    backgroundColor: active ? color + '22' : 'transparent',
+                  },
+                ]}
               >
-                {p.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
+                <Text style={[styles.priorityChipText, { color: active ? color : C.textMute }]}>
+                  {p.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
 
         <TouchableOpacity
           onPress={handleSubmit}
           disabled={loading}
-          className="bg-brand rounded-xl py-4 items-center"
+          style={styles.submitBtn}
         >
           {loading ? (
-            <ActivityIndicator color="white" />
+            <ActivityIndicator color={C.textWhite} />
           ) : (
-            <Text className="text-white font-bold text-base">Submit Ticket</Text>
+            <Text style={styles.submitBtnText}>Submit Ticket</Text>
           )}
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: C.bg,
+  },
+  scroll: {
+    flex: 1,
+    paddingHorizontal: 20,
+  },
+  scrollContent: {
+    paddingTop: 16,
+    paddingBottom: 32,
+  },
+  fieldLabel: {
+    color: C.textMute,
+    fontSize: 12,
+    textTransform: 'uppercase',
+    letterSpacing: 1.5,
+    marginBottom: 6,
+  },
+  input: {
+    backgroundColor: C.bgCard,
+    borderWidth: 1,
+    borderColor: C.border,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    color: C.text,
+    fontSize: 15,
+    marginBottom: 16,
+  },
+  textArea: {
+    height: 112,
+    textAlignVertical: 'top',
+  },
+  priorityRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 32,
+  },
+  priorityChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  priorityChipText: {
+    fontSize: 14,
+    fontWeight: '500',
+    textTransform: 'capitalize',
+  },
+  submitBtn: {
+    backgroundColor: C.brand,
+    borderRadius: 12,
+    paddingVertical: 16,
+    alignItems: 'center',
+  },
+  submitBtnText: {
+    color: C.textWhite,
+    fontWeight: '700',
+    fontSize: 16,
+  },
+});

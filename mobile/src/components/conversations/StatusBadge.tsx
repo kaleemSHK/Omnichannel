@@ -1,24 +1,19 @@
 import { Text, View } from 'react-native';
-import { useTranslation } from 'react-i18next';
+import { C } from '@/lib/ui';
 import type { CWConversation } from '@/types';
 
-const COLORS: Record<CWConversation['status'], string> = {
-  open: 'bg-success/20 text-success',
-  resolved: 'bg-text-muted/20 text-text-muted',
-  pending: 'bg-warning/20 text-warning',
-  snoozed: 'bg-brand/20 text-brand',
+const ST: Record<string, { bg: string; color: string; label: string }> = {
+  open:     { bg: C.greenBg,   color: C.green,   label: 'Open' },
+  resolved: { bg: C.bgMuted,   color: C.textMute, label: 'Resolved' },
+  pending:  { bg: C.amberBg,   color: C.amber,   label: 'Pending' },
+  snoozed:  { bg: '#EFF6FF',   color: C.brand,   label: 'Snoozed' },
 };
 
 export function StatusBadge({ status }: { status: CWConversation['status'] }) {
-  const { t } = useTranslation();
-  const label =
-    status === 'snoozed' ? status : t(`conv.${status}` as 'conv.open' | 'conv.resolved' | 'conv.pending');
-
+  const cfg = ST[status] ?? ST.resolved;
   return (
-    <View className={`px-2 py-0.5 rounded-full ${COLORS[status]?.split(' ')[0] ?? 'bg-surface'}`}>
-      <Text className={`text-xs font-medium ${COLORS[status]?.split(' ')[1] ?? 'text-text-secondary'}`}>
-        {label}
-      </Text>
+    <View style={{ paddingHorizontal: 8, paddingVertical: 2, borderRadius: 999, backgroundColor: cfg.bg }}>
+      <Text style={{ fontSize: 11, fontWeight: '600', color: cfg.color }}>{cfg.label}</Text>
     </View>
   );
 }

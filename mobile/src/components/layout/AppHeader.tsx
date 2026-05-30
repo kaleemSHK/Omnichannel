@@ -1,29 +1,25 @@
-import { View, Text, TouchableOpacity } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { useTranslation } from 'react-i18next';
+import { C } from '@/lib/ui';
 
-interface AppHeaderProps {
-  title: string;
-  right?: React.ReactNode;
-  onBack?: () => void;
-}
+interface AppHeaderProps { title: string; right?: React.ReactNode; onBack?: () => void; }
 
 export function AppHeader({ title, right, onBack }: AppHeaderProps) {
-  const { t } = useTranslation();
   const navigation = useNavigation();
-
   return (
-    <View className="flex-row items-center px-4 py-3 border-b border-surface-border bg-bg">
-      <TouchableOpacity
-        onPress={onBack ?? (() => navigation.goBack())}
-        className="mr-3 py-1"
-      >
-        <Text className="text-brand text-base">{t('common.back')}</Text>
+    <View style={s.bar}>
+      <TouchableOpacity onPress={onBack ?? (() => navigation.goBack())} style={s.back}>
+        <Text style={s.backTxt}>← Back</Text>
       </TouchableOpacity>
-      <Text className="text-text-primary font-bold text-lg flex-1" numberOfLines={1}>
-        {title}
-      </Text>
+      <Text style={s.title} numberOfLines={1}>{title}</Text>
       {right}
     </View>
   );
 }
+
+const s = StyleSheet.create({
+  bar:     { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: C.border, backgroundColor: C.bgCard },
+  back:    { marginRight: 12, paddingVertical: 2 },
+  backTxt: { color: C.brand, fontSize: 15, fontWeight: '500' },
+  title:   { flex: 1, color: C.text, fontSize: 17, fontWeight: '700' },
+});

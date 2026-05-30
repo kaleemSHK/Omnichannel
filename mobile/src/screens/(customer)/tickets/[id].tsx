@@ -1,4 +1,4 @@
-import { View, Text, ScrollView } from 'react-native';
+import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import { useRoute, type RouteProp } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
@@ -8,6 +8,7 @@ import { PriorityBadge } from '@/components/tickets/PriorityBadge';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { formatDistanceToNow } from 'date-fns';
 import type { CustomerStackParamList } from '@/navigation/types';
+import { C } from '@/lib/ui';
 
 export default function CustomerTicketDetail() {
   const route = useRoute<RouteProp<CustomerStackParamList, 'TicketDetail'>>();
@@ -20,24 +21,24 @@ export default function CustomerTicketDetail() {
   });
 
   return (
-    <SafeAreaView className="flex-1 bg-bg" edges={['top']}>
+    <SafeAreaView style={styles.screen} edges={['top']}>
       <AppHeader title={ticket?.subject ?? 'Ticket'} />
       {isLoading || !ticket ? (
-        <View className="p-5">
-          <Skeleton className="h-32 rounded-xl" />
+        <View style={styles.skeletonContainer}>
+          <Skeleton style={{ height: 128, borderRadius: 12 }} />
         </View>
       ) : (
-        <ScrollView className="flex-1 px-5 py-4">
-          <View className="flex-row items-center gap-2 mb-4">
+        <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
+          <View style={styles.metaRow}>
             <PriorityBadge priority={ticket.priority} />
-            <Text className="text-text-secondary text-sm capitalize">{ticket.status}</Text>
+            <Text style={styles.status}>{ticket.status}</Text>
           </View>
-          <Text className="text-text-primary text-xl font-bold mb-2">{ticket.subject}</Text>
-          <Text className="text-text-muted text-xs mb-6">
+          <Text style={styles.subject}>{ticket.subject}</Text>
+          <Text style={styles.updated}>
             Updated {formatDistanceToNow(new Date(ticket.updatedAt), { addSuffix: true })}
           </Text>
-          <View className="bg-surface-card border border-surface-border rounded-xl p-4">
-            <Text className="text-text-secondary text-sm">
+          <View style={styles.infoCard}>
+            <Text style={styles.infoText}>
               Ticket #{ticket.id.slice(0, 8)} — contact support for updates.
             </Text>
           </View>
@@ -46,3 +47,54 @@ export default function CustomerTicketDetail() {
     </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: C.bg,
+  },
+  skeletonContainer: {
+    padding: 20,
+  },
+  scroll: {
+    flex: 1,
+    paddingHorizontal: 20,
+  },
+  scrollContent: {
+    paddingTop: 16,
+    paddingBottom: 32,
+  },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 16,
+  },
+  status: {
+    color: C.textSub,
+    fontSize: 14,
+    textTransform: 'capitalize',
+  },
+  subject: {
+    color: C.text,
+    fontSize: 20,
+    fontWeight: '700',
+    marginBottom: 8,
+  },
+  updated: {
+    color: C.textMute,
+    fontSize: 12,
+    marginBottom: 24,
+  },
+  infoCard: {
+    backgroundColor: C.bgCard,
+    borderWidth: 1,
+    borderColor: C.border,
+    borderRadius: 12,
+    padding: 16,
+  },
+  infoText: {
+    color: C.textSub,
+    fontSize: 14,
+  },
+});

@@ -1,7 +1,8 @@
-import { View, Text } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import { useEffect, useState } from 'react';
 import NetInfo from '@react-native-community/netinfo';
 import { useTranslation } from 'react-i18next';
+import { C } from '@/lib/ui';
 
 export function OfflineBanner() {
   const { t } = useTranslation();
@@ -17,8 +18,24 @@ export function OfflineBanner() {
   if (!offline) return null;
 
   return (
-    <View className="bg-warning/90 px-4 py-2 flex-row items-center justify-center">
-      <Text className="text-black text-xs font-semibold">⚠️ {t('common.offline')}</Text>
+    <View style={styles.banner}>
+      <Text style={styles.text}>⚠️ {t('common.offline')}</Text>
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  banner: {
+    backgroundColor: C.amber,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  text: {
+    color: C.text,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+});

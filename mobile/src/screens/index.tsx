@@ -37,7 +37,7 @@ export default function BootstrapScreen() {
   }, [hydrated, tokens?.accessToken, navigation]);
 
   return (
-    <View className="flex-1 bg-bg items-center justify-center">
+    <View style={{ flex: 1, backgroundColor: "#F8FAFC", alignItems: "center", justifyContent: "center" }}>
       <ActivityIndicator color="#63b3ed" />
     </View>
   );

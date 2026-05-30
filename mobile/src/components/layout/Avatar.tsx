@@ -37,7 +37,7 @@ export function Avatar({ name, imageUrl, size = 40, online }: AvatarProps) {
         </View>
       )}
       {online ? (
-        <View className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-success border-2 border-bg" />
+        <View style={{ position: "absolute", bottom: 0, right: 0, width: 12, height: 12, borderRadius: 6, backgroundColor: "#16A34A", borderWidth: 2, borderColor: "#F8FAFC" }} />
       ) : null}
     </View>
   );

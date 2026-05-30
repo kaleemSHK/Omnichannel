@@ -1,11 +1,29 @@
-import { View, Text } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
+import { C } from '@/lib/ui';
 
 export function Badge({ count }: { count: number }) {
   if (count <= 0) return null;
   const label = count > 99 ? '99+' : String(count);
   return (
-    <View className="bg-danger min-w-[20px] h-5 px-1.5 rounded-full items-center justify-center">
-      <Text className="text-white text-[10px] font-bold">{label}</Text>
+    <View style={styles.container}>
+      <Text style={styles.text}>{label}</Text>
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    backgroundColor: C.red,
+    minWidth: 20,
+    height: 20,
+    paddingHorizontal: 6,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  text: {
+    color: C.textWhite,
+    fontSize: 10,
+    fontWeight: '700',
+  },
+});

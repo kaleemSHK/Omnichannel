@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import { View, FlatList, Text, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, FlatList, Text, TouchableOpacity, ActivityIndicator, StyleSheet } from 'react-native';
 import { useRoute, type RouteProp } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
@@ -13,6 +13,7 @@ import { useActionCable } from '@/hooks/useActionCable';
 import { can } from '@/lib/rbac';
 import { useAuthStore } from '@/store/auth';
 import type { AgentStackParamList } from '@/navigation/types';
+import { C } from '@/lib/ui';
 
 export default function AgentConversationDetail() {
   const route = useRoute<RouteProp<AgentStackParamList, 'ConversationDetail'>>();
@@ -47,13 +48,13 @@ export default function AgentConversationDetail() {
   const canResolve = can(user?.role, 'resolveConversation');
 
   return (
-    <SafeAreaView className="flex-1 bg-bg" edges={['top']}>
+    <SafeAreaView style={styles.screen} edges={['top']}>
       <AppHeader
         title={title}
         right={
           canResolve ? (
-            <TouchableOpacity onPress={toggleStatus} className="px-2 py-1">
-              <Text className="text-brand text-sm font-semibold">
+            <TouchableOpacity onPress={toggleStatus} style={styles.resolveBtn}>
+              <Text style={styles.resolveBtnText}>
                 {conversation?.status === 'open' ? t('conv.resolve') : t('conv.reopen')}
               </Text>
             </TouchableOpacity>
@@ -61,8 +62,8 @@ export default function AgentConversationDetail() {
         }
       />
       {isLoading ? (
-        <View className="flex-1 items-center justify-center">
-          <ActivityIndicator color="#63b3ed" />
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator color={C.brand} />
         </View>
       ) : (
         <>
@@ -83,3 +84,24 @@ export default function AgentConversationDetail() {
     </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: C.bg,
+  },
+  loadingContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  resolveBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  resolveBtnText: {
+    color: C.brand,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+});

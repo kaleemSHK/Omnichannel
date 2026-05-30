@@ -30,8 +30,9 @@ function getCable(): ActionCable.Cable {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const ActionCable = require('actioncable');
   const { tokens } = useAuthStore.getState();
+  // Chatwoot ActionCable requires user_access_token query param for authentication
   const url = tokens?.accessToken
-    ? `${WS_URL}?access_token=${encodeURIComponent(tokens.accessToken)}`
+    ? `${WS_URL}?user_access_token=${encodeURIComponent(tokens.accessToken)}`
     : WS_URL;
 
   cable = ActionCable.createConsumer(url);
@@ -59,8 +60,12 @@ export function subscribeToConversation(
   const key = `conversation_${conversationId}`;
   if (subscriptions.has(key)) subscriptions.get(key)?.unsubscribe();
 
+  // Chatwoot RoomChannel requires pubsub_token (from sign_in response) for auth
+  const { tokens } = useAuthStore.getState();
+  const pubsubToken = tokens?.pubsubToken ?? tokens?.accessToken ?? '';
+
   const sub = getCable().subscriptions.create(
-    { channel: 'RoomChannel', id: accountId, conversation_id: conversationId },
+    { channel: 'RoomChannel', pubsub_token: pubsubToken, account_id: accountId },
     {
       received(data: { event?: string; [k: string]: unknown }) {
         if (!data?.event) return;

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, Alert, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { useSip } from '@/providers/sip-context';
@@ -11,6 +11,7 @@ import { IncomingCallSheet } from '@/components/calling/IncomingCallSheet';
 import { OfflineBanner } from '@/components/layout/OfflineBanner';
 import { navigationRef } from '@/navigation/navigationRef';
 import { hapticImpact } from '@/lib/haptics';
+import { C } from '@/lib/ui';
 
 export default function CustomerHome() {
   const { t } = useTranslation();
@@ -22,10 +23,7 @@ export default function CustomerHome() {
 
   async function handleCallSupport() {
     const granted = await requestMic();
-    if (!granted) {
-      Alert.alert('Microphone Required', 'Please grant microphone permission to make calls.');
-      return;
-    }
+    if (!granted) { Alert.alert('Microphone Required', 'Please grant microphone permission.'); return; }
     hapticImpact('medium');
     setCalling(true);
     makeCall(SUPPORT_EXT);
@@ -37,54 +35,48 @@ export default function CustomerHome() {
   }, [activeCall]);
 
   return (
-    <SafeAreaView className="flex-1 bg-bg">
+    <SafeAreaView style={s.screen}>
       <OfflineBanner />
-      <ScrollView className="flex-1 px-5" contentContainerStyle={{ paddingTop: 24, paddingBottom: 40 }}>
-        <View className="mb-8">
-          <Text className="text-brand text-2xl font-bold">BlinkOne</Text>
-          <Text className="text-text-secondary text-sm mt-1">How can we help you today?</Text>
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 32, paddingBottom: 40 }}>
+        <View style={{ marginBottom: 32 }}>
+          <Text style={s.brand}>BlinkOne</Text>
+          <Text style={s.sub}>How can we help you today?</Text>
         </View>
 
-        <TouchableOpacity
-          onPress={handleCallSupport}
-          disabled={calling}
-          className="bg-success rounded-2xl p-6 mb-4 items-center active:opacity-80"
-        >
-          <Text className="text-5xl mb-3">📞</Text>
-          <Text className="text-black text-xl font-bold">
+        {/* Call Support */}
+        <TouchableOpacity onPress={handleCallSupport} disabled={calling} activeOpacity={0.85}
+          style={[s.card, { backgroundColor: C.green, borderColor: C.green, marginBottom: 12 }]}>
+          <Text style={{ fontSize: 40, marginBottom: 8 }}>📞</Text>
+          <Text style={[s.cardTitle, { color: '#fff' }]}>
             {calling ? t('customer.calling') : t('customer.call_support')}
           </Text>
-          <Text className="text-black/60 text-sm mt-1">
+          <Text style={[s.cardSub, { color: 'rgba(255,255,255,0.8)' }]}>
             {calling ? 'Connecting you to an agent…' : 'Talk to us right now'}
           </Text>
         </TouchableOpacity>
 
+        {/* Chat */}
         <TouchableOpacity
-          onPress={() =>
-            navigationRef.navigate('Customer', { screen: 'ChatDetail', params: { id: 'new' } })
-          }
-          className="bg-surface-card border border-surface-border rounded-2xl p-5 mb-4 flex-row items-center active:opacity-70"
-        >
-          <Text className="text-3xl mr-4">💬</Text>
-          <View className="flex-1">
-            <Text className="text-text-primary font-bold text-base">{t('customer.start_chat')}</Text>
-            <Text className="text-text-secondary text-sm mt-0.5">Send us a message anytime</Text>
+          onPress={() => navigationRef.navigate('Customer', { screen: 'ChatDetail', params: { id: 'new' } })}
+          activeOpacity={0.85} style={[s.card, s.cardRow, { marginBottom: 12 }]}>
+          <Text style={{ fontSize: 32, marginRight: 14 }}>💬</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={s.cardRowTitle}>{t('customer.start_chat')}</Text>
+            <Text style={s.cardRowSub}>Send us a message anytime</Text>
           </View>
-          <Text className="text-text-muted text-lg">›</Text>
+          <Text style={{ color: C.textMute, fontSize: 20 }}>›</Text>
         </TouchableOpacity>
 
+        {/* Tickets */}
         <TouchableOpacity
-          onPress={() =>
-            navigationRef.navigate('Customer', { screen: 'CustomerTabs', params: { screen: 'Tickets' } })
-          }
-          className="bg-surface-card border border-surface-border rounded-2xl p-5 flex-row items-center active:opacity-70"
-        >
-          <Text className="text-3xl mr-4">🎫</Text>
-          <View className="flex-1">
-            <Text className="text-text-primary font-bold text-base">{t('customer.my_tickets')}</Text>
-            <Text className="text-text-secondary text-sm mt-0.5">Track your support requests</Text>
+          onPress={() => navigationRef.navigate('Customer', { screen: 'CustomerTabs', params: { screen: 'Tickets' } })}
+          activeOpacity={0.85} style={[s.card, s.cardRow]}>
+          <Text style={{ fontSize: 32, marginRight: 14 }}>🎫</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={s.cardRowTitle}>{t('customer.my_tickets')}</Text>
+            <Text style={s.cardRowSub}>Track your support requests</Text>
           </View>
-          <Text className="text-text-muted text-lg">›</Text>
+          <Text style={{ color: C.textMute, fontSize: 20 }}>›</Text>
         </TouchableOpacity>
       </ScrollView>
 
@@ -93,3 +85,15 @@ export default function CustomerHome() {
     </SafeAreaView>
   );
 }
+
+const s = StyleSheet.create({
+  screen:      { flex: 1, backgroundColor: C.bg },
+  brand:       { fontSize: 28, fontWeight: '800', color: C.brand, marginBottom: 4 },
+  sub:         { fontSize: 14, color: C.textSub },
+  card:        { backgroundColor: C.bgCard, borderRadius: 20, padding: 20, borderWidth: 1, borderColor: C.border, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 3 },
+  cardRow:     { flexDirection: 'row', alignItems: 'center' },
+  cardTitle:   { fontSize: 18, fontWeight: '700', color: C.text, marginBottom: 4 },
+  cardSub:     { fontSize: 13, color: C.textSub },
+  cardRowTitle:{ fontSize: 16, fontWeight: '700', color: C.text, marginBottom: 2 },
+  cardRowSub:  { fontSize: 13, color: C.textSub },
+});

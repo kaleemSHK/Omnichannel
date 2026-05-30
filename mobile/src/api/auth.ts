@@ -57,7 +57,7 @@ export async function loginWithPassword(
     avatarUrl: cw.data.avatar_url,
   };
 
-  return { user, tokens: { accessToken: cwToken, gatewayJwt: gw.token } };
+  return { user, tokens: { accessToken: cwToken, gatewayJwt: gw.token, pubsubToken: cw.data.pubsub_token } };
 }
 
 export async function fetchProfile(accessToken: string): Promise<BlinkoneUser> {

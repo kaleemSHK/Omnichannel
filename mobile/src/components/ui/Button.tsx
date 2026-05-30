@@ -1,5 +1,6 @@
-import { View, Text, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, TouchableOpacity, ActivityIndicator, StyleSheet } from 'react-native';
 import type { ReactNode } from 'react';
+import { C } from '@/lib/ui';
 
 type Variant = 'primary' | 'secondary' | 'ghost' | 'danger';
 type Size = 'sm' | 'md' | 'lg';
@@ -13,24 +14,24 @@ interface ButtonProps {
   children: ReactNode;
 }
 
-const VARIANTS: Record<Variant, string> = {
-  primary: 'bg-brand',
-  secondary: 'bg-surface-card border border-surface-border',
-  ghost: 'bg-transparent',
-  danger: 'bg-danger',
+const VARIANT_STYLES: Record<Variant, object> = {
+  primary: { backgroundColor: C.brand },
+  secondary: { backgroundColor: C.bgCard, borderWidth: 1, borderColor: C.border },
+  ghost: { backgroundColor: 'transparent' },
+  danger: { backgroundColor: C.red },
 };
 
-const TEXT: Record<Variant, string> = {
-  primary: 'text-black font-bold',
-  secondary: 'text-text-primary font-medium',
-  ghost: 'text-brand font-medium',
-  danger: 'text-white font-bold',
+const TEXT_STYLES: Record<Variant, object> = {
+  primary: { color: C.textWhite, fontWeight: '700' },
+  secondary: { color: C.text, fontWeight: '500' },
+  ghost: { color: C.brand, fontWeight: '500' },
+  danger: { color: C.textWhite, fontWeight: '700' },
 };
 
-const SIZES: Record<Size, string> = {
-  sm: 'px-3 py-2 rounded-lg',
-  md: 'px-4 py-3 rounded-xl',
-  lg: 'px-6 py-4 rounded-xl',
+const SIZE_STYLES: Record<Size, object> = {
+  sm: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8 },
+  md: { paddingHorizontal: 16, paddingVertical: 12, borderRadius: 12 },
+  lg: { paddingHorizontal: 24, paddingVertical: 16, borderRadius: 12 },
 };
 
 export function Button({
@@ -45,15 +46,32 @@ export function Button({
     <TouchableOpacity
       onPress={onPress}
       disabled={disabled || loading}
-      className={`items-center justify-center active:opacity-80 ${VARIANTS[variant]} ${SIZES[size]} ${
-        disabled ? 'opacity-50' : ''
-      }`}
+      style={[
+        styles.base,
+        VARIANT_STYLES[variant],
+        SIZE_STYLES[size],
+        (disabled || loading) ? styles.disabled : null,
+      ]}
+      activeOpacity={0.8}
     >
       {loading ? (
-        <ActivityIndicator color={variant === 'primary' ? '#000' : '#fff'} />
+        <ActivityIndicator color={variant === 'primary' || variant === 'danger' ? C.textWhite : C.brand} />
       ) : (
-        <Text className={TEXT[variant]}>{children}</Text>
+        <Text style={[styles.text, TEXT_STYLES[variant]]}>{children}</Text>
       )}
     </TouchableOpacity>
   );
 }
+
+const styles = StyleSheet.create({
+  base: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  text: {
+    fontSize: 15,
+  },
+  disabled: {
+    opacity: 0.5,
+  },
+});

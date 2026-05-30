@@ -1,4 +1,4 @@
-import { View, Text, FlatList, RefreshControl } from 'react-native';
+import { View, Text, FlatList, RefreshControl, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
@@ -7,6 +7,7 @@ import { AppHeader } from '@/components/layout/AppHeader';
 import { EmptyState } from '@/components/layout/EmptyState';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { formatDistanceToNow } from 'date-fns';
+import { C } from '@/lib/ui';
 
 function formatDuration(sec: number) {
   const m = Math.floor(sec / 60);
@@ -25,12 +26,12 @@ export default function AgentCallsHistory() {
   const records = data?.data ?? [];
 
   return (
-    <SafeAreaView className="flex-1 bg-bg" edges={['top']}>
+    <SafeAreaView style={styles.screen} edges={['top']}>
       <AppHeader title={t('agent.calls')} />
       {isLoading ? (
-        <View className="px-5 gap-3 mt-4">
+        <View style={styles.skeletonContainer}>
           {[1, 2, 3].map((i) => (
-            <Skeleton key={i} className="h-16 rounded-xl" />
+            <Skeleton key={i} style={{ height: 64, borderRadius: 14 }} />
           ))}
         </View>
       ) : records.length === 0 ? (
@@ -39,18 +40,18 @@ export default function AgentCallsHistory() {
         <FlatList
           data={records}
           keyExtractor={(item) => item.id}
-          refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor="#63b3ed" />}
+          refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={C.brand} />}
           contentContainerStyle={{ padding: 20, gap: 12 }}
           renderItem={({ item }) => (
-            <View className="bg-surface-card border border-surface-border rounded-xl p-4 flex-row items-center">
-              <Text className="text-2xl mr-3">{item.direction === 'inbound' ? '📲' : '📞'}</Text>
-              <View className="flex-1">
-                <Text className="text-text-primary font-medium">{item.agentId || 'Unknown'}</Text>
-                <Text className="text-text-muted text-xs capitalize">{item.outcome}</Text>
+            <View style={styles.cdrCard}>
+              <Text style={styles.cdrIcon}>{item.direction === 'inbound' ? '📲' : '📞'}</Text>
+              <View style={styles.cdrInfo}>
+                <Text style={styles.cdrAgent}>{item.agentId || 'Unknown'}</Text>
+                <Text style={styles.cdrOutcome}>{item.outcome}</Text>
               </View>
-              <View className="items-end">
-                <Text className="text-text-secondary text-sm">{formatDuration(item.duration)}</Text>
-                <Text className="text-text-muted text-xs">
+              <View style={styles.cdrRight}>
+                <Text style={styles.cdrDuration}>{formatDuration(item.duration)}</Text>
+                <Text style={styles.cdrTime}>
                   {formatDistanceToNow(new Date(item.startedAt), { addSuffix: true })}
                 </Text>
               </View>
@@ -61,3 +62,51 @@ export default function AgentCallsHistory() {
     </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: C.bg,
+  },
+  skeletonContainer: {
+    paddingHorizontal: 20,
+    gap: 12,
+    marginTop: 16,
+  },
+  cdrCard: {
+    backgroundColor: C.bgCard,
+    borderWidth: 1,
+    borderColor: C.border,
+    borderRadius: 12,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  cdrIcon: {
+    fontSize: 24,
+    marginRight: 12,
+  },
+  cdrInfo: {
+    flex: 1,
+  },
+  cdrAgent: {
+    color: C.text,
+    fontWeight: '500',
+  },
+  cdrOutcome: {
+    color: C.textMute,
+    fontSize: 12,
+    textTransform: 'capitalize',
+  },
+  cdrRight: {
+    alignItems: 'flex-end',
+  },
+  cdrDuration: {
+    color: C.textSub,
+    fontSize: 14,
+  },
+  cdrTime: {
+    color: C.textMute,
+    fontSize: 12,
+  },
+});

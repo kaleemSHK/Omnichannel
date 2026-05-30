@@ -1,6 +1,7 @@
-import { View, Text } from 'react-native';
+import { Text, StyleSheet } from 'react-native';
 import { useEffect } from 'react';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
+import { C } from '@/lib/ui';
 
 type ToastType = 'success' | 'error' | 'info';
 
@@ -12,9 +13,9 @@ interface ToastProps {
 }
 
 const BG: Record<ToastType, string> = {
-  success: 'bg-success',
-  error: 'bg-danger',
-  info: 'bg-brand',
+  success: C.green,
+  error: C.red,
+  info: C.brand,
 };
 
 export function Toast({ message, type = 'info', visible, onHide }: ToastProps) {
@@ -30,9 +31,27 @@ export function Toast({ message, type = 'info', visible, onHide }: ToastProps) {
     <Animated.View
       entering={FadeIn}
       exiting={FadeOut}
-      className={`absolute bottom-8 left-4 right-4 ${BG[type]} rounded-xl px-4 py-3 z-50`}
+      style={[styles.container, { backgroundColor: BG[type] }]}
     >
-      <Text className="text-black font-medium text-center">{message}</Text>
+      <Text style={styles.text}>{message}</Text>
     </Animated.View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    position: 'absolute',
+    bottom: 32,
+    left: 16,
+    right: 16,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    zIndex: 50,
+  },
+  text: {
+    color: C.textWhite,
+    fontWeight: '500',
+    textAlign: 'center',
+  },
+});

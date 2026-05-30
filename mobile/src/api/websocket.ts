@@ -33,8 +33,9 @@ function getCable(): Cable {
     cable = null;
   }
 
+  // Chatwoot ActionCable requires user_access_token query param
   const url = accessToken
-    ? `${WS_URL}?access_token=${encodeURIComponent(accessToken)}`
+    ? `${WS_URL}?user_access_token=${encodeURIComponent(accessToken)}`
     : WS_URL;
   cable = ActionCable.createConsumer(url) as Cable;
   cableAccessToken = accessToken;
@@ -83,8 +84,12 @@ export function subscribeToConversation(
   const key = `conversation_${conversationId}`;
   subscriptions.get(key)?.unsubscribe();
 
+  // Chatwoot RoomChannel uses pubsub_token for channel authentication
+  const { tokens } = useAuthStore.getState();
+  const pubsubToken = (tokens as { pubsubToken?: string })?.pubsubToken ?? tokens?.accessToken ?? '';
+
   const sub = getCable().subscriptions.create(
-    { channel: 'RoomChannel', id: accountId, conversation_id: conversationId },
+    { channel: 'RoomChannel', pubsub_token: pubsubToken, account_id: accountId },
     {
       received(data: unknown) {
         const evt = data as { event?: string };

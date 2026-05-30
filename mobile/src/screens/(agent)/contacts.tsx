@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { View, Text, FlatList, TextInput, TouchableOpacity, Alert, RefreshControl } from 'react-native';
+import { View, Text, FlatList, TextInput, TouchableOpacity, Alert, RefreshControl, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
@@ -15,6 +15,7 @@ import { useCallsStore } from '@/store/calls';
 import { usePermissions } from '@/hooks/usePermissions';
 import type { CWContact } from '@/types';
 import { useEffect, useRef } from 'react';
+import { C } from '@/lib/ui';
 
 export default function AgentContacts() {
   const { t } = useTranslation();
@@ -54,49 +55,49 @@ export default function AgentContacts() {
   }
 
   const renderItem = useCallback(({ item }: { item: CWContact }) => (
-    <View className="bg-surface-card border border-surface-border rounded-xl px-4 py-3 flex-row items-center gap-3">
+    <View style={styles.contactCard}>
       <Avatar name={item.name} imageUrl={item.avatar_url} size={40} />
-      <View className="flex-1">
-        <Text className="text-text-primary font-medium">{item.name}</Text>
-        <Text className="text-text-muted text-xs" numberOfLines={1}>
+      <View style={styles.contactInfo}>
+        <Text style={styles.contactName}>{item.name}</Text>
+        <Text style={styles.contactSub} numberOfLines={1}>
           {item.email ?? item.phone_number ?? 'No contact info'}
         </Text>
       </View>
-      <View className="flex-row gap-2">
+      <View style={styles.actionButtons}>
         {item.phone_number && (
           <TouchableOpacity
             onPress={() => callContact(item.phone_number!)}
-            className="w-9 h-9 rounded-full bg-green-900/30 items-center justify-center"
+            style={[styles.actionBtn, { backgroundColor: C.greenBg }]}
           >
-            <Text className="text-lg">📞</Text>
+            <Text style={styles.actionBtnIcon}>📞</Text>
           </TouchableOpacity>
         )}
         <TouchableOpacity
           onPress={() => navigationRef.navigate('Agent', { screen: 'AgentTabs', params: { screen: 'Conversations' } })}
-          className="w-9 h-9 rounded-full bg-blue-900/30 items-center justify-center"
+          style={[styles.actionBtn, { backgroundColor: C.brandLight }]}
         >
-          <Text className="text-lg">💬</Text>
+          <Text style={styles.actionBtnIcon}>💬</Text>
         </TouchableOpacity>
       </View>
     </View>
   ), []);
 
   return (
-    <SafeAreaView className="flex-1 bg-bg" edges={['top']}>
+    <SafeAreaView style={styles.screen} edges={['top']}>
       <AppHeader title={t('agent.contacts')} />
-      <View className="px-5 py-3">
+      <View style={styles.searchContainer}>
         <TextInput
           value={search}
           onChangeText={onSearchChange}
           placeholder={t('common.search')}
-          placeholderTextColor="#5a6170"
-          className="bg-surface-card border border-surface-border rounded-xl px-4 py-2.5 text-text-primary"
+          placeholderTextColor={C.textMute}
+          style={styles.searchInput}
         />
       </View>
 
       {isLoading ? (
-        <View className="px-5 gap-3">
-          {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-16 rounded-xl" />)}
+        <View style={styles.skeletonContainer}>
+          {[1, 2, 3, 4].map((i) => <Skeleton key={i} style={{ height: 64, borderRadius: 14 }} />)}
         </View>
       ) : contacts.length === 0 ? (
         <EmptyState icon="👤" message={debouncedSearch ? 'No contacts found' : 'Search for contacts'} />
@@ -105,10 +106,71 @@ export default function AgentContacts() {
           data={contacts}
           keyExtractor={(item) => String(item.id)}
           renderItem={renderItem}
-          refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor="#63b3ed" />}
+          refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={C.brand} />}
           contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 40, gap: 8 }}
         />
       )}
     </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: C.bg,
+  },
+  searchContainer: {
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+  },
+  searchInput: {
+    backgroundColor: C.bgCard,
+    borderWidth: 1,
+    borderColor: C.border,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    color: C.text,
+    fontSize: 15,
+  },
+  skeletonContainer: {
+    paddingHorizontal: 20,
+    gap: 12,
+  },
+  contactCard: {
+    backgroundColor: C.bgCard,
+    borderWidth: 1,
+    borderColor: C.border,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  contactInfo: {
+    flex: 1,
+  },
+  contactName: {
+    color: C.text,
+    fontWeight: '500',
+  },
+  contactSub: {
+    color: C.textMute,
+    fontSize: 12,
+  },
+  actionButtons: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  actionBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  actionBtnIcon: {
+    fontSize: 18,
+  },
+});
