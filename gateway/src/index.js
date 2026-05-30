@@ -9,6 +9,8 @@ import { tenantHasFeature } from './tenant-features.js';
 import { piiSerializer, pinoMixin, PII_REDACT, maskString } from '../../services/_shared/lib/pii-masker.js';
 import { rateLimitMiddleware, authRateLimitMiddleware } from './rate-limiter.js';
 import { mountMetrics } from '../../services/_shared/lib/metrics-middleware.js';
+import { mountCustomerRoutes } from '../lib/customer-routes.js';
+import { mountDeviceRoutes } from '../lib/device-routes.js';
 
 const log = pino({
   name: 'gateway',
@@ -40,6 +42,7 @@ const U = {
   recording:   u('RECORDING_UPSTREAM',  'http://recording:8799'),
   integration: u('INTEGRATION_UPSTREAM','http://integration:8800'),
   tenant:      u('TENANT_UPSTREAM',      'http://tenant:8802'),
+  whatsappCalls: u('WHATSAPP_CALLS_UPSTREAM', 'http://whatsapp-calls:8803'),
 };
 
 const TOKENS = {
@@ -55,6 +58,7 @@ const TOKENS = {
   recording:   (process.env.RECORDING_TOKEN || '').trim(),
   platform:    (process.env.PLATFORM_TOKEN || '').trim(),
   tenant:      (process.env.TENANT_TOKEN || process.env.PLATFORM_TOKEN || '').trim(),
+  whatsappCalls: (process.env.WHATSAPP_CALLS_TOKEN || process.env.CALLS_TOKEN || '').trim(),
 };
 
 const PLATFORM_ADMIN_EMAILS = (process.env.PLATFORM_ADMIN_EMAILS
@@ -133,6 +137,15 @@ function isPlatformAdminPayload(payload) {
 
 function requirePlatformAdmin(req, res, next) {
   const path = (req.originalUrl || req.url).split('?')[0];
+  // Agents may read their own tenant branding (white-label sidebar).
+  const brandingRead =
+    req.method === 'GET' &&
+    /^\/api\/tenant\/v1\/tenants\/[^/]+\/branding$/.test(path);
+  if (brandingRead) {
+    const jwtTenant = String(req.gatewayAuth?.payload?.tenant_id ?? '');
+    const pathTenant = path.match(/\/tenants\/([^/]+)\/branding$/)?.[1] ?? '';
+    if (jwtTenant && pathTenant && jwtTenant === pathTenant) return next();
+  }
   const tenantRoute =
     path.startsWith('/api/tenant') && path !== '/api/tenant/v1/health';
   const platformMutate =
@@ -328,6 +341,10 @@ async function usageLimitGuard(req, res, next) {
   next();
 }
 
+// Public customer session + authenticated device push registration (before JWT proxy)
+mountCustomerRoutes(app, { JWT_SECRET, log, U, TOKENS });
+mountDeviceRoutes(app, { JWT_SECRET, log, jwt });
+
 app.use(authenticateGatewayJwt);
 app.use(requirePlatformAdmin);
 app.use(usageLimitGuard);
@@ -504,6 +521,7 @@ app.use('/api/ai',         rateLimitMiddleware('ai'));
 app.use('/api/calls',      rateLimitMiddleware('calls'));
 app.use('/api/recordings', rateLimitMiddleware('recording'));
 app.use('/api/routing',    rateLimitMiddleware('routing'));
+app.use('/api/whatsapp-calls', rateLimitMiddleware('calls'));
 app.use('/api/tickets',    rateLimitMiddleware('tickets'));
 app.use('/api/sla',        rateLimitMiddleware('sla'));
 app.use('/api/billing',    rateLimitMiddleware('billing'));
@@ -521,6 +539,7 @@ route('/api/ivr',         U.ivr);
 route('/api/sla',         U.sla);
 route('/api/escalations', U.escalation);
 route('/api/routing',     U.routing);
+route('/api/whatsapp-calls', U.whatsappCalls, TOKENS.whatsappCalls);
 route('/api/recordings',  U.recording, TOKENS.recording);
 route('/api/integrations',U.integration);
 route('/api/tenant',       U.tenant);

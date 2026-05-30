@@ -1,18 +1,32 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getMessages, sendMessage } from '@/api/conversations';
+import { getCustomerMessages, sendCustomerMessage } from '@/api/customer';
+import { loadPrefs } from '@/lib/storage';
 import type { CWMessage } from '@/types';
+
+async function fetchMessages(conversationId: number) {
+  const prefs = await loadPrefs();
+  if (prefs.role === 'customer') return getCustomerMessages(conversationId);
+  return getMessages(conversationId);
+}
+
+async function postMessage(conversationId: number, content: string) {
+  const prefs = await loadPrefs();
+  if (prefs.role === 'customer') return sendCustomerMessage(conversationId, content);
+  return sendMessage(conversationId, content);
+}
 
 export function useMessages(conversationId: number) {
   const queryClient = useQueryClient();
 
   const query = useQuery({
     queryKey: ['messages', conversationId],
-    queryFn: () => getMessages(conversationId),
+    queryFn: () => fetchMessages(conversationId),
     enabled: conversationId > 0,
   });
 
   const mutation = useMutation({
-    mutationFn: (content: string) => sendMessage(conversationId, content),
+    mutationFn: (content: string) => postMessage(conversationId, content),
     onMutate: async (content) => {
       await queryClient.cancelQueries({ queryKey: ['messages', conversationId] });
       const previous = queryClient.getQueryData<{ payload: CWMessage[] }>(['messages', conversationId]);

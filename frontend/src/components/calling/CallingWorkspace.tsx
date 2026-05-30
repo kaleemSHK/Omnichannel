@@ -1,25 +1,17 @@
 'use client';
 
-import { useEffect, useState, type ElementType } from 'react';
-import {
-  Headphones,
-  Mic,
-  MicOff,
-  Pause,
-  Phone,
-  PhoneForwarded,
-  PhoneIncoming,
-  PhoneOff,
-  Play,
-  Radio,
-} from 'lucide-react';
+import Link from 'next/link';
+import { useEffect, useMemo, useState } from 'react';
+import { Headphones, PhoneIncoming } from 'lucide-react';
 import { toast } from 'sonner';
 import { AgentStateSelector } from '@/components/calling/AgentStateSelector';
 import { CallSessionItem, CdrListItem } from '@/components/calling/CallListItem';
-import { CallTimer } from '@/components/calling/CallTimer';
 import { CallNotesModal } from '@/components/calling/CallNotesModal';
 import { DialPad } from '@/components/calling/DialPad';
 import { RecordingsPanel } from '@/components/calling/RecordingsPanel';
+import { ActiveCallStage } from '@/components/calling/workspace/ActiveCallStage';
+import { CustomerContextPanel } from '@/components/calling/workspace/CustomerContextPanel';
+import { IncomingCallHero } from '@/components/calling/workspace/IncomingCallHero';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/Dialog';
 import { Input } from '@/components/ui/input';
@@ -40,41 +32,6 @@ import { demoCallerName } from '@/lib/demo/callingFixture';
 import { cn } from '@/lib/utils/cn';
 import type { CDRRecord } from '@/types';
 
-function CtrlBtn({
-  label,
-  icon: Icon,
-  onClick,
-  active,
-  destructive,
-  className,
-}: {
-  label: string;
-  icon: ElementType;
-  onClick?: () => void;
-  active?: boolean;
-  destructive?: boolean;
-  className?: string;
-}) {
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      aria-pressed={active}
-      onClick={onClick}
-      className={cn(
-        'flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors',
-        active && 'bg-brand-primary/10 border-brand-primary/30 text-brand-primary',
-        destructive && 'text-red-700 border-red-200 bg-red-50 hover:bg-red-100',
-        !active && !destructive && 'hover:bg-muted',
-        className,
-      )}
-    >
-      <Icon size={14} aria-hidden />
-      {label}
-    </button>
-  );
-}
-
 export function CallingWorkspace() {
   const [transport, setTransport] = useState<'pstn' | 'whatsapp'>('pstn');
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -83,6 +40,7 @@ export function CallingWorkspace() {
   const [transferMode, setTransferMode] = useState<'blind' | 'attended'>('blind');
   const [cdrPage, setCdrPage] = useState(1);
   const [cdrRows, setCdrRows] = useState<CDRRecord[]>([]);
+  const [contextCollapsed, setContextCollapsed] = useState(false);
 
   const { user } = useAuthStore();
   const activeCall = useCallsStore(s => s.activeCall);
@@ -113,10 +71,19 @@ export function CallingWorkspace() {
 
   const incomingRing = incoming[0];
   const isSupervisor = can(user?.role, 'supervisorListen');
-  const queueDisplay = queues.length > 0 ? queues : [];
+  const queueDisplay = queues;
   const showEmptyCenter = !activeCall && !incomingRing && !selected;
-  // Show "Sample" badge only when demo data is active
-  const showSampleBadge = isDemoDataEnabled() && queueDisplay.length > 0;
+
+  const todayStart = useMemo(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }, []);
+
+  const todayRows = useMemo(
+    () => cdrRows.filter(r => new Date(r.startedAt) >= todayStart),
+    [cdrRows, todayStart],
+  );
 
   useEffect(() => {
     if (!selectedId && filtered.length > 0) {
@@ -200,27 +167,29 @@ export function CallingWorkspace() {
   };
 
   function cdrLabel(record: CDRRecord): string {
+    const phone = record.customerPhone?.trim();
+    if (phone) return phone;
     if (isDemoDataEnabled()) {
       return (
         contactCache.get(record.callSessionId) ??
         demoCallerName({ id: record.callSessionId, customerPhone: record.callSessionId })
       );
     }
-    return contactCache.get(record.callSessionId) ?? record.callSessionId;
+    return record.agentLabel || record.callSessionId.slice(0, 8);
   }
 
   return (
-    <div className="flex h-full min-h-0 bg-slate-50">
-      {/* ── Left sidebar: active / recent calls ─────────────────────── */}
-      <aside className="w-56 shrink-0 border-e border-gray-200 bg-white flex flex-col min-h-0">
+    <div className="flex h-full min-h-0 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-slate-100">
+      {/* ── Left sidebar: queues, active, recent ─────────────────────── */}
+      <aside className="w-60 shrink-0 border-e border-white/10 bg-slate-950/80 flex flex-col min-h-0 backdrop-blur-sm">
         {/* SIP status banner */}
         {!isDemoDataEnabled() && (
           <div
             className={cn(
-              'px-3 py-2 text-[11px] leading-snug border-b flex items-start gap-2',
+              'px-3 py-2 text-[11px] leading-snug border-b border-white/10 flex items-start gap-2',
               sipRegistered
-                ? 'bg-green-50 text-green-800 border-green-100'
-                : 'bg-amber-50 text-amber-900 border-amber-100',
+                ? 'bg-emerald-500/10 text-emerald-300'
+                : 'bg-amber-500/10 text-amber-200',
             )}
           >
             <Headphones
@@ -246,7 +215,7 @@ export function CallingWorkspace() {
         )}
 
         {/* PSTN / WhatsApp tabs */}
-        <div className="flex border-b border-gray-100">
+        <div className="flex border-b border-white/10">
           {(['pstn', 'whatsapp'] as const).map(t => (
             <button
               key={t}
@@ -256,8 +225,8 @@ export function CallingWorkspace() {
               className={cn(
                 'flex-1 py-2 text-xs font-medium capitalize border-b-2 -mb-px transition-colors',
                 transport === t
-                  ? 'text-brand-primary border-brand-primary'
-                  : 'text-gray-500 border-transparent hover:text-gray-700',
+                  ? 'text-sky-400 border-sky-400'
+                  : 'text-slate-500 border-transparent hover:text-slate-300',
               )}
             >
               {t}
@@ -265,7 +234,7 @@ export function CallingWorkspace() {
           ))}
         </div>
 
-        <p className="px-3 pt-2 pb-1 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">
+        <p className="px-3 pt-2 pb-1 text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
           Active
         </p>
         <div className="flex-1 overflow-y-auto min-h-0">
@@ -282,9 +251,17 @@ export function CallingWorkspace() {
             ))
           )}
 
-          <p className="px-3 pt-3 pb-1 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">
-            Recent
-          </p>
+          <div className="flex items-center justify-between px-3 pt-3 pb-1">
+            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">
+              Recent
+            </p>
+            <Link
+              href="/calling/history"
+              className="text-[10px] font-semibold text-brand-primary hover:underline"
+            >
+              View all
+            </Link>
+          </div>
           {cdrRows.length === 0 ? (
             <p className="px-3 py-2 text-xs text-muted-foreground">No recent calls</p>
           ) : (
@@ -311,195 +288,139 @@ export function CallingWorkspace() {
         </div>
       </aside>
 
-      {/* ── Main panel ──────────────────────────────────────────────── */}
-      <div className="flex-1 flex flex-col min-w-0 min-h-0 bg-white">
-        {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 shrink-0">
+      {/* ── Center cockpit ─────────────────────────────────────────────── */}
+      <div className="flex-1 flex flex-col min-w-0 min-h-0">
+        <div className="flex items-center justify-between px-5 py-3 border-b border-white/10 shrink-0 bg-slate-900/50">
           <div className="min-w-0">
-            <p className="text-sm font-semibold text-gray-900 truncate">
-              {selected ? resolveCallerName(selected, contactCache) : 'Call workspace'}
+            <p className="text-sm font-semibold text-white truncate">
+              {selected ? resolveCallerName(selected, contactCache) : 'Communication cockpit'}
             </p>
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-slate-500">
               {selected
                 ? `${selected.transport === 'whatsapp' ? 'WhatsApp' : 'Voice'} · ${selected.customerPhone}`
-                : 'Select a call or dial from the keypad'}
+                : 'Voice · chat · CRM · AI in one workspace'}
             </p>
           </div>
           <AgentStateSelector />
         </div>
 
-        <div className="flex-1 overflow-y-auto min-h-0 p-4 space-y-4">
-          {/* Empty state */}
-          {showEmptyCenter && (
-            <div className="flex flex-col items-center justify-center py-12 px-6 text-center rounded-xl border border-dashed border-gray-200 bg-slate-50/80">
-              <div className="w-14 h-14 rounded-full bg-blue-50 text-brand-primary flex items-center justify-center mb-4">
-                <PhoneIncoming size={28} aria-hidden />
+        <div className="flex-1 overflow-y-auto min-h-0 p-5 space-y-5">
+          {incomingRing && (
+            <IncomingCallHero
+              call={incomingRing}
+              contactCache={contactCache}
+              onAnswer={() => {
+                sipControls?.answerCall();
+                useCallsStore.getState().removeIncomingCall(incomingRing.id);
+                setActiveCall(incomingRing);
+                answer.mutate(incomingRing.id, { onSuccess: c => setActiveCall(c) });
+              }}
+              onDecline={() => {
+                decline.mutate(incomingRing.id);
+                useCallsStore.getState().removeIncomingCall(incomingRing.id);
+              }}
+            />
+          )}
+
+          {activeCall && !incomingRing && (
+            <ActiveCallStage
+              call={activeCall}
+              contactCache={contactCache}
+              muted={muted}
+              held={held}
+              sipRegistered={sipRegistered}
+              sipError={sipError}
+              onMute={() => sipControls?.toggleMute()}
+              onHold={handleHold}
+              onTransfer={() => setTransferOpen(true)}
+              onHangup={handleHangup}
+              onRecord={() => toast.info('Recording is managed server-side automatically')}
+            />
+          )}
+
+          {showEmptyCenter && !incomingRing && (
+            <div className="flex flex-col items-center py-8 px-4 text-center animate-cw-float-in">
+              <div className="w-16 h-16 rounded-2xl bg-sky-500/20 border border-sky-500/30 flex items-center justify-center mb-4 text-sky-300">
+                <PhoneIncoming size={32} aria-hidden />
               </div>
-              <h2 className="text-base font-semibold text-gray-900">Ready to take calls</h2>
-              <p className="text-sm text-muted-foreground mt-1 max-w-md">
-                Pick a conversation from <span className="font-medium">Active</span> or{' '}
-                <span className="font-medium">Recent</span>, or enter a number in the dial pad and
-                press Call.
+              <h2 className="text-lg font-semibold text-white">Ready for live conversations</h2>
+              <p className="text-sm text-slate-500 mt-2 max-w-md">
+                Your smart cockpit unifies PSTN, WhatsApp, CRM, tickets, and AI assist — pick a call
+                or dial below.
               </p>
               {!sipRegistered && transport === 'pstn' && (
-                <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 mt-4 max-w-sm">
-                  PSTN dial-out requires a registered softphone. Try the WhatsApp tab for outbound
-                  without SIP.
+                <p className="text-xs text-amber-200/90 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2 mt-4 max-w-sm">
+                  Register softphone for PSTN — or use WhatsApp outbound without SIP.
                 </p>
               )}
             </div>
           )}
 
-          {/* Incoming call card (with pulse animation) */}
-          {incomingRing && (
-            <div className="flex items-center gap-3 p-4 rounded-xl bg-green-50 border border-green-200 animate-pulse-once">
-              <div className="relative shrink-0">
-                <div className="w-11 h-11 rounded-full bg-green-100 text-green-800 flex items-center justify-center text-sm font-semibold">
-                  {resolveCallerName(incomingRing, contactCache).slice(0, 2).toUpperCase()}
-                </div>
-                {/* Pulse rings */}
-                <span className="absolute inset-0 rounded-full bg-green-400 opacity-30 animate-ping" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold">
-                  {resolveCallerName(incomingRing, contactCache)}
-                </p>
-                <p className="text-xs text-green-700">{incomingRing.customerPhone}</p>
-                <p className="text-[10px] text-green-600/80 mt-0.5">
-                  Press <kbd className="font-mono bg-green-100 px-1 rounded">Space</kbd> to answer ·{' '}
-                  <kbd className="font-mono bg-green-100 px-1 rounded">Esc</kbd> to decline
-                </p>
-              </div>
-              <button
-                type="button"
-                aria-label="Answer call"
-                className="w-11 h-11 rounded-full bg-green-600 hover:bg-green-700 text-white flex items-center justify-center shadow-sm transition-colors"
-                onClick={() => {
-                  sipControls?.answerCall();
-                  useCallsStore.getState().removeIncomingCall(incomingRing.id);
-                  setActiveCall(incomingRing);
-                  answer.mutate(incomingRing.id, {
-                    onSuccess: c => setActiveCall(c),
+          {showEmptyCenter && (
+            <div className="max-w-sm mx-auto cw-glass rounded-2xl p-4">
+              <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-3 text-center">
+                Quick dial
+              </p>
+              <DialPad
+                transport={transport}
+                disabled={!user}
+                onCall={async (number, t) => {
+                  if (t === 'pstn') {
+                    if (!makeCall || !sipRegistered) {
+                      toast.error('Softphone not connected.');
+                      return;
+                    }
+                    makeCall(number);
+                    return;
+                  }
+                  if (!user) return;
+                  if (isDemoDataEnabled()) {
+                    setActiveCall({
+                      id: `wa-${Date.now()}`,
+                      tenantId: user.tenantId,
+                      roomId: `wa-${Date.now()}`,
+                      channel: 'whatsapp',
+                      agentLabel: user.name,
+                      customerPhone: number,
+                      status: 'ringing',
+                      transport: 'whatsapp',
+                      direction: 'outbound',
+                      startedAt: new Date().toISOString(),
+                    });
+                    return;
+                  }
+                  const session = await createSession({
+                    roomId: `wa-${Date.now()}`,
+                    chatwootAccountId: user.chatwootAccountId,
+                    agentLabel: user.name,
+                    customerPhone: number,
+                    transport: 'whatsapp',
+                    direction: 'outbound',
                   });
+                  setActiveCall(session);
                 }}
-              >
-                <Phone size={18} />
-              </button>
-              <button
-                type="button"
-                aria-label="Decline call"
-                className="w-11 h-11 rounded-full bg-red-100 hover:bg-red-200 text-red-700 flex items-center justify-center transition-colors"
-                onClick={() => {
-                  decline.mutate(incomingRing.id);
-                  useCallsStore.getState().removeIncomingCall(incomingRing.id);
-                }}
-              >
-                <PhoneOff size={18} />
-              </button>
+              />
             </div>
           )}
 
-          {/* Active call controls */}
-          {activeCall && (
-            <div className="rounded-xl border p-4 space-y-4 bg-white shadow-sm">
-              <div className="flex items-start gap-3">
-                <div className="w-12 h-12 rounded-full bg-blue-50 text-brand-primary flex items-center justify-center text-lg font-semibold shrink-0">
-                  {resolveCallerName(activeCall, contactCache).slice(0, 2).toUpperCase()}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-base font-semibold">
-                    {resolveCallerName(activeCall, contactCache)}
-                  </p>
-                  <p className="text-sm text-gray-500">{activeCall.customerPhone}</p>
-                  <div className="flex items-center gap-2 mt-1">
-                    <span
-                      className={cn(
-                        'inline-flex px-2 py-0.5 rounded-full text-[10px] font-medium',
-                        activeCall.status === 'connected'
-                          ? 'bg-green-100 text-green-800'
-                          : 'bg-amber-100 text-amber-800',
-                      )}
-                    >
-                      {activeCall.status === 'connected' ? 'Connected' : 'Ringing…'}
-                    </span>
-                    {held && (
-                      <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-100 text-amber-800">
-                        On Hold
-                      </span>
-                    )}
-                    {muted && (
-                      <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-medium bg-gray-100 text-gray-600">
-                        Muted
-                      </span>
-                    )}
-                  </div>
-                </div>
-                {activeCall.status === 'connected' && (
-                  <CallTimer
-                    startTime={activeCall.connectedAt ?? activeCall.startedAt}
-                    className="text-xl font-semibold text-brand-primary tabular-nums shrink-0"
-                  />
-                )}
-              </div>
-
-              <div className="flex flex-wrap gap-2">
-                <CtrlBtn
-                  label={muted ? 'Unmute' : 'Mute'}
-                  icon={muted ? MicOff : Mic}
-                  active={muted}
-                  onClick={() => sipControls?.toggleMute()}
-                />
-                <CtrlBtn
-                  label={held ? 'Resume' : 'Hold'}
-                  icon={held ? Play : Pause}
-                  active={held}
-                  onClick={handleHold}
-                />
-                <CtrlBtn
-                  label="Transfer"
-                  icon={PhoneForwarded}
-                  onClick={() => setTransferOpen(true)}
-                />
-                <CtrlBtn
-                  label="Record"
-                  icon={Radio}
-                  onClick={() => toast.info('Recording is managed server-side automatically')}
-                />
-                <CtrlBtn
-                  label="End call"
-                  icon={PhoneOff}
-                  destructive
-                  onClick={handleHangup}
-                  className="ms-auto"
-                />
-              </div>
-            </div>
-          )}
-
-          {/* Queue stats + today summary */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="rounded-xl border border-gray-100 p-4 bg-white shadow-sm">
+            <div className="cw-glass rounded-xl p-4">
               <div className="flex items-center justify-between mb-3">
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
                   Queue stats
                 </p>
-                {showSampleBadge && (
-                  <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
-                    Sample
-                  </span>
-                )}
               </div>
               {queueDisplay.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No queues configured</p>
+                <p className="text-sm text-slate-500">No queues configured</p>
               ) : (
                 <ul className="space-y-2">
                   {queueDisplay.map(q => (
                     <li
                       key={q.id}
-                      className="flex justify-between gap-2 text-sm py-2 border-b border-gray-50 last:border-0"
+                      className="flex justify-between gap-2 text-sm py-2 border-b border-white/5 last:border-0"
                     >
-                      <span className="font-medium truncate">{q.name}</span>
-                      <span className="text-gray-500 text-xs shrink-0 tabular-nums">
+                      <span className="font-medium truncate text-slate-200">{q.name}</span>
+                      <span className="text-slate-500 text-xs shrink-0 tabular-nums">
                         {q.stats?.waiting ?? 0} waiting · {q.stats?.avgWaitSec ?? 0}s
                       </span>
                     </li>
@@ -507,24 +428,23 @@ export function CallingWorkspace() {
                 </ul>
               )}
             </div>
-            <div className="rounded-xl border border-gray-100 p-4 bg-white shadow-sm">
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
+            <div className="cw-glass rounded-xl p-4">
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
                 Today
               </p>
-              <p className="text-3xl font-bold text-gray-900 tabular-nums">{cdrRows.length}</p>
-              <p className="text-sm text-gray-500 mt-0.5">calls in history</p>
-              <p className="text-sm text-red-600 mt-2 font-medium">
-                {cdrRows.filter(r => r.outcome === 'missed').length} missed
+              <p className="text-3xl font-bold text-white tabular-nums">{todayRows.length}</p>
+              <p className="text-sm text-slate-500 mt-0.5">calls today</p>
+              <p className="text-sm text-rose-400 mt-2 font-medium">
+                {todayRows.filter(r => r.outcome === 'missed').length} missed today
               </p>
             </div>
           </div>
 
           <RecordingsPanel />
 
-          {/* Supervisor controls */}
           {isSupervisor && selected && (
-            <div className="rounded-xl border p-3 bg-white">
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
+            <div className="cw-glass rounded-xl p-3">
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
                 Supervisor
               </p>
               <div className="flex gap-2">
@@ -533,7 +453,7 @@ export function CallingWorkspace() {
                     key={label}
                     type="button"
                     aria-label={`${label} into call`}
-                    className="px-3 py-1.5 text-xs border rounded-lg hover:bg-muted transition-colors"
+                    className="px-3 py-1.5 text-xs border border-white/10 rounded-lg text-slate-300 hover:bg-white/5 transition-colors"
                     onClick={() =>
                       toast.info(`${label} via Asterisk AMI — configure in infra/asterisk`)
                     }
@@ -547,52 +467,11 @@ export function CallingWorkspace() {
         </div>
       </div>
 
-      {/* ── Right sidebar: dial pad ──────────────────────────────────── */}
-      <aside className="w-64 shrink-0 border-s border-gray-200 bg-white flex flex-col min-h-0">
-        <p className="px-4 pt-3 pb-1 text-[10px] font-semibold text-gray-400 uppercase tracking-wider shrink-0">
-          Dial pad
-        </p>
-        <DialPad
-          className="flex-1 min-h-0"
-          transport={transport}
-          disabled={!user}
-          onCall={async (number, t) => {
-            if (t === 'pstn') {
-              if (!makeCall || !sipRegistered) {
-                toast.error('Softphone not connected — wait for "Softphone connected".');
-                return;
-              }
-              makeCall(number);
-              return;
-            }
-            if (!user) return;
-            if (isDemoDataEnabled()) {
-              setActiveCall({
-                id: `wa-${Date.now()}`,
-                tenantId: user.tenantId,
-                roomId: `wa-${Date.now()}`,
-                channel: 'whatsapp',
-                agentLabel: user.name,
-                customerPhone: number,
-                status: 'ringing',
-                transport: 'whatsapp',
-                direction: 'outbound',
-                startedAt: new Date().toISOString(),
-              });
-              return;
-            }
-            const session = await createSession({
-              roomId: `wa-${Date.now()}`,
-              chatwootAccountId: user.chatwootAccountId,
-              agentLabel: user.name,
-              customerPhone: number,
-              transport: 'whatsapp',
-              direction: 'outbound',
-            });
-            setActiveCall(session);
-          }}
-        />
-      </aside>
+      <CustomerContextPanel
+        call={activeCall ?? incomingRing ?? null}
+        collapsed={contextCollapsed}
+        onToggle={() => setContextCollapsed(c => !c)}
+      />
 
       {/* ── Transfer dialog ──────────────────────────────────────────── */}
       <Dialog

@@ -3,6 +3,23 @@ import type { RoutingAgent, Queue, QueueStats } from '@/types';
 
 const SVC = 'routing';
 
+export async function getWebRTCCredentials(agentId: string): Promise<{
+  wsUri: string;
+  sipUri: string;
+  password: string;
+  stunServers: string[];
+  turnServers: { urls: string; username: string; credential: string }[];
+}> {
+  const res = await bnFetch<{ data: {
+    wsUri: string;
+    sipUri: string;
+    password: string;
+    stunServers: string[];
+    turnServers: { urls: string; username: string; credential: string }[];
+  } }>(SVC, `/v1/agents/${agentId}/webrtc`);
+  return res.data;
+}
+
 export async function setAgentState(
   agentId: string,
   state: 'available' | 'busy' | 'break' | 'offline',

@@ -1,22 +1,29 @@
 'use client';
 
-import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { listFlows, getFlow, updateFlow, publishFlow } from '@/lib/api/ivr';
+import { useEffect, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
+import {
+  listFlows,
+  getFlow,
+  saveFlowDraft,
+  publishFlow,
+  createNewFlow,
+} from '@/lib/api/ivr';
 import { DEMO_IVR_FLOW } from '@/lib/demo/callingFixture';
 import { IVRFlowCanvas } from '@/components/ivr/IVRFlowCanvas';
 import { IVRNodePalette } from '@/components/ivr/IVRNodePalette';
 import { IVRPropertiesPanel } from '@/components/ivr/IVRPropertiesPanel';
-import type { IVRNode } from '@/types';
+import type { IVRFlow, IVRNode } from '@/types';
 
 export function IVRBuilder() {
-  const [flowId, setFlowId] = useState(DEMO_IVR_FLOW.id);
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(
-    DEMO_IVR_FLOW.nodes[0]?.id ?? null,
-  );
+  const qc = useQueryClient();
+  const [flowId, setFlowId] = useState<string | null>(null);
+  const [localFlow, setLocalFlow] = useState<IVRFlow | null>(null);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [label, setLabel] = useState('');
-  // IVR1: draft config for the selected node (includes queueKey, skillRequirements, etc.)
   const [draftConfig, setDraftConfig] = useState<Record<string, unknown>>({});
+  const [creating, setCreating] = useState(false);
 
   const { data: flows = [] } = useQuery({
     queryKey: ['ivr-flows'],
@@ -29,79 +36,120 @@ export function IVRBuilder() {
     },
   });
 
-  const { data: flow = DEMO_IVR_FLOW } = useQuery({
+  useEffect(() => {
+    if (!flowId && flows.length) setFlowId(flows[0].id);
+  }, [flows, flowId]);
+
+  const { data: loadedFlow } = useQuery({
     queryKey: ['ivr-flow', flowId],
+    enabled: !!flowId,
     queryFn: async () => {
       try {
-        return await getFlow(flowId);
+        return await getFlow(flowId as string);
       } catch {
         return DEMO_IVR_FLOW;
       }
     },
   });
 
-  const selected = flow.nodes.find((n) => n.id === selectedNodeId) ?? null;
+  useEffect(() => {
+    if (loadedFlow) setLocalFlow(loadedFlow);
+  }, [loadedFlow]);
+
+  const flow = localFlow ?? loadedFlow ?? DEMO_IVR_FLOW;
+  const flowNodes = flow?.nodes ?? [];
+  const selected = flowNodes.find(n => n.id === selectedNodeId) ?? null;
 
   const handleSelectNode = (id: string) => {
     setSelectedNodeId(id);
-    const node = flow.nodes.find((n) => n.id === id);
+    const node = flowNodes.find(n => n.id === id);
     setLabel(node?.label ?? '');
-    // Initialise draft config from the node's current config
     setDraftConfig({ ...(node?.config ?? {}) });
   };
 
+  const updateLocalNodes = (nodes: IVRNode[]) => {
+    setLocalFlow(prev => (prev ? { ...prev, nodes, edges: prev.edges ?? [] } : prev));
+  };
+
   const saveNode = () => {
-    if (!selected || !label.trim()) return;
-    const nodes = flow.nodes.map((n) =>
+    if (!selected || !label.trim() || !flow?.id) return;
+    const nodes = flowNodes.map(n =>
       n.id === selected.id
         ? {
             ...n,
             label: label.trim(),
-            // IVR1: persist config changes (queueKey, skillRequirements, etc.)
             config: { ...(n.config ?? {}), ...draftConfig },
           }
         : n,
     );
-    void updateFlow(flow.id, { nodes }).catch(() => undefined);
+    updateLocalNodes(nodes);
+    const nextFlow = { ...flow, nodes };
+    void saveFlowDraft(nextFlow, 'Node edit')
+      .then(saved => {
+        setLocalFlow(saved);
+        toast.success('Node saved');
+      })
+      .catch(() => toast.error('Could not save node'));
   };
 
   const handlePublish = () => {
-    void publishFlow(flow.id).catch(() => void updateFlow(flow.id, { isActive: true }));
+    if (!flow?.id) return;
+    void publishFlow(flow.id, flow)
+      .then(saved => {
+        setLocalFlow(saved);
+        void qc.invalidateQueries({ queryKey: ['ivr-flow', flow.id] });
+        toast.success('Flow published');
+      })
+      .catch(() => toast.error('Publish failed'));
+  };
+
+  const handleCreateFlow = async () => {
+    const name = window.prompt('Name for the new IVR flow', 'My IVR flow');
+    if (!name?.trim()) return;
+    setCreating(true);
+    try {
+      const created = await createNewFlow(name.trim());
+      setFlowId(created.id);
+      setLocalFlow(created);
+      setSelectedNodeId(created.nodes[0]?.id ?? null);
+      void qc.invalidateQueries({ queryKey: ['ivr-flows'] });
+      toast.success(`Created "${name.trim()}"`);
+    } catch {
+      toast.error('Could not create flow');
+    } finally {
+      setCreating(false);
+    }
   };
 
   return (
     <div className="flex h-full min-h-[calc(100vh-3rem)] overflow-hidden bg-surface-tertiary">
       <IVRNodePalette
-        flows={(flows.length ? flows : [DEMO_IVR_FLOW]).map((f) => ({ id: f.id, name: f.name }))}
-        activeFlowId={flowId}
-        onSelectFlow={(id) => {
+        flows={(flows.length ? flows : [DEMO_IVR_FLOW]).map(f => ({ id: f.id, name: f.name }))}
+        activeFlowId={flowId ?? ''}
+        onSelectFlow={id => {
           setFlowId(id);
+          setLocalFlow(null);
           setSelectedNodeId(null);
           setDraftConfig({});
         }}
+        onCreateFlow={handleCreateFlow}
+        creating={creating}
       />
 
       <div className="flex-1 flex flex-col p-3 min-w-0">
-        <div className="flex justify-end gap-2 mb-2 shrink-0">
-          <button type="button" className="px-3 py-1 text-xs border border-gray-200 rounded-lg bg-white">
-            Test flow
-          </button>
-          <button type="button" className="px-3 py-1 text-xs border border-gray-200 rounded-lg bg-white">
-            History
-          </button>
-          <button
-            type="button"
-            onClick={handlePublish}
-            className="px-3 py-1 text-xs rounded-lg bg-brand-primary text-white"
-          >
-            Publish
-          </button>
+        <div className="flex justify-between items-center gap-2 mb-2 shrink-0">
+          <p className="text-sm font-medium text-gray-800 truncate">{flow.name}</p>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={handlePublish}
+              className="px-3 py-1 text-xs rounded-lg bg-brand-primary text-white"
+            >
+              Publish
+            </button>
+          </div>
         </div>
-        <IVRFlowCanvas
-          flow={flow}
-          selectedId={selectedNodeId}
-          onSelect={handleSelectNode}
-        />
+        <IVRFlowCanvas flow={flow} selectedId={selectedNodeId} onSelect={handleSelectNode} />
       </div>
 
       <IVRPropertiesPanel

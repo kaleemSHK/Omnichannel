@@ -1,17 +1,17 @@
 import { View, Text, TouchableOpacity, Vibration } from 'react-native';
 import { useEffect } from 'react';
-import { router } from 'expo-router';
 import { useTranslation } from 'react-i18next';
-import * as Haptics from 'expo-haptics';
 import { useCallsStore } from '@/store/calls';
 import { useSip } from '@/providers/sip-context';
 import { usePermissions } from '@/hooks/usePermissions';
+import { navigationRef } from '@/navigation/navigationRef';
+import { hapticImpact } from '@/lib/haptics';
 
 export function IncomingCallSheet() {
   const { t } = useTranslation();
   const incomingCalls = useCallsStore((s) => s.incomingCalls);
   const removeIncomingCall = useCallsStore((s) => s.removeIncomingCall);
-  const { answerCall, hangup } = useSip();
+  const { answerCall, declineCall } = useSip();
   const { requestMic } = usePermissions();
 
   const call = incomingCalls[0];
@@ -26,18 +26,18 @@ export function IncomingCallSheet() {
   if (!call) return null;
 
   async function handleAnswer() {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    hapticImpact('medium');
     Vibration.cancel();
     const granted = await requestMic();
     if (!granted) return;
     answerCall();
-    router.push('/call-active');
+    navigationRef.navigate('CallActive');
   }
 
   function handleDecline() {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+    hapticImpact('heavy');
     Vibration.cancel();
-    hangup();
+    declineCall();
     removeIncomingCall(call.callId);
   }
 

@@ -1,8 +1,15 @@
 import { CHATWOOT_URL, GATEWAY_URL } from '@/lib/env';
 import type { BlinkoneUser, AuthTokens } from '@/types';
 
+import Config from 'react-native-config';
+
+function cfg(key: string, fallback = ''): string {
+  const v = Config[key as keyof typeof Config];
+  return typeof v === 'string' ? v : fallback;
+}
+
 function resolveRole(cwRole: string, email: string): BlinkoneUser['role'] {
-  const platformAdmins = (process.env.EXPO_PUBLIC_PLATFORM_ADMINS ?? '').split(',');
+  const platformAdmins = cfg('PLATFORM_ADMINS', '').split(',');
   if (platformAdmins.includes(email)) return 'platform_admin';
   if (cwRole === 'administrator') return 'admin';
   if (cwRole === 'supervisor') return 'supervisor';
@@ -68,4 +75,23 @@ export async function fetchProfile(accessToken: string): Promise<BlinkoneUser> {
     chatwootAccountId: profile.account_id,
     avatarUrl: profile.avatar_url,
   };
+}
+
+/** Re-issue gateway JWT from a valid Chatwoot access token (session restore). */
+export async function refreshGatewayToken(accessToken: string): Promise<string> {
+  const gwRes = await fetch(`${GATEWAY_URL}/api/auth/token`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Api-Access-Token': accessToken,
+      api_access_token: accessToken,
+    },
+    body: '{}',
+  });
+  if (!gwRes.ok) {
+    const err = await gwRes.json().catch(() => ({}));
+    throw new Error(err?.message ?? 'Gateway token refresh failed');
+  }
+  const gw = await gwRes.json();
+  return gw.token as string;
 }

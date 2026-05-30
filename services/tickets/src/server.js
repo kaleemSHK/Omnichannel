@@ -99,7 +99,10 @@ app.get('/v1/tickets', auth, async (req, res) => {
   if (!Number.isFinite(accountId)) return fail(res, 'VALIDATION_ERROR', 'chatwoot_account_id required');
   if (dbEnabled()) {
     try {
-      const list = await ticketRepo.listTickets(accountId, { status: req.query.status });
+      const list = await ticketRepo.listTickets(accountId, {
+        status: req.query.status,
+        contactId: req.query.contact_id ? String(req.query.contact_id) : undefined,
+      });
       return ok(res, list);
     } catch (e) {
       log.error({ err: e.message }, 'list tickets');
@@ -109,6 +112,13 @@ app.get('/v1/tickets', auth, async (req, res) => {
   const s = store.load();
   let list = s.tickets.filter((t) => t.chatwootAccountId === accountId);
   if (req.query.status) list = list.filter((t) => t.status === req.query.status);
+  if (req.query.contact_id) {
+    const cid = String(req.query.contact_id);
+    list = list.filter((t) => {
+      const fields = (s.fields ?? []).filter((f) => f.ticketId === t.id);
+      return fields.some((f) => f.key === 'contact_id' && f.value === cid);
+    });
+  }
   const limit = Math.min(Math.max(1, Number(req.query.limit) || 100), 500);
   const offset = Math.max(0, Number(req.query.offset) || 0);
   const sorted = list.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
@@ -145,6 +155,7 @@ app.post('/v1/tickets', auth, async (req, res) => {
     priority,
     status,
     customFields,
+    contactId,
   } = req.body ?? {};
   if (!title?.trim()) return fail(res, 'VALIDATION_ERROR', 'title is required');
   const accountId = Number.isFinite(Number(chatwootAccountId))
@@ -165,6 +176,7 @@ app.post('/v1/tickets', auth, async (req, res) => {
         status: norm(status, STATUS, 'open'),
         priority: norm(priority, PRIORITY, 'medium'),
         customFields,
+        contactId,
       });
       tryCreateSla(ticket);
       ticketsTotal.inc({ tenant: String(accountId), status: ticket.status ?? 'open' });
@@ -202,6 +214,10 @@ app.post('/v1/tickets', auth, async (req, res) => {
       if (customFields && typeof customFields === 'object') {
         s.fields = s.fields ?? [];
         for (const [k, v] of Object.entries(customFields)) s.fields.push({ ticketId: tid, key: k.slice(0, 120), value: v });
+      }
+      if (contactId != null && contactId !== '') {
+        s.fields = s.fields ?? [];
+        s.fields.push({ ticketId: tid, key: 'contact_id', value: String(contactId) });
       }
       return { ticket: t };
     });

@@ -73,3 +73,64 @@ export function stopIncomingRingtone(): void {
   }
   ringOscillators = [];
 }
+
+// ─── Outbound ringback ────────────────────────────────────────────────────────
+// WebRTC can't surface the carrier's ringback (no media until DTLS completes),
+// so we synthesise a local ringback while the outbound call is ringing.
+let rbInterval: ReturnType<typeof setInterval> | null = null;
+let rbOscillators: OscillatorNode[] = [];
+let rbActive = false;
+
+function playRingbackBurst(): void {
+  const ac = getCtx();
+  const t = ac.currentTime;
+  const gain = ac.createGain();
+  // Ringback is quieter and longer than the incoming ring (2s tone / 4s gap).
+  gain.gain.setValueAtTime(0.0001, t);
+  gain.gain.exponentialRampToValueAtTime(0.18, t + 0.05);
+  gain.gain.setValueAtTime(0.18, t + 1.9);
+  gain.gain.exponentialRampToValueAtTime(0.0001, t + 2.0);
+  gain.connect(ac.destination);
+
+  for (const freq of [440, 480]) {
+    const osc = ac.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.value = freq;
+    osc.connect(gain);
+    osc.start(t);
+    osc.stop(t + 2.05);
+    rbOscillators.push(osc);
+  }
+}
+
+export async function startOutgoingRingback(): Promise<void> {
+  if (rbActive || typeof window === 'undefined') return;
+  rbActive = true;
+  try {
+    await resumeCtx();
+    playRingbackBurst();
+    rbInterval = setInterval(() => {
+      if (!rbActive) return;
+      playRingbackBurst();
+    }, 6000);
+  } catch (err) {
+    console.warn('[ringback] failed to start', err);
+    rbActive = false;
+  }
+}
+
+export function stopOutgoingRingback(): void {
+  rbActive = false;
+  if (rbInterval) {
+    clearInterval(rbInterval);
+    rbInterval = null;
+  }
+  for (const o of rbOscillators) {
+    try {
+      o.stop();
+    } catch {
+      /* already stopped */
+    }
+  }
+  rbOscillators = [];
+}

@@ -1,6 +1,6 @@
 import { View, Text } from 'react-native';
 import { useEffect, useState } from 'react';
-import * as Network from 'expo-network';
+import NetInfo from '@react-native-community/netinfo';
 import { useTranslation } from 'react-i18next';
 
 export function OfflineBanner() {
@@ -8,14 +8,10 @@ export function OfflineBanner() {
   const [offline, setOffline] = useState(false);
 
   useEffect(() => {
-    let interval: ReturnType<typeof setInterval>;
-    async function check() {
-      const state = await Network.getNetworkStateAsync();
-      setOffline(!state.isConnected);
-    }
-    check();
-    interval = setInterval(check, 5000);
-    return () => clearInterval(interval);
+    const unsubscribe = NetInfo.addEventListener((state) => {
+      setOffline(!(state.isConnected && state.isInternetReachable !== false));
+    });
+    return unsubscribe;
   }, []);
 
   if (!offline) return null;

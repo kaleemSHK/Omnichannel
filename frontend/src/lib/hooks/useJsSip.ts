@@ -4,14 +4,18 @@ import { useEffect, useCallback } from 'react';
 import { useCallsStore } from '@/lib/store/calls';
 import { useAuthStore } from '@/lib/store/auth';
 import { isDemoDataEnabled, shouldSkipGatewayFetch } from '@/lib/demo/config';
-import { isPlaceholderEnv, isSipReady } from '@/lib/env/telephony';
+import { isPlaceholderEnv, isSipReady, resolveSipWsUri } from '@/lib/env/telephony';
 import { getWebRTCCredentials } from '@/lib/api/routing';
 import { pstnSipTarget } from '@/lib/utils/phone';
 import {
   bindSessionRemoteAudio,
   clearRemoteAudio,
 } from '@/lib/telephony/sip-audio';
-import { stopIncomingRingtone } from '@/lib/telephony/ringtone';
+import {
+  stopIncomingRingtone,
+  startOutgoingRingback,
+  stopOutgoingRingback,
+} from '@/lib/telephony/ringtone';
 import { presentIncomingCall, clearIncomingCallUi } from '@/lib/calling/incoming-call-ui';
 import { answerCall as apiAnswerCall, declineCall as apiDeclineCall } from '@/lib/api/calls';
 import { lookupContactAll } from '@/lib/api/connectors';
@@ -85,6 +89,7 @@ const uaRef = { current: null as JsSIPUA | null };
 const sessionRef = { current: null as JsSIPRTCSession | null };
 const incomingIdRef = { current: null as string | null };
 const iceServersRef = { current: [{ urls: 'stun:stun.l.google.com:19302' }] as RTCIceServer[] };
+const sipCredsRef = { current: { wsUri: SIP_WSS, sipUri: '', password: SIP_PASS } };
 let sipInitOwners = 0;
 
 function sessionEnded(session: JsSIPRTCSession | null): boolean {
@@ -124,10 +129,16 @@ export function useJsSip() {
     let destroyed = false;
 
     (async () => {
-      // Fetch TURN/STUN credentials if available
+      let creds = {
+        wsUri: SIP_WSS,
+        sipUri: `sip:${sipAccountUser(user)}@${sipRegistrarHost()}`,
+        password: SIP_PASS,
+        stunServers: ['stun:stun.l.google.com:19302'],
+        turnServers: [] as { urls: string; username: string; credential: string }[],
+      };
       try {
         if (user?.id && !shouldSkipGatewayFetch()) {
-          const creds = await getWebRTCCredentials(String(user.id));
+          creds = { ...creds, ...(await getWebRTCCredentials(String(user.id))) };
           iceServersRef.current = [
             ...creds.stunServers.map(s => ({ urls: s })),
             ...creds.turnServers.map(t => ({
@@ -140,6 +151,11 @@ export function useJsSip() {
       } catch {
         iceServersRef.current = [{ urls: 'stun:stun.l.google.com:19302' }];
       }
+      sipCredsRef.current = {
+        wsUri: resolveSipWsUri(creds.wsUri, SIP_WSS),
+        sipUri: creds.sipUri || `sip:${sipAccountUser(user)}@${sipRegistrarHost()}`,
+        password: creds.password || SIP_PASS,
+      };
 
       if (destroyed) return;
 
@@ -147,18 +163,15 @@ export function useJsSip() {
         const JsSIP = await import('jssip');
         if (destroyed) return;
 
-        const sipUser = sipAccountUser(user);
-        const sipUri = `sip:${sipUser}@${sipRegistrarHost()}`;
-
         const UA = (JsSIP as unknown as { UA: new (cfg: unknown) => JsSIPUA }).UA;
         const WSIface = (JsSIP as unknown as { WebSocketInterface: new (u: string) => unknown })
           .WebSocketInterface;
 
         ua = new UA({
-          sockets: [new WSIface(SIP_WSS)],
-          uri: sipUri,
-          password: SIP_PASS,
-          display_name: user?.name ?? sipUser,
+          sockets: [new WSIface(sipCredsRef.current.wsUri)],
+          uri: sipCredsRef.current.sipUri,
+          password: sipCredsRef.current.password,
+          display_name: user?.name ?? sipAccountUser(user),
           register: true,
           register_expires: 120,
           session_timers: false,
@@ -286,11 +299,15 @@ export function useJsSip() {
 
           session.on('progress', () => {
             bindSessionRemoteAudio(session as unknown as { connection?: RTCPeerConnection });
+            // Outbound leg is ringing — play a local ringback (carrier ringback
+            // isn't audible over WebRTC until media/DTLS is up after answer).
+            if (originator !== 'remote') void startOutgoingRingback();
           });
 
           session.on('confirmed', () => {
             if (destroyed) return;
             stopIncomingRingtone();
+            stopOutgoingRingback();
             bindSessionRemoteAudio(session as unknown as { connection?: RTCPeerConnection });
             setMuted(false);
             setHeld(false);
@@ -327,6 +344,7 @@ export function useJsSip() {
           session.on('ended', () => {
             if (destroyed) return;
             stopIncomingRingtone();
+            stopOutgoingRingback();
             sessionRef.current = null;
             clearRemoteAudio();
             setActiveCall(null);
@@ -338,6 +356,7 @@ export function useJsSip() {
           session.on('failed', (ev: unknown) => {
             if (destroyed) return;
             stopIncomingRingtone();
+            stopOutgoingRingback();
             const failEv = ev as {
               cause?: string;
               message?: { status_code?: number; reason_phrase?: string };
@@ -447,6 +466,30 @@ export function useJsSip() {
     [pcConfig, setSipError],
   );
 
+  /** Direct WebRTC call to another registered agent (numeric agent id). */
+  const makePeerCall = useCallback(
+    (targetAgentId: string) => {
+      const registered = !!uaRef.current?.isRegistered();
+      if (!registered || !uaRef.current) {
+        toast.error('Softphone not connected');
+        return;
+      }
+      const agentId = targetAgentId.replace(/\D/g, '');
+      const domain = sipCredsRef.current.sipUri.split('@')[1] || SIP_DOMAIN;
+      const target = `sip:${agentId}@${domain}`;
+      try {
+        sessionRef.current = uaRef.current.call(target, {
+          mediaConstraints: { audio: true, video: false },
+          rtcOfferConstraints: { offerToReceiveAudio: true, offerToReceiveVideo: false },
+          pcConfig: pcConfig(),
+        });
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Peer call failed');
+      }
+    },
+    [pcConfig],
+  );
+
   const answerCall = useCallback(() => {
     const session = sessionRef.current;
     if (!session) {
@@ -467,6 +510,7 @@ export function useJsSip() {
 
   const hangup = useCallback(() => {
     stopIncomingRingtone();
+    stopOutgoingRingback();
     const s = sessionRef.current;
     if (s && !sessionEnded(s)) {
       try { s.terminate(); } catch { /* already ended */ }
@@ -536,5 +580,5 @@ export function useJsSip() {
     setSipControls,
   ]);
 
-  return { makeCall, answerCall, hangup, toggleMute, toggleHold, sendDTMF, blindTransfer };
+  return { makeCall, makePeerCall, answerCall, hangup, toggleMute, toggleHold, sendDTMF, blindTransfer };
 }

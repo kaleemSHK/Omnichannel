@@ -52,23 +52,35 @@ export async function appendCallEvent(tenantId, callSessionId, { eventType, acto
 export async function listCdr(tenantId, { page = 1, limit = 20, from, to, agentId } = {}) {
   const p = getPool();
   const params = [tenantId];
-  let sql = `SELECT * FROM call_sessions WHERE tenant_id = $1 AND status IN ('ended', 'missed')`;
+  // LEFT JOIN LATERAL pulls the latest recording (if any) for each session so the
+  // history UI can offer inline playback without an N+1 round-trip per row.
+  let sql = `
+    SELECT cs.*, ro.id AS recording_id, ro.duration_ms AS recording_duration_ms
+    FROM call_sessions cs
+    LEFT JOIN LATERAL (
+      SELECT id, duration_ms
+      FROM recording_objects r
+      WHERE r.call_session_id = cs.id AND r.tenant_id = cs.tenant_id
+      ORDER BY created_at DESC
+      LIMIT 1
+    ) ro ON TRUE
+    WHERE cs.tenant_id = $1 AND cs.status IN ('ended', 'missed')`;
   if (from) {
     params.push(from);
-    sql += ` AND started_at >= $${params.length}::timestamptz`;
+    sql += ` AND cs.started_at >= $${params.length}::timestamptz`;
   }
   if (to) {
     params.push(to);
-    sql += ` AND started_at <= $${params.length}::timestamptz`;
+    sql += ` AND cs.started_at <= $${params.length}::timestamptz`;
   }
   if (agentId) {
     params.push(agentId);
-    sql += ` AND (assigned_agent_id = $${params.length} OR agent_label = $${params.length})`;
+    sql += ` AND (cs.assigned_agent_id = $${params.length} OR cs.agent_label = $${params.length})`;
   }
   const lim = Math.min(Math.max(parseInt(String(limit), 10) || 20, 1), 100);
   const off = Math.max((parseInt(String(page), 10) || 1) - 1, 0) * lim;
   params.push(lim, off);
-  sql += ` ORDER BY started_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`;
+  sql += ` ORDER BY cs.started_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`;
   const { rows } = await p.query(sql, params);
   return rows.map((r) => {
     const s = rowToSession(r);
@@ -77,12 +89,16 @@ export async function listCdr(tenantId, { page = 1, limit = 20, from, to, agentI
       tenantId: s.tenantId,
       callSessionId: s.id,
       agentId: s.assignedAgentId || s.agentLabel || '',
+      agentLabel: s.agentLabel || '',
       customerId: s.contactId ?? undefined,
+      customerPhone: s.customerPhone ?? '',
       direction: s.direction,
       transport: s.transport,
       duration: Math.max(0, Math.floor(Number(s.durationMs || 0) / 1000)),
       outcome: s.outcome || s.status,
       startedAt: s.startedAt,
+      endedAt: s.endedAt ?? null,
+      recordingId: r.recording_id ?? null,
     };
   });
 }
@@ -95,6 +111,28 @@ export async function expireStaleRinging(tenantId, maxAgeSec = 180) {
      WHERE tenant_id = $1 AND status = 'ringing'
        AND started_at < NOW() - ($2::text || ' seconds')::interval`,
     [tenantId, String(maxAgeSec)],
+  );
+}
+
+/** Close zombie legs left when SIP/WebRTC hangup never reached the calls service. */
+export async function expireStaleActiveCalls(
+  tenantId,
+  { ringingSec = 180, connectedSec = 7200 } = {},
+) {
+  await expireStaleRinging(tenantId, ringingSec);
+  const p = getPool();
+  await p.query(
+    `UPDATE call_sessions
+     SET status = 'ended',
+         ended_at = COALESCE(ended_at, NOW()),
+         outcome = COALESCE(NULLIF(outcome, ''), 'completed'),
+         duration_ms = COALESCE(
+           duration_ms,
+           GREATEST(0, EXTRACT(EPOCH FROM (NOW() - started_at)) * 1000)::bigint
+         )
+     WHERE tenant_id = $1 AND status IN ('connected', 'on_hold')
+       AND started_at < NOW() - ($2::text || ' seconds')::interval`,
+    [tenantId, String(connectedSec)],
   );
 }
 

@@ -1,7 +1,22 @@
 import { bnFetch } from './client';
-import type { CallSession, CDRRecord, ApiResponse } from '@/types';
+import type { CallSession, CDRRecord, ApiResponse, CallDirection, CallTransport } from '@/types';
 
 const SVC = 'calls';
+
+export async function createCall(payload: {
+  chatwootAccountId?: number;
+  customerPhone?: string;
+  agentLabel?: string;
+  direction?: CallDirection;
+  transport?: CallTransport;
+  assignedAgentId?: string;
+}): Promise<CallSession> {
+  const res = await bnFetch<{ data: CallSession }>(SVC, '/v1/calls', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+  return res.data;
+}
 
 export async function listActiveSessions(): Promise<CallSession[]> {
   const res = await bnFetch<{ data: CallSession[] }>(SVC, '/v1/sessions');
@@ -15,11 +30,22 @@ export async function answerCall(sessionId: string): Promise<CallSession> {
   return res.data;
 }
 
-export async function endCall(sessionId: string, outcome = 'completed'): Promise<void> {
-  await bnFetch<void>(SVC, `/v1/calls/${sessionId}`, {
-    method: 'PATCH',
-    body: JSON.stringify({ status: 'ended', outcome }),
+export async function declineCall(sessionId: string): Promise<void> {
+  await bnFetch<void>(SVC, `/v1/calls/${sessionId}/decline`, {
+    method: 'POST',
+    body: '{}',
   });
+}
+
+export async function hangupCall(sessionId: string): Promise<void> {
+  await bnFetch<void>(SVC, `/v1/calls/${sessionId}/hangup`, {
+    method: 'POST',
+    body: '{}',
+  });
+}
+
+export async function endCall(_sessionId: string, _outcome = 'completed'): Promise<void> {
+  await hangupCall(_sessionId);
 }
 
 export async function listCDR(filters: {

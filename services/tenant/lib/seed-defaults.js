@@ -1,4 +1,4 @@
-import { PLAN_FEATURE_TEMPLATES } from '../../_shared/lib/plan-features.js';
+import { PLAN_FEATURE_TEMPLATES } from '../_shared/lib/plan-features.js';
 
 const SLA_URL = (process.env.SLA_URL || 'http://sla:8796').replace(/\/$/, '');
 const ESCALATION_URL = (process.env.ESCALATION_URL || 'http://escalation:8797').replace(/\/$/, '');

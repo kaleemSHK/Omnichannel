@@ -105,6 +105,7 @@ app.get('/v1/sessions', auth, async (req, res) => {
   const tenantId = resolveTenantId(req);
   if (dbEnabled()) {
     try {
+      await cdrRepo.expireStaleActiveCalls(tenantId);
       let sessions = await cdrRepo.listSessions(tenantId);
       if (req.query.chatwoot_account_id) {
         sessions = sessions.filter((s) => String(s.chatwootAccountId) === String(req.query.chatwoot_account_id));
@@ -188,6 +189,7 @@ app.get('/v1/cdr', auth, async (req, res) => {
   const tenantId = resolveTenantId(req);
   if (!dbEnabled()) return fail(res, 'NOT_CONFIGURED', 'Postgres required', 501);
   try {
+    await cdrRepo.expireStaleActiveCalls(tenantId);
     const page = parseInt(String(req.query.page ?? '1'), 10) || 1;
     const limit = parseInt(String(req.query.limit ?? '20'), 10) || 20;
     const rows = await cdrRepo.listCdr(tenantId, {
@@ -280,7 +282,7 @@ app.get('/v1/calls/incoming', auth, async (req, res) => {
   const tenantId = resolveTenantId(req);
   if (!dbEnabled()) return fail(res, 'NOT_CONFIGURED', 'Postgres required', 501);
   try {
-    await cdrRepo.expireStaleRinging(tenantId);
+    await cdrRepo.expireStaleActiveCalls(tenantId);
     const calls = await cdrRepo.listCalls(tenantId, {
       status: 'ringing',
       scope: req.query.scope,

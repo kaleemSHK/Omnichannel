@@ -31,3 +31,23 @@ export function isSipReady(): boolean {
   if (isPlaceholderEnv(wss) || isPlaceholderEnv(pass)) return false;
   return isValidWebSocketUrl(wss);
 }
+
+/** True when WSS points at loopback (routing default must not override production env). */
+export function isLocalhostWsUrl(url: string | undefined): boolean {
+  if (!url?.trim()) return false;
+  try {
+    const h = new URL(url.trim()).hostname;
+    return h === 'localhost' || h === '127.0.0.1' || h === '::1';
+  } catch {
+    return false;
+  }
+}
+
+/** Prefer baked-in NEXT_PUBLIC_SIP_WSS when API returns dev localhost defaults. */
+export function resolveSipWsUri(apiWsUri: string | undefined, envWsUri: string): string {
+  const env = envWsUri?.trim() ?? '';
+  const api = apiWsUri?.trim() ?? '';
+  if (!api || isPlaceholderEnv(api)) return env;
+  if (isLocalhostWsUrl(api) && env && !isPlaceholderEnv(env) && !isLocalhostWsUrl(env)) return env;
+  return api;
+}

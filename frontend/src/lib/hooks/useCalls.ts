@@ -43,13 +43,16 @@ export function useActiveSessions() {
 export function useCDR(filters?: CDRFilters) {
   const limit = filters?.limit ?? 20;
   const page = filters?.page ?? 1;
+  const from = filters?.from ?? '';
+  const to = filters?.to ?? '';
+  const agentId = filters?.agentId ?? '';
   const live = isGatewayQueryEnabled();
   return useQuery({
-    queryKey: ['cdr', page, limit, isDemoDataEnabled(), live],
+    queryKey: ['cdr', page, limit, from, to, agentId, isDemoDataEnabled(), live],
     queryFn: async () => {
       if (isDemoDataEnabled() || !live) return DEMO_CDR.slice(0, limit * page);
       try {
-        const res = await listCDR({ page, ...filters });
+        const res = await listCDR({ page, limit, from, to, agentId } as CDRFilters);
         return (res as { data?: CDRRecord[] }).data ?? [];
       } catch {
         return [];

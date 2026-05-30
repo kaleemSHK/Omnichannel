@@ -135,7 +135,7 @@ services:
   # ═══════════════════════════════════════════════════════════════════════════
 
   gateway:
-    build: { context: ./gateway }
+    build: { context: ., dockerfile: gateway/Dockerfile }
     restart: unless-stopped
     environment:
       PORT:                 "8787"
@@ -170,6 +170,11 @@ services:
       RECORDING_TOKEN:      ${RECORDING_TOKEN}
       WHATSAPP_CALLS_UPSTREAM: http://whatsapp-calls:8803
       WHATSAPP_CALLS_TOKEN: ${WHATSAPP_CALLS_TOKEN:-${CALLS_TOKEN}}
+      CUSTOMER_CHATWOOT_TOKEN: ${CUSTOMER_CHATWOOT_TOKEN:-${CHATWOOT_API_ACCESS_TOKEN}}
+      CUSTOMER_DEFAULT_ACCOUNT: ${CUSTOMER_DEFAULT_ACCOUNT:-1}
+      DEVICE_STORE_PATH: /data/devices.json
+    volumes:
+      - gateway_data:/data
     networks: [blinkone]
     expose: ["8787"]
     ports:
@@ -416,6 +421,8 @@ services:
       BLINKONE_DATABASE_URL: postgresql://app:${APP_DB_PASSWORD}@postgres_app:5432/blinkone_app
       IVR_DEFAULT_TENANT:    default
       IVR_PUBLIC_URL:        ${IVR_PUBLIC_URL:-https://app.blinksone.com/api/ivr}
+      DIRECT_AGENT_DIAL:     ${DIRECT_AGENT_DIAL:-false}
+      AGENT_SIP_URI:         ${AGENT_SIP_URI:-sip:blinkone@204.168.137.104:5060}
       AI_URL:                http://ai:8793
       AI_TOKEN:              ${AI_TOKEN}
       CALLS_URL:             http://calls:8792
@@ -485,10 +492,13 @@ services:
       IVR_URL:               http://ivr:8795
       IVR_TOKEN:             ${IVR_TOKEN}
       ROUTING_QUEUE_WORKER:  "1"
-      AST_WSS_URI:           ${AST_WSS_URI:-wss://localhost/telephony/wss}
+      AST_WSS_URI:           ${AST_WSS_URI:-wss://sip.blinksone.com}
       AST_WSS_DOMAIN:        ${AST_WSS_DOMAIN:-blinkone.local}
       AST_AGENT_SIP_PASS:    ${AST_AGENT_SIP_PASS:-blinkone-agent-dev}
       STUN_SERVERS:          ${STUN_SERVERS:-stun:stun.l.google.com:19302}
+      TURN_SERVER:           ${TURN_SERVER:-turn:coturn:3478}
+      TURN_USER:             ${TURN_USER:-blinkone}
+      TURN_PASS:             ${TURN_PASS:-blinkone-turn-secret}
     volumes: [routing_data:/data]
     depends_on:
       postgres_app: { condition: service_healthy }
@@ -497,6 +507,17 @@ services:
     expose: ["8798"]
     ports:
       - '127.0.0.1:8798:8798'
+
+  coturn:
+    image: coturn/coturn:4.6.2
+    restart: unless-stopped
+    volumes:
+      - ./infra/coturn/turnserver.conf:/etc/coturn/turnserver.conf:ro
+    command: ["-c", "/etc/coturn/turnserver.conf", "--no-cli"]
+    networks: [blinkone]
+    ports:
+      - "3478:3478"
+      - "3478:3478/udp"
 
   whatsapp-calls:
     build: { context: ./services, dockerfile: whatsapp-calls/Dockerfile }
@@ -637,6 +658,7 @@ volumes:
   sla_data:
   escalation_data:
   routing_data:
+  gateway_data:
   recording_data:
   integration_data:
   brand_uploads:

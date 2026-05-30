@@ -118,13 +118,16 @@ export interface CDRRecord {
   tenantId: string;
   callSessionId: string;
   agentId: string;
+  agentLabel?: string;
   customerId?: string;
+  customerPhone?: string;
   direction: CallDirection;
   transport: CallTransport;
   duration: number;
   outcome: string;
-  recordingId?: string;
+  recordingId?: string | null;
   startedAt: string;
+  endedAt?: string | null;
 }
 
 export interface CDRFilters {

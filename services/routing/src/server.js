@@ -20,6 +20,7 @@ import { superviseSetMode, listSuperviseSessions } from '../lib/supervise.js';
 import { getQueueStats, listAgentStates, getAgentState, setAgentState } from '../lib/redis-state.js';
 import { startQueueWorker } from '../lib/queue-worker.js';
 import { attachRealtimeWs } from '../lib/realtime-ws.js';
+import { agentSipPassword } from '../lib/sip-secret.js';
 
 const log = createLogger('routing');
 const PORT = parseInt(process.env.PORT || '8798', 10);
@@ -239,15 +240,19 @@ app.get('/v1/agents/:agentId/webrtc', auth, async (req, res) => {
     return fail(res, 'FORBIDDEN', 'Cannot fetch credentials for another agent', 403);
   }
   const domain = process.env.AST_WSS_DOMAIN || 'blinkone.local';
-  const wsUri = process.env.AST_WSS_URI || 'wss://localhost/telephony/wss';
+  const wsUri =
+    process.env.AST_WSS_URI ||
+    process.env.NEXT_PUBLIC_SIP_WSS ||
+    'wss://sip.blinksone.com';
   const stunRaw = process.env.STUN_SERVERS || 'stun:stun.l.google.com:19302';
   const turnServer = process.env.TURN_SERVER || '';
+  const masterPass = process.env.AST_AGENT_SIP_PASS || 'blinkone-agent-dev';
   return ok(res, {
     agentId,
     tenantId,
     wsUri,
     sipUri: `sip:${agentId}@${domain}`,
-    password: process.env.AST_AGENT_SIP_PASS || 'blinkone-agent-dev',
+    password: agentSipPassword(agentId, masterPass),
     stunServers: stunRaw.split(',').map((s) => s.trim()).filter(Boolean),
     turnServers: turnServer
       ? [{ urls: turnServer, username: process.env.TURN_USER || '', credential: process.env.TURN_PASS || '' }]

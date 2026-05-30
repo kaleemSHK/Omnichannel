@@ -37,15 +37,22 @@ async function loadExtras(ticketId) {
   return { events: ev.rows, fields: fi.rows };
 }
 
-export async function listTickets(accountId, { status } = {}) {
+export async function listTickets(accountId, { status, contactId } = {}) {
   const p = getPool();
-  let sql = 'SELECT * FROM tickets WHERE chatwoot_account_id = $1';
+  let sql = 'SELECT t.* FROM tickets t WHERE t.chatwoot_account_id = $1';
   const params = [accountId];
   if (status) {
     params.push(status);
-    sql += ` AND status = $${params.length}`;
+    sql += ` AND t.status = $${params.length}`;
   }
-  sql += ' ORDER BY updated_at DESC LIMIT 500';
+  if (contactId) {
+    params.push(String(contactId));
+    sql += ` AND EXISTS (
+      SELECT 1 FROM ticket_fields tf
+      WHERE tf.ticket_id = t.id AND tf.key = 'contact_id' AND tf.value = $${params.length}
+    )`;
+  }
+  sql += ' ORDER BY t.updated_at DESC LIMIT 500';
   const { rows } = await p.query(sql, params);
   const out = [];
   for (const row of rows) {
@@ -95,13 +102,15 @@ export async function createTicket(body) {
     `INSERT INTO ticket_events (ticket_id, at, type, message, actor) VALUES ($1,$2,'created','Ticket created','system')`,
     [ticket.id, now],
   );
-  if (body.customFields && typeof body.customFields === 'object') {
-    for (const [key, value] of Object.entries(body.customFields)) {
-      await p.query(
-        'INSERT INTO ticket_fields (ticket_id, key, value) VALUES ($1,$2,$3) ON CONFLICT (ticket_id, key) DO UPDATE SET value = $3',
-        [ticket.id, key.slice(0, 120), String(value)],
-      );
-    }
+  const fields = { ...(body.customFields && typeof body.customFields === 'object' ? body.customFields : {}) };
+  if (body.contactId != null && body.contactId !== '') {
+    fields.contact_id = String(body.contactId);
+  }
+  for (const [key, value] of Object.entries(fields)) {
+    await p.query(
+      'INSERT INTO ticket_fields (ticket_id, key, value) VALUES ($1,$2,$3) ON CONFLICT (ticket_id, key) DO UPDATE SET value = $3',
+      [ticket.id, key.slice(0, 120), String(value)],
+    );
   }
   return getTicket(ticket.id);
 }

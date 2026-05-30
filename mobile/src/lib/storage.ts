@@ -1,7 +1,7 @@
-import * as SecureStore from 'expo-secure-store';
+import * as Keychain from 'react-native-keychain';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const TOKEN_KEY = 'blinkone_tokens';
+const TOKEN_SERVICE = 'blinkone_tokens';
 const PREFS_KEY = 'blinkone_prefs';
 const CUSTOMER_SESSION_KEY = 'blinkone_customer_session';
 
@@ -17,25 +17,32 @@ export interface StoredPrefs {
 }
 
 export interface StoredCustomerSession {
+  token?: string;
   contactId?: number;
   conversationId?: number;
+  accountId?: number;
+  name?: string;
 }
 
 export async function saveTokens(tokens: StoredTokens): Promise<void> {
-  await SecureStore.setItemAsync(TOKEN_KEY, JSON.stringify(tokens));
+  await Keychain.setGenericPassword(TOKEN_SERVICE, JSON.stringify(tokens), {
+    service: TOKEN_SERVICE,
+    accessible: Keychain.ACCESSIBLE.WHEN_UNLOCKED,
+  });
 }
 
 export async function loadTokens(): Promise<StoredTokens | null> {
   try {
-    const raw = await SecureStore.getItemAsync(TOKEN_KEY);
-    return raw ? (JSON.parse(raw) as StoredTokens) : null;
+    const creds = await Keychain.getGenericPassword({ service: TOKEN_SERVICE });
+    if (!creds) return null;
+    return JSON.parse(creds.password) as StoredTokens;
   } catch {
     return null;
   }
 }
 
 export async function clearTokens(): Promise<void> {
-  await SecureStore.deleteItemAsync(TOKEN_KEY);
+  await Keychain.resetGenericPassword({ service: TOKEN_SERVICE });
 }
 
 export async function savePrefs(prefs: Partial<StoredPrefs>): Promise<void> {

@@ -1,7 +1,19 @@
 import { create } from 'zustand';
 import { saveTokens, loadTokens, clearTokens } from '@/lib/storage';
-import { fetchProfile } from '@/api/auth';
+import { fetchProfile, refreshGatewayToken } from '@/api/auth';
+import { registerPushDevice } from '@/api/devices';
+import { disconnectCable } from '@/api/websocket';
 import type { BlinkoneUser, AuthTokens } from '@/types';
+
+async function syncPushRegistration() {
+  const { pushToken, tokens } = useAuthStore.getState();
+  if (!pushToken || !tokens?.gatewayJwt) return;
+  try {
+    await registerPushDevice(pushToken);
+  } catch (err) {
+    console.warn('[push] registration failed', err);
+  }
+}
 
 interface AuthState {
   user: BlinkoneUser | null;
@@ -26,10 +38,20 @@ export const useAuthStore = create<AuthState>((set) => ({
     if (stored?.accessToken) {
       try {
         const user = await fetchProfile(stored.accessToken);
-        set({ user, tokens: stored, hydrated: true });
+        let gatewayJwt = stored.gatewayJwt;
+        try {
+          gatewayJwt = await refreshGatewayToken(stored.accessToken);
+        } catch {
+          if (!gatewayJwt) throw new Error('Gateway JWT missing');
+        }
+        const tokens = { ...stored, gatewayJwt };
+        await saveTokens(tokens);
+        set({ user, tokens, hydrated: true });
+        void syncPushRegistration();
         return;
       } catch {
         await clearTokens();
+        disconnectCable();
         set({ user: null, tokens: null, hydrated: true });
         return;
       }
@@ -40,11 +62,13 @@ export const useAuthStore = create<AuthState>((set) => ({
   setAuth: async (user, tokens) => {
     await saveTokens(tokens);
     set({ user, tokens });
+    void syncPushRegistration();
   },
 
   clearAuth: async () => {
+    disconnectCable();
     await clearTokens();
-    set({ user: null, tokens: null });
+    set({ user: null, tokens: null, pushToken: null });
   },
 
   updateTokens: async (tokens) => {
@@ -52,5 +76,8 @@ export const useAuthStore = create<AuthState>((set) => ({
     set((s) => ({ ...s, tokens }));
   },
 
-  setPushToken: (token) => set({ pushToken: token }),
+  setPushToken: (token) => {
+    set({ pushToken: token });
+    void syncPushRegistration();
+  },
 }));

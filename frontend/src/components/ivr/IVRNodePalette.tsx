@@ -16,9 +16,11 @@ interface Props {
   activeFlowId: string;
   onSelectFlow: (id: string) => void;
   onAddNode?: (type: IVRNode['type']) => void;
+  onCreateFlow?: () => void;
+  creating?: boolean;
 }
 
-export function IVRNodePalette({ flows, activeFlowId, onSelectFlow, onAddNode }: Props) {
+export function IVRNodePalette({ flows, activeFlowId, onSelectFlow, onAddNode, onCreateFlow, creating }: Props) {
   return (
     <aside className="w-[180px] shrink-0 bg-white border-e border-gray-200 flex flex-col h-full">
       <div className="p-2 border-b border-gray-100">
@@ -59,9 +61,11 @@ export function IVRNodePalette({ flows, activeFlowId, onSelectFlow, onAddNode }:
         </ul>
         <button
           type="button"
-          className="mt-2 w-full py-1.5 text-xs border border-dashed border-gray-200 rounded text-muted-foreground hover:border-brand-primary"
+          disabled={creating}
+          onClick={() => onCreateFlow?.()}
+          className="mt-2 w-full py-1.5 text-xs border border-dashed border-gray-200 rounded text-muted-foreground hover:border-brand-primary hover:text-brand-primary disabled:opacity-50"
         >
-          New flow
+          {creating ? 'Creating…' : 'New flow'}
         </button>
       </div>
     </aside>

@@ -79,12 +79,14 @@ export async function addCallNotes(
 
 export async function listCDR(filters: {
   page?: number;
+  limit?: number;
   from?: string;
   to?: string;
   agentId?: string;
 }): Promise<ApiResponse<CDRRecord[]>> {
   const params = new URLSearchParams();
   if (filters.page)    params.set('page', String(filters.page));
+  if (filters.limit)   params.set('limit', String(filters.limit));
   if (filters.from)    params.set('from', filters.from);
   if (filters.to)      params.set('to', filters.to);
   if (filters.agentId) params.set('agent_id', filters.agentId);

@@ -6,14 +6,14 @@ module BlinkOne
 
     def create
       account_id = params[:accountId]
-      ActionCable.server.broadcast(
-        "blinkone_calls_#{account_id}",
-        {
-          type: params[:type],
-          callId: params[:callId],
-          conversationId: params[:conversationId],
-        },
-      )
+      payload = {
+        type: params[:type],
+        callId: params[:callId],
+        conversationId: params[:conversationId],
+        eventType: params[:eventType],
+        callSession: params[:callSession],
+      }.compact
+      ActionCable.server.broadcast("blinkone_calls_#{account_id}", payload)
       head :ok
     end
 

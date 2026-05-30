@@ -2,7 +2,6 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { listQueues } from '@/lib/api/routing';
-import { DEMO_QUEUES } from '@/lib/demo/callingFixture';
 import { isDemoDataEnabled, isGatewayQueryEnabled } from '@/lib/demo/config';
 
 export function useQueues() {
@@ -10,12 +9,11 @@ export function useQueues() {
   return useQuery({
     queryKey: ['queues', isDemoDataEnabled(), live],
     queryFn: async () => {
-      if (isDemoDataEnabled() || !live) return DEMO_QUEUES;
+      if (isDemoDataEnabled() || !live) return [];
       try {
-        const rows = await listQueues();
-        return rows.length ? rows : DEMO_QUEUES;
+        return await listQueues();
       } catch {
-        return DEMO_QUEUES;
+        return [];
       }
     },
     refetchInterval: live ? 10_000 : false,

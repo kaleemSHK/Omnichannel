@@ -17,15 +17,27 @@ type Cable = {
 };
 
 let cable: Cable | null = null;
+let cableAccessToken: string | null = null;
 const subscriptions = new Map<string, Subscription>();
 
 function getCable(): Cable {
-  if (cable) return cable;
   const { tokens } = useAuthStore.getState();
-  const url = tokens?.accessToken
-    ? `${WS_URL}?access_token=${encodeURIComponent(tokens.accessToken)}`
+  const accessToken = tokens?.accessToken ?? '';
+
+  if (cable && cableAccessToken === accessToken) return cable;
+
+  if (cable) {
+    subscriptions.forEach((sub) => sub.unsubscribe());
+    subscriptions.clear();
+    cable.disconnect();
+    cable = null;
+  }
+
+  const url = accessToken
+    ? `${WS_URL}?access_token=${encodeURIComponent(accessToken)}`
     : WS_URL;
   cable = ActionCable.createConsumer(url) as Cable;
+  cableAccessToken = accessToken;
   return cable;
 }
 
@@ -34,6 +46,29 @@ export function disconnectCable() {
   subscriptions.clear();
   cable?.disconnect();
   cable = null;
+  cableAccessToken = null;
+}
+
+export function subscribeToCallEvents(
+  accountId: number,
+  onCallEvent: (event: {
+    eventType: 'call.ringing' | 'call.connected' | 'call.ended' | 'call.missed';
+    callSession: unknown;
+  }) => void,
+): () => void {
+  const key = `blinkone_calls_${accountId}`;
+  subscriptions.get(key)?.unsubscribe();
+
+  const sub = getCable().subscriptions.create(
+    { channel: 'BlinkoneCallChannel', account_id: accountId },
+    { received: onCallEvent },
+  );
+
+  subscriptions.set(key, sub);
+  return () => {
+    sub.unsubscribe();
+    subscriptions.delete(key);
+  };
 }
 
 export function subscribeToConversation(

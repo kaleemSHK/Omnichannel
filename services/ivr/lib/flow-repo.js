@@ -96,9 +96,15 @@ export async function listFlows(tenantId) {
   return rows.map((r) => rowToFlow(r, r.graph));
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export async function getFlow(tenantId, flowId) {
   const p = getPool();
   if (!p) return null;
+  // ivr_flows.id is a uuid column — a non-UUID id (e.g. the legacy "flow-demo-1"
+  // demo id) would raise Postgres 22P02 and, unguarded, crash the service. Treat
+  // any malformed id as "not found".
+  if (!UUID_RE.test(String(flowId || ''))) return null;
   const { rows } = await p.query(
     `SELECT f.*, v.version AS active_version, v.graph
      FROM ivr_flows f

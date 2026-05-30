@@ -83,8 +83,13 @@ app.get('/v1/flows', async (req, res) => {
 app.get('/v1/flows/:id', async (req, res) => {
   const tenantId = resolveTenantId(req);
   if (dbEnabled()) {
-    const f = await flowRepo.getFlow(tenantId, req.params.id);
-    return f ? ok(res, f) : fail(res, 'NOT_FOUND', 'Flow not found', 404);
+    try {
+      const f = await flowRepo.getFlow(tenantId, req.params.id);
+      return f ? ok(res, f) : fail(res, 'NOT_FOUND', 'Flow not found', 404);
+    } catch (e) {
+      log.error({ err: e.message, id: req.params.id }, 'get flow');
+      return fail(res, 'INTERNAL_ERROR', 'Failed to load flow', 500);
+    }
   }
   const f = fileGetFlow(req.params.id);
   return f ? ok(res, f) : fail(res, 'NOT_FOUND', 'Flow not found', 404);
@@ -243,6 +248,51 @@ app.post('/v1/flows/:id/versions', auth, telephonyFeature, async (req, res) => {
   } catch (e) {
     if (e.code === 404) return fail(res, 'NOT_FOUND', 'Flow not found', 404);
     return fail(res, 'INTERNAL_ERROR', 'Failed', 500);
+  }
+});
+
+// Publish = snapshot the flow's current active graph as a new active version.
+// The frontend's Publish button hits this; an optional `graph` in the body lets
+// callers publish edited content, otherwise the current active graph is promoted.
+app.post('/v1/flows/:id/publish', auth, telephonyFeature, async (req, res) => {
+  const tenantId = resolveTenantId(req);
+  const bodyGraph = req.body && typeof req.body === 'object' ? req.body.graph : undefined;
+
+  if (dbEnabled()) {
+    try {
+      const flow = await flowRepo.getFlow(tenantId, req.params.id);
+      if (!flow) return fail(res, 'NOT_FOUND', 'Flow not found', 404);
+
+      const graph = bodyGraph ?? flow.graph ?? flowRepo.DEFAULT_GRAPH;
+      const gErr = validateGraph(graph);
+      if (gErr) return fail(res, 'VALIDATION_ERROR', gErr);
+
+      const result = await flowRepo.createVersion(tenantId, req.params.id, {
+        graph,
+        comment: 'Published',
+        setActive: true,
+        createdBy: req.headers['x-blinkone-user-id'] ?? null,
+      });
+      if (!result) return fail(res, 'NOT_FOUND', 'Flow not found', 404);
+      return ok(res, result.flow ?? result);
+    } catch (e) {
+      log.error({ err: e.message, id: req.params.id }, 'publish flow');
+      return fail(res, 'INTERNAL_ERROR', 'Failed to publish flow', 500);
+    }
+  }
+
+  // File-store fallback: mark the flow active.
+  try {
+    const out = await fileStore.withStore((s) => {
+      const flow = s.flows.find((x) => String(x.id) === String(req.params.id));
+      if (!flow) throw Object.assign(new Error(), { code: 404 });
+      flow.updatedAt = new Date().toISOString();
+      return flow;
+    });
+    return ok(res, out);
+  } catch (e) {
+    if (e.code === 404) return fail(res, 'NOT_FOUND', 'Flow not found', 404);
+    return fail(res, 'INTERNAL_ERROR', 'Failed to publish flow', 500);
   }
 });
 

@@ -198,6 +198,14 @@ export function PhonePanel() {
   const answer = useAnswerCall();
   const decline = useDeclineCall();
 
+  // The call-event handlers below close over volatile values (React Query
+  // mutation objects + sipControls) whose references change on every render.
+  // Keep them in a ref so the Action Cable subscription can stay mounted for
+  // the account's lifetime instead of tearing down/re-creating on each render
+  // (which dropped any broadcast that landed in the sub-second resubscribe gap).
+  const callHandlersRef = useRef({ answer, decline, setActiveCall, sipControls });
+  callHandlersRef.current = { answer, decline, setActiveCall, sipControls };
+
   // MOS voice quality polling — every 5s during connected call
   const [mosResult, setMosResult] = useState<MosResult | null>(null);
 
@@ -225,6 +233,7 @@ export function PhonePanel() {
     if (!user?.chatwootAccountId || !isActionCableReady()) return;
 
     return subscribeToCallEvents(user.chatwootAccountId, raw => {
+      const { answer, decline, setActiveCall, sipControls } = callHandlersRef.current;
       const { eventType, session } = normalizeCallEvent(
         raw as {
           eventType?: string;
@@ -265,7 +274,9 @@ export function PhonePanel() {
         }
       }
     });
-  }, [user?.chatwootAccountId, answer, decline, setActiveCall, sipControls]);
+    // Subscribe once per account; handlers are read from a ref to avoid churn.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.chatwootAccountId]);
 
   if (!activeCall) {
     if (acwCall) return <AcwPanel />;

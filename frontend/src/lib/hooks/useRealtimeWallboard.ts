@@ -102,7 +102,10 @@ export function useRealtimeWallboard() {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const { tokens } = useAuthStore.getState();
       const token = tokens?.gatewayJwt ?? '';
-      const url = `${protocol}//${window.location.host}/ws/routing/v1/realtime?tenant_id=${encodeURIComponent(tenantId)}&token=${encodeURIComponent(token)}`;
+      // Allow a dedicated WS host (e.g. a DNS-only/grey-clouded ws.blinksone.com)
+      // so realtime sockets bypass the CDN proxy's connection recycling.
+      const wsHost = process.env.NEXT_PUBLIC_WS_HOST || window.location.host;
+      const url = `${protocol}//${wsHost}/ws/routing/v1/realtime?tenant_id=${encodeURIComponent(tenantId)}&token=${encodeURIComponent(token)}`;
       const ws = new WebSocket(url);
       wsRef.current = ws;
 
