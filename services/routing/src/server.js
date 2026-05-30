@@ -251,8 +251,10 @@ app.get('/v1/agents/:agentId/webrtc', auth, async (req, res) => {
     agentId,
     tenantId,
     wsUri,
-    sipUri: `sip:${agentId}@${domain}`,
-    password: agentSipPassword(agentId, masterPass),
+    // Use shared 'blinkone' SIP username so Kamailio's inbound route can
+    // find the agent via lookup("location") which checks for user 'blinkone'
+    sipUri: `sip:blinkone@${domain}`,
+    password: agentSipPassword('blinkone', masterPass),
     stunServers: stunRaw.split(',').map((s) => s.trim()).filter(Boolean),
     turnServers: turnServer
       ? [{ urls: turnServer, username: process.env.TURN_USER || '', credential: process.env.TURN_PASS || '' }]
