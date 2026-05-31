@@ -244,14 +244,22 @@ export function useJsSip() {
             presentIncomingCall(incomingSession, {
               onAnswer: () => {
                 clearIncomingCallUi(callId);
+                // SIP answer — sends 200 OK regardless of backend sync result
                 try {
                   session.answer({ mediaConstraints: { audio: true, video: false } });
                 } catch {
                   /* session may have ended */
                 }
+                const connectedSession = {
+                  ...incomingSession,
+                  status: 'connected' as const,
+                  connectedAt: new Date().toISOString(),
+                };
+                // Try to sync with backend calls service; fall back gracefully
+                // because WebRTC-only calls have no pre-existing call record.
                 void apiAnswerCall(callId)
                   .then(s => setActiveCall(s))
-                  .catch(() => setActiveCall(incomingSession));
+                  .catch(() => setActiveCall(connectedSession));
               },
               onDecline: () => {
                 clearIncomingCallUi(callId);
