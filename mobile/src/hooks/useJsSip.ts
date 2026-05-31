@@ -283,7 +283,9 @@ export function useJsSip() {
 
   const makeCall = useCallback(
     (destination: string, transport: 'pstn' | 'webrtc' = 'pstn') => {
-      if (!uaRef.current?.isRegistered()) return;
+      const registered = uaRef.current?.isRegistered();
+      console.log('[JsSIP] makeCall dest=', destination, 'uaRef=', !!uaRef.current, 'registered=', registered);
+      if (!registered) { console.warn('[JsSIP] UA not registered, aborting call'); return; }
       const phone = destination.replace(/^sip:/, '').split('@')[0];
       void syncBackendSession({
         customerPhone: phone,
@@ -292,11 +294,23 @@ export function useJsSip() {
       });
 
       const target = destination.startsWith('sip:') ? destination : `sip:${destination}@${SIP_DOMAIN}`;
-      sessionRef.current = uaRef.current.call(target, {
+      const outSession = uaRef.current.call(target, {
         mediaConstraints: { audio: true, video: false },
         rtcOfferConstraints: { offerToReceiveAudio: true },
         pcConfig: { iceServers: iceServersRef.current },
       });
+      // Reset calling state when outbound call fails or ends
+      outSession.on('failed', () => {
+        sessionRef.current = null;
+        setActiveCall(null);  // triggers setCalling(false) in CustomerHome
+      });
+      outSession.on('ended', () => {
+        sessionRef.current = null;
+        setActiveCall(null);
+        if (!isAgent) return;
+        setAgentState('available');
+      });
+      sessionRef.current = outSession;
     },
     [syncBackendSession],
   );

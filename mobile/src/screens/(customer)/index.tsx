@@ -23,7 +23,9 @@ export default function CustomerHome() {
   const [calling, setCalling] = useState(false);
 
   async function handleCallSupport() {
+    console.log('[CALL] Button tapped, sipRegistered=', sipRegistered, 'SUPPORT_EXT=', SUPPORT_EXT);
     const granted = await requestMic();
+    console.log('[CALL] Mic granted=', granted);
     if (!granted) { Alert.alert('Microphone Required', 'Please grant microphone permission.'); return; }
     if (!sipRegistered) {
       Alert.alert('Connecting…', 'SIP is still connecting. Please wait a few seconds and try again.');
@@ -31,13 +33,20 @@ export default function CustomerHome() {
     }
     hapticImpact('medium');
     setCalling(true);
+    console.log('[CALL] Calling makeCall with', SUPPORT_EXT);
     makeCall(SUPPORT_EXT);
+    console.log('[CALL] makeCall returned');
   }
 
   useEffect(() => {
     if (activeCall) navigationRef.navigate('CallActive');
     else setCalling(false);
   }, [activeCall]);
+
+  // Safety reset: if sipRegistered drops and comes back, reset calling state
+  useEffect(() => {
+    if (!sipRegistered) setCalling(false);
+  }, [sipRegistered]);
 
   return (
     <SafeAreaView style={s.screen}>
