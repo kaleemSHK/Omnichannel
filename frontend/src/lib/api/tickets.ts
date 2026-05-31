@@ -8,6 +8,18 @@ import type { Ticket, ApiResponse } from '@/types';
 
 const SVC = 'tickets';
 
+/** API returns numeric ids and `title`; normalize for UI types. */
+function normalizeTicket(row: Record<string, unknown>): Ticket {
+  return {
+    ...(row as unknown as Ticket),
+    id: String(row.id ?? ''),
+    subject: String(row.subject ?? row.title ?? 'Untitled'),
+    title: row.title != null ? String(row.title) : undefined,
+    chatwootConversationId:
+      row.chatwootConversationId != null ? Number(row.chatwootConversationId) : undefined,
+  };
+}
+
 function accountQuery(): string {
   const accountId = useAuthStore.getState().user?.chatwootAccountId;
   return accountId != null ? `chatwoot_account_id=${accountId}` : '';
@@ -39,8 +51,8 @@ export async function listTickets(filters: {
 }
 
 export async function getTicket(id: string): Promise<Ticket> {
-  const res = await bnFetch<{ data: Ticket }>(SVC, `/v1/tickets/${id}`);
-  return res.data;
+  const res = await bnFetch<{ data: Record<string, unknown> }>(SVC, `/v1/tickets/${id}`);
+  return normalizeTicket(res.data);
 }
 
 export async function createTicket(data: {
@@ -82,7 +94,7 @@ export async function createTicket(data: {
       customFields: Object.keys(customFields).length ? customFields : undefined,
     }),
   });
-  return res.data;
+  return normalizeTicket(res.data as unknown as Record<string, unknown>);
 }
 
 export async function getTicketMessages(ticketId: string): Promise<
@@ -141,11 +153,11 @@ export async function createTicketMessage(
 }
 
 export async function updateTicket(id: string, data: Partial<Ticket>): Promise<Ticket> {
-  const res = await bnFetch<{ data: Ticket }>(SVC, `/v1/tickets/${id}`, {
+  const res = await bnFetch<{ data: Record<string, unknown> }>(SVC, `/v1/tickets/${id}`, {
     method: 'PATCH',
     body: JSON.stringify(data),
   });
-  return res.data;
+  return normalizeTicket(res.data);
 }
 
 export async function getTicketTimeline(id: string): Promise<unknown[]> {
@@ -163,11 +175,11 @@ export async function getTicketByConversation(conversationId: number): Promise<T
   const accountId = useAuthStore.getState().user?.chatwootAccountId;
   if (!accountId) return null;
   try {
-    const res = await bnFetch<{ data: Ticket }>(
+    const res = await bnFetch<{ data: Record<string, unknown> }>(
       SVC,
       `/v1/tickets/by-conversation/${conversationId}?chatwoot_account_id=${accountId}`,
     );
-    return res.data ?? null;
+    return res.data ? normalizeTicket(res.data) : null;
   } catch {
     return null;
   }
@@ -181,12 +193,12 @@ export async function linkTicketToConversation(
   ticketId: string,
   conversationId: number,
 ): Promise<Ticket> {
-  const res = await bnFetch<{ data: Ticket }>(
+  const res = await bnFetch<{ data: Record<string, unknown> }>(
     SVC,
     `/v1/tickets/${encodeURIComponent(ticketId)}/link-conversation`,
     { method: 'PATCH', body: JSON.stringify({ conversationId }) },
   );
-  return res.data;
+  return normalizeTicket(res.data);
 }
 
 // ─── Email threading — Sprint 2 E01 ─────────────────────────────────────────

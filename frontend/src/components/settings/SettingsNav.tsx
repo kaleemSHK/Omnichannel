@@ -11,6 +11,7 @@ import {
   Zap,
   Bot,
   BookOpen,
+  ClipboardList,
   MessageSquare,
   Puzzle,
   Building2,
@@ -45,6 +46,7 @@ const NAV_ITEMS = [
   { id: 'bot-routing', label: 'Bot Routing Rules', icon: Bot, group: 'Automation' },
   { id: 'macros', label: 'Macros', icon: BookOpen, group: 'Automation' },
   { id: 'canned', label: 'Canned Responses', icon: MessageSquare, group: 'Automation' },
+  { id: 'agent-scripts', label: 'Agent Scripts', icon: ClipboardList, group: 'Automation' },
   { id: 'campaigns', label: 'Campaigns', icon: Megaphone, group: 'Automation' },
   { id: 'surveys', label: 'Surveys', icon: BarChart3, group: 'Automation' },
   { id: 'vip-callers', label: 'VIP Callers', icon: Star, group: 'Workspace' },
@@ -83,6 +85,7 @@ export function SettingsNav({ active, onChange }: Props) {
     if (item.id === 'bot-routing') return can(role, 'manageInboxes');
     if (item.id === 'macros') return true;
     if (item.id === 'canned') return true;
+    if (item.id === 'agent-scripts') return can(role, 'manageAgentScripts');
     if (item.id === 'integrations') return can(role, 'manageInboxes');
     if (item.id === 'crm-connectors') return can(role, 'manageInboxes');
     if (item.id === 'webhooks') return can(role, 'manageWebhooks');

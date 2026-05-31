@@ -3,7 +3,15 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { CheckCircle2, ChevronDown, ChevronUp, Circle } from 'lucide-react';
-import { classifyConversation, getNextAction, queryRAG, suggestReply, summarizeConversation, type NextActionStep } from '@/lib/api/ai';
+import {
+  classifyConversation,
+  getAgentScriptConfig,
+  getNextAction,
+  queryRAG,
+  suggestReply,
+  summarizeConversation,
+  type NextActionStep,
+} from '@/lib/api/ai';
 import { useMessages } from '@/lib/hooks/useConversations';
 import { useSentiment } from '@/lib/hooks/useSentiment';
 import { useSentimentStore } from '@/lib/store/sentiment';
@@ -60,6 +68,18 @@ export function AgentAssistPanel({ conversationId, contactId }: Props) {
   const [summaryText, setSummaryText] = useState('');
   const [scriptSteps, setScriptSteps] = useState<NextActionStep[]>([]);
 
+  const { data: scriptConfig } = useQuery({
+    queryKey: ['agent-scripts'],
+    queryFn: getAgentScriptConfig,
+    staleTime: 120_000,
+  });
+
+  useEffect(() => {
+    if (scriptConfig?.steps?.length) {
+      setScriptSteps(scriptConfig.steps.map(s => ({ ...s, done: false })));
+    }
+  }, [scriptConfig]);
+
   const { data: suggestion, isLoading: suggestLoading } = useQuery({
     queryKey: ['suggestReply', conversationId, messages.length],
     queryFn: async () => {
@@ -111,12 +131,10 @@ export function AgentAssistPanel({ conversationId, contactId }: Props) {
     queryFn: async () => {
       const payload = toSuggestPayload(messages);
       try {
-        const result = await getNextAction({
+        return await getNextAction({
           conversationId: String(conversationId),
           messages: payload,
         });
-        setScriptSteps(result.steps);
-        return result;
       } catch {
         return null;
       }
@@ -266,9 +284,9 @@ export function AgentAssistPanel({ conversationId, contactId }: Props) {
       </Section>
 
       <Section title="Agent Script" open={scriptOpen} onToggle={() => setScriptOpen(v => !v)}>
-        {nextAction?.script && (
+        {(nextAction?.script || scriptConfig?.openingLine) && (
           <p className="text-xs text-muted-foreground italic mb-2 border-s-2 border-brand-primary ps-2">
-            {nextAction.script}
+            {nextAction?.script || scriptConfig?.openingLine}
           </p>
         )}
         {nextAction?.escalate && (

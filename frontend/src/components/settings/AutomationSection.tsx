@@ -34,38 +34,58 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select-radix';
+import {
+  AUTOMATION_EVENTS,
+  defaultOperatorForAttribute,
+  eventLabel,
+  normalizeConditionKey,
+  conditionAttributesForEvent,
+} from './automation/AutomationLookups';
+import {
+  ActionNameSelect,
+  ActionParamSelect,
+  ConditionAttributeSelect,
+  ConditionOperatorSelect,
+  ConditionValueSelect,
+} from './automation/AutomationValueSelects';
 import { Zap, Pencil, Trash2, Copy, Plus, X } from 'lucide-react';
 
-const EVENTS = [
-  { value: 'conversation_created', label: 'Conversation Created' },
-  { value: 'conversation_updated', label: 'Conversation Updated' },
-  { value: 'conversation_resolved', label: 'Conversation Resolved' },
-  { value: 'message_created', label: 'Message Created' },
-];
-
-const CONDITION_ATTRS = ['status', 'label', 'assignee', 'team', 'inbox', 'priority', 'language'];
-const OPERATORS = ['equal_to', 'not_equal_to', 'contains', 'does_not_contain'];
-const ACTIONS = [
-  'assign_team',
-  'assign_agent',
-  'add_label',
-  'remove_label',
-  'resolve_conversation',
-  'snooze_conversation',
-  'send_message',
-  'send_email',
-];
-
-function eventLabel(name: string) {
-  return EVENTS.find(e => e.value === name)?.label ?? name;
-}
-
-function emptyCondition(): AutomationCondition {
-  return { attribute_key: 'status', filter_operator: 'equal_to', values: [''], query_operator: null };
+function emptyCondition(eventName = 'conversation_created'): AutomationCondition {
+  const attrs = conditionAttributesForEvent(eventName);
+  const key = attrs[0]?.value ?? 'status';
+  return {
+    attribute_key: key,
+    filter_operator: defaultOperatorForAttribute(key),
+    values: [''],
+    query_operator: null,
+  };
 }
 
 function emptyAction(): AutomationAction {
-  return { action_name: 'assign_team', action_params: [] };
+  return { action_name: 'assign_agent', action_params: [] };
+}
+
+function normalizeConditions(
+  rows: AutomationCondition[],
+  eventName: string,
+): AutomationCondition[] {
+  const allowed = new Set(conditionAttributesForEvent(eventName).map(a => a.value));
+  return rows.map(c => {
+    const key = normalizeConditionKey(c.attribute_key);
+    const attribute_key = (allowed as Set<string>).has(key)
+      ? key
+      : (conditionAttributesForEvent(eventName)[0]?.value ?? 'status');
+    return {
+      ...c,
+      attribute_key,
+      filter_operator: c.filter_operator || defaultOperatorForAttribute(attribute_key),
+      values: c.values?.length ? [...c.values] : [''],
+    };
+  });
+}
+
+function actionNeedsParam(name: string): boolean {
+  return !['resolve_conversation', 'snooze_conversation', 'mute_conversation'].includes(name);
 }
 
 export function AutomationSection() {
@@ -73,16 +93,12 @@ export function AutomationSection() {
   const role = useAuthStore(s => s.user?.role);
   const canManage = can(role, 'manageInboxes');
 
-  const { data: rules = [], isLoading } = useQuery({
-    queryKey: ['automations'],
+  const { data: rules = [], isLoading, isError } = useQuery({
+    queryKey: ['automations', isDemoDataEnabled()],
     queryFn: async () => {
       if (isDemoDataEnabled()) return DEMO_AUTOMATIONS;
-      try {
-        const res = await listAutomations();
-        return res.payload.length ? res.payload : DEMO_AUTOMATIONS;
-      } catch {
-        return DEMO_AUTOMATIONS;
-      }
+      const res = await listAutomations();
+      return res.payload ?? [];
     },
   });
 
@@ -92,7 +108,16 @@ export function AutomationSection() {
         await settingsDemoDelay(150);
         return { payload: rules.find(r => r.id === id)! };
       }
-      return updateAutomation(id, { active });
+      const rule = rules.find(r => r.id === id);
+      if (!rule) throw new Error('Automation rule not found — refresh the page');
+      return updateAutomation(id, {
+        name: rule.name,
+        description: rule.description,
+        event_name: rule.event_name,
+        conditions: rule.conditions,
+        actions: rule.actions,
+        active,
+      });
     },
     onSuccess: (_, { id, active }) => {
       qc.setQueryData<AutomationRule[]>(['automations'], prev =>
@@ -125,8 +150,13 @@ export function AutomationSection() {
     setName(rule.name);
     setDescription(rule.description ?? '');
     setEventName(rule.event_name);
-    setConditions(rule.conditions.length ? [...rule.conditions] : [emptyCondition()]);
-    setActions(rule.actions.length ? [...rule.actions] : [emptyAction()]);
+    setConditions(
+      normalizeConditions(
+        rule.conditions.length ? rule.conditions : [emptyCondition(rule.event_name)],
+        rule.event_name,
+      ),
+    );
+    setActions(rule.actions.length ? rule.actions.map(a => ({ ...a })) : [emptyAction()]);
     setSheetOpen(true);
   }
 
@@ -137,8 +167,8 @@ export function AutomationSection() {
         description,
         event_name: eventName,
         active: editing?.active ?? true,
-        conditions: conditions.filter(c => c.values.some(v => v.trim())),
-        actions,
+        conditions: conditions.filter(c => c.values.some(v => String(v).trim() !== '')),
+        actions: actions.filter(a => !actionNeedsParam(a.action_name) || a.action_params.length > 0),
       };
       if (isDemoDataEnabled()) {
         await settingsDemoDelay();
@@ -210,6 +240,12 @@ export function AutomationSection() {
         onAction={openCreate}
         canAction={canManage}
       />
+
+      {isError && (
+        <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-md px-3 py-2">
+          Could not load automation rules from Chatwoot. Check your connection and try again.
+        </p>
+      )}
 
       {isLoading ? (
         <div className="space-y-2">
@@ -305,12 +341,24 @@ export function AutomationSection() {
           </div>
           <div className="space-y-1">
             <Label className="text-xs">Event</Label>
-            <Select value={eventName} onValueChange={setEventName}>
+            {eventName === 'message_created' && (
+              <p className="text-[11px] text-muted-foreground mb-1">
+                Message events support conditions on <strong>message content</strong> or{' '}
+                <strong>message type</strong> only (not conversation labels).
+              </p>
+            )}
+            <Select
+              value={eventName}
+              onValueChange={v => {
+                setEventName(v);
+                setConditions([emptyCondition(v)]);
+              }}
+            >
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {EVENTS.map(e => (
+                {AUTOMATION_EVENTS.map(e => (
                   <SelectItem key={e.value} value={e.value}>
                     {e.label}
                   </SelectItem>
@@ -326,7 +374,7 @@ export function AutomationSection() {
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={() => setConditions(c => [...c, emptyCondition()])}
+                onClick={() => setConditions(c => [...c, emptyCondition(eventName)])}
               >
                 <Plus size={12} className="me-1" />
                 Add condition
@@ -334,55 +382,39 @@ export function AutomationSection() {
             </div>
             {conditions.map((c, i) => (
               <div key={i} className="flex flex-wrap gap-2 items-end border rounded-md p-2">
-                <Select
+                <ConditionAttributeSelect
                   value={c.attribute_key}
-                  onValueChange={v =>
+                  eventName={eventName}
+                  onChange={v =>
                     setConditions(prev =>
-                      prev.map((row, j) => (j === i ? { ...row, attribute_key: v } : row)),
+                      prev.map((row, j) =>
+                        j === i
+                          ? {
+                              ...row,
+                              attribute_key: v,
+                              filter_operator: defaultOperatorForAttribute(v),
+                              values: [''],
+                            }
+                          : row,
+                      ),
                     )
                   }
-                >
-                  <SelectTrigger className="w-28">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {CONDITION_ATTRS.map(a => (
-                      <SelectItem key={a} value={a}>
-                        {a}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Select
+                />
+                <ConditionOperatorSelect
                   value={c.filter_operator}
-                  onValueChange={v =>
+                  onChange={v =>
                     setConditions(prev =>
                       prev.map((row, j) => (j === i ? { ...row, filter_operator: v } : row)),
                     )
                   }
-                >
-                  <SelectTrigger className="w-32">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {OPERATORS.map(o => (
-                      <SelectItem key={o} value={o}>
-                        {o.replace(/_/g, ' ')}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Input
-                  className="flex-1 min-w-[80px]"
-                  value={c.values[0] ?? ''}
-                  onChange={e =>
+                />
+                <ConditionValueSelect
+                  condition={c}
+                  onChange={values =>
                     setConditions(prev =>
-                      prev.map((row, j) =>
-                        j === i ? { ...row, values: [e.target.value] } : row,
-                      ),
+                      prev.map((row, j) => (j === i ? { ...row, values } : row)),
                     )
                   }
-                  placeholder="Value"
                 />
                 <Button
                   type="button"
@@ -412,43 +444,22 @@ export function AutomationSection() {
               </Button>
             </div>
             {actions.map((a, i) => (
-              <div key={i} className="flex gap-2 items-end border rounded-md p-2">
-                <Select
+              <div key={i} className="flex flex-wrap gap-2 items-end border rounded-md p-2">
+                <ActionNameSelect
                   value={a.action_name}
-                  onValueChange={v =>
-                    setActions(prev =>
-                      prev.map((row, j) => (j === i ? { ...row, action_name: v } : row)),
-                    )
-                  }
-                >
-                  <SelectTrigger className="flex-1">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {ACTIONS.map(act => (
-                      <SelectItem key={act} value={act}>
-                        {act.replace(/_/g, ' ')}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Input
-                  className="flex-1"
-                  placeholder="Params (comma-separated)"
-                  value={String(a.action_params[0] ?? '')}
-                  onChange={e =>
+                  onChange={v =>
                     setActions(prev =>
                       prev.map((row, j) =>
-                        j === i
-                          ? {
-                              ...row,
-                              action_params: e.target.value
-                                .split(',')
-                                .map(s => s.trim())
-                                .filter(Boolean),
-                            }
-                          : row,
+                        j === i ? { action_name: v, action_params: [] } : row,
                       ),
+                    )
+                  }
+                />
+                <ActionParamSelect
+                  action={a}
+                  onChange={params =>
+                    setActions(prev =>
+                      prev.map((row, j) => (j === i ? { ...row, action_params: params } : row)),
                     )
                   }
                 />

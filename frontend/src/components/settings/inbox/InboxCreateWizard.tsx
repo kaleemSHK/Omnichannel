@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { toast } from 'sonner';
 import { Sheet } from '@/components/ui/Sheet';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,7 +11,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { ChannelConfigFields } from './ChannelConfigFields';
 import { CHANNEL_META } from './InboxCard';
 import { useCreateInbox } from '@/hooks/useInboxAdmin';
-import type { ChannelType } from '@/lib/api/inboxes';
+import { validateCreateInboxPayload, type ChannelType } from '@/lib/api/inboxes';
 
 const CHANNEL_TYPES: ChannelType[] = [
   'Channel::Whatsapp',
@@ -45,15 +46,29 @@ export function InboxCreateWizard({ open, onClose }: Props) {
     onClose();
   }
 
+  function canProceedFromDetails(): boolean {
+    if (!name.trim()) return false;
+    if (channelType === 'Channel::TwilioSms') {
+      return !!(channelValues.account_sid && channelValues.auth_token && channelValues.phone_number);
+    }
+    if (channelType === 'Channel::Email') {
+      return !!channelValues.email;
+    }
+    return true;
+  }
+
   function handleCreate() {
     if (!channelType || !name.trim()) return;
-    createInbox(
-      {
-        name: name.trim(),
-        channel: { type: channelType, ...channelValues },
-      },
-      { onSuccess: handleClose },
-    );
+    const payload = {
+      name: name.trim(),
+      channel: { type: channelType, ...channelValues },
+    };
+    const validationError = validateCreateInboxPayload(payload);
+    if (validationError) {
+      toast.error(validationError);
+      return;
+    }
+    createInbox(payload, { onSuccess: handleClose });
   }
 
   const STEPS = ['Channel', 'Details', 'Review'];
@@ -162,7 +177,7 @@ export function InboxCreateWizard({ open, onClose }: Props) {
               <ChevronLeft size={15} className="me-1" aria-hidden /> Back
             </Button>
             <Button
-              disabled={!name.trim()}
+              disabled={!canProceedFromDetails()}
               onClick={() => setStep(3)}
               className="bg-brand-primary hover:bg-brand-primary/90"
             >
@@ -200,7 +215,9 @@ export function InboxCreateWizard({ open, onClose }: Props) {
                   <span className="text-muted-foreground capitalize w-28 shrink-0">
                     {k.replace(/_/g, ' ')}
                   </span>
-                  <span className="truncate">{k.includes('key') ? '••••••••' : v}</span>
+                  <span className="truncate">
+                    {k.includes('token') || k.includes('key') ? '••••••••' : v}
+                  </span>
                 </div>
               ))}
           </div>

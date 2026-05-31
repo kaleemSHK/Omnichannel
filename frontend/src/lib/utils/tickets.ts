@@ -60,6 +60,17 @@ export function mapStatus(raw?: string): TicketStatusUi {
   return STATUS_MAP[(raw ?? '').toLowerCase()] ?? 'open';
 }
 
+/** Human-readable ticket ref from DB id or demo id (handles numeric ids from API). */
+export function formatTicketDisplayId(id: string | number | null | undefined): string {
+  const raw = String(id ?? '');
+  const digits = raw.replace(/\D/g, '').slice(-4);
+  return digits ? `TKT-${digits}` : raw.slice(0, 8).toUpperCase() || 'TKT';
+}
+
+export function ticketSubject(row: { subject?: string; title?: string }): string {
+  return String(row.subject ?? row.title ?? 'Untitled');
+}
+
 export function priorityToApi(p: TicketPriorityUi): Ticket['priority'] {
   if (p === 'high') return 'p1';
   if (p === 'medium') return 'p2';

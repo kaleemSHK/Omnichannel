@@ -27,6 +27,11 @@ export function TicketsWorkspace() {
       const match = tickets.find(t => String(t.contactId) === contactId);
       if (match) setSelectedId(match.id);
     }
+    const ticketId = searchParams.get('ticket_id');
+    if (ticketId && tickets.length > 0 && !selectedId) {
+      const match = tickets.find(t => t.id === ticketId);
+      if (match) setSelectedId(match.id);
+    }
   }, [searchParams, tickets, selectedId]);
 
   return (

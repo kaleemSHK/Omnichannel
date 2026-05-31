@@ -5,7 +5,9 @@ import { toast } from 'sonner';
 import {
   createTicket,
   createTicketMessage,
+  getTicketByConversation,
   getTicketMessages,
+  linkTicketToConversation,
   listTickets,
   updateTicket,
 } from '@/lib/api/tickets';
@@ -28,7 +30,29 @@ import {
 import type { Ticket } from '@/types';
 
 const TICKETS_KEY = ['tickets'];
+const ticketByConversationKey = (conversationId: number) => [
+  'ticket-by-conversation',
+  conversationId,
+  isDemoDataEnabled(),
+];
 const messagesKey = (id: string) => ['ticketMessages', id];
+
+function demoTicketToApi(view: TicketView): Ticket {
+  return {
+    id: view.id,
+    tenantId: 'demo',
+    subject: view.subject,
+    status: view.status as Ticket['status'],
+    priority: view.priority === 'high' ? 'high' : view.priority === 'low' ? 'low' : 'medium',
+    assigneeId: view.assigneeId,
+    contactId: view.contactId != null ? String(view.contactId) : undefined,
+    conversationId: view.conversationId != null ? String(view.conversationId) : undefined,
+    chatwootConversationId: view.conversationId,
+    customerName: view.contactName,
+    createdAt: view.createdAt,
+    updatedAt: view.updatedAt,
+  };
+}
 
 function mapApiTicket(row: Record<string, unknown>): TicketView {
   const id = String(row.id ?? '');
@@ -114,6 +138,49 @@ export function useTicketAgents() {
   });
 }
 
+export function useTicketByConversation(conversationId: number | null) {
+  const gwEnabled = isGatewayQueryEnabled();
+  return useQuery({
+    queryKey: ticketByConversationKey(conversationId ?? 0),
+    queryFn: async (): Promise<Ticket | null> => {
+      if (!conversationId) return null;
+      if (isDemoDataEnabled()) {
+        const match = DEMO_TICKETS.find(t => t.conversationId === conversationId);
+        return match ? demoTicketToApi(match) : null;
+      }
+      return getTicketByConversation(conversationId);
+    },
+    enabled: Boolean(conversationId) && gwEnabled,
+    staleTime: 30_000,
+  });
+}
+
+export function useLinkTicketToConversation(conversationId: number) {
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (ticketId: string) => {
+      if (isDemoDataEnabled()) {
+        const match = DEMO_TICKETS.find(t => t.id === ticketId.trim());
+        if (!match) throw new Error('Ticket not found');
+        const updated: TicketView = { ...match, conversationId };
+        qc.setQueryData<TicketView[]>([...TICKETS_KEY, true], old =>
+          (old ?? []).map(t => (t.id === ticketId.trim() ? updated : t)),
+        );
+        qc.setQueryData<Ticket | null>(ticketByConversationKey(conversationId), demoTicketToApi(updated));
+        return demoTicketToApi(updated);
+      }
+      return linkTicketToConversation(ticketId.trim(), conversationId);
+    },
+    onSuccess: ticket => {
+      qc.setQueryData<Ticket | null>(ticketByConversationKey(conversationId), ticket);
+      void qc.invalidateQueries({ queryKey: TICKETS_KEY });
+      toast.success('Ticket linked to conversation');
+    },
+    onError: () => toast.error('Could not link ticket'),
+  });
+}
+
 export function useCreateTicket() {
   const qc = useQueryClient();
 
@@ -147,9 +214,16 @@ export function useCreateTicket() {
           slaTier: 'Silver',
           slaDeadline: new Date(Date.now() + 4 * 3600000).toISOString(),
           inboxType: 'Web chat',
+          conversationId: input.conversationId,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         };
+        if (input.conversationId != null) {
+          qc.setQueryData<Ticket | null>(
+            ticketByConversationKey(input.conversationId),
+            demoTicketToApi(ticket),
+          );
+        }
         if (input.description) {
           const mKey = [...messagesKey(id), true];
           qc.setQueryData<TicketMessageView[]>(mKey, [
@@ -178,9 +252,12 @@ export function useCreateTicket() {
       });
       return mapApiTicket(created as unknown as Record<string, unknown>);
     },
-    onSuccess: ticket => {
+    onSuccess: (ticket, input) => {
       const key = [...TICKETS_KEY, isDemoDataEnabled()];
       qc.setQueryData<TicketView[]>(key, old => [ticket, ...(old ?? [])]);
+      if (input.conversationId != null) {
+        void qc.invalidateQueries({ queryKey: ticketByConversationKey(input.conversationId) });
+      }
       toast.success('Ticket created');
     },
     onError: () => toast.error('Could not create ticket'),

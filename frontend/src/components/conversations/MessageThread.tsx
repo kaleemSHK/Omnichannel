@@ -3,6 +3,7 @@
 import { useEffect, useRef } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { ChevronLeft, ChevronRight, MessageSquare } from 'lucide-react';
+import { ConversationTicketBar } from '@/components/conversations/ConversationTicketBar';
 import { MessageBubble } from '@/components/conversations/MessageBubble';
 import { ReplyBox } from '@/components/conversations/ReplyBox';
 import { LabelPicker } from '@/components/conversations/LabelPicker';
@@ -63,7 +64,7 @@ export function MessageThread({ conversation, onToggleAssist, assistOpen }: Prop
   });
 
   const { data: teams = [] } = useTeams();
-  const teamMutation = useAssignTeam(conversation?.id ?? 0);
+  const teamMutation = useAssignTeam(conversation?.id ?? 0, conversation?.meta?.assignee?.id);
 
   const statusMutation = useMutation({
     mutationFn: (status: 'open' | 'resolved' | 'pending') =>
@@ -75,7 +76,11 @@ export function MessageThread({ conversation, onToggleAssist, assistOpen }: Prop
 
   const assignMutation = useMutation({
     mutationFn: (assigneeId: string) =>
-      assignConversation(conversation!.id, assigneeId ? Number(assigneeId) : null),
+      assignConversation(
+        conversation!.id,
+        assigneeId ? Number(assigneeId) : null,
+        conversation!.meta?.team?.id ?? null,
+      ),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['conversations'] }),
   });
 
@@ -130,34 +135,38 @@ export function MessageThread({ conversation, onToggleAssist, assistOpen }: Prop
         <LabelPicker conversationId={conversation.id} currentLabels={conversation.labels ?? []} />
 
         {can(role, 'assignConversation') && (
-          <>
-            <Select
-              value={assigneeValue}
-              onChange={e => assignMutation.mutate(e.target.value)}
-              className="max-w-[120px] text-xs"
-              disabled={assignMutation.isPending}
-            >
-              <option value="">Assign agent…</option>
-              {agents.map(a => (
-                <option key={a.id} value={String(a.id)}>
-                  {a.name}
-                </option>
-              ))}
-            </Select>
-            <Select
-              value={teamValue}
-              onChange={e => teamMutation.mutate(e.target.value)}
-              className="max-w-[120px] text-xs"
-              disabled={teamMutation.isPending}
-            >
-              <option value="">No team</option>
-              {teams.map(t => (
-                <option key={t.id} value={String(t.id)}>
-                  {t.name}
-                </option>
-              ))}
-            </Select>
-          </>
+          <Select
+            value={assigneeValue}
+            onChange={e => assignMutation.mutate(e.target.value)}
+            className="max-w-[120px] text-xs"
+            disabled={assignMutation.isPending}
+          >
+            <option value="">Assign agent…</option>
+            {agents.map(a => (
+              <option key={a.id} value={String(a.id)}>
+                {a.name}
+              </option>
+            ))}
+          </Select>
+        )}
+        {can(role, 'assignTeam') && (
+          <Select
+            value={teamValue}
+            onChange={e => teamMutation.mutate(e.target.value)}
+            className="max-w-[120px] text-xs"
+            disabled={teamMutation.isPending}
+            title={teams.length === 0 ? 'Create teams in Settings → Teams' : undefined}
+          >
+            <option value="">No team</option>
+            {teams.map(t => (
+              <option key={t.id} value={String(t.id)}>
+                {t.name}
+              </option>
+            ))}
+          </Select>
+        )}
+        {can(role, 'assignTeam') && teams.length === 0 && (
+          <span className="text-[10px] text-muted-foreground">No teams — add in Settings</span>
         )}
 
         <SnoozeButton conversationId={conversation.id} />
@@ -196,6 +205,8 @@ export function MessageThread({ conversation, onToggleAssist, assistOpen }: Prop
           {assistOpen ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
         </Button>
       </div>
+
+      <ConversationTicketBar conversation={conversation} />
 
       <div className="flex-1 overflow-y-auto flex flex-col gap-2 px-4 py-4 min-h-0">
         {isError && (

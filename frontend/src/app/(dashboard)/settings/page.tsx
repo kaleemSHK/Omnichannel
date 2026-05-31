@@ -14,6 +14,7 @@ import { AutomationSection } from '@/components/settings/AutomationSection';
 import { BotsSection } from '@/components/settings/BotsSection';
 import { MacrosSection } from '@/components/settings/MacrosSection';
 import { CannedSection } from '@/components/settings/CannedSection';
+import { AgentScriptsSection } from '@/components/settings/AgentScriptsSection';
 import { IntegrationsSection } from '@/components/settings/IntegrationsSection';
 import { WebhooksSection } from '@/components/settings/WebhooksSection';
 import { BusinessHoursSection } from '@/components/settings/BusinessHoursSection';
@@ -48,6 +49,7 @@ export default function SettingsPage() {
     'bot-routing': <BotRoutingRules />,
     macros: <MacrosSection />,
     canned: <CannedSection />,
+    'agent-scripts': <AgentScriptsSection />,
     mfa: <MfaSetupPanel />,
     totp: <MfaTotpSection />,
     campaigns: <CampaignPanel />,

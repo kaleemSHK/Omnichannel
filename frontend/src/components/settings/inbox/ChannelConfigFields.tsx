@@ -25,14 +25,41 @@ export function ChannelConfigFields({ channelType, values, onChange }: Props) {
       );
     case 'Channel::TwilioSms':
       return (
-        <Field
-          label="Phone number (E.164)"
-          id="phone"
-          type="tel"
-          placeholder="+96891234567"
-          value={values.phone_number ?? ''}
-          onChange={v => onChange('phone_number', v)}
-        />
+        <div className="space-y-3">
+          <Field
+            label="Twilio Account SID *"
+            id="twilio_sid"
+            placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+            value={values.account_sid ?? ''}
+            onChange={v => onChange('account_sid', v)}
+          />
+          <Field
+            label="Twilio Auth Token *"
+            id="twilio_token"
+            type="password"
+            placeholder="Your Twilio auth token"
+            value={values.auth_token ?? ''}
+            onChange={v => onChange('auth_token', v)}
+          />
+          <Field
+            label="Twilio phone number (E.164) *"
+            id="phone"
+            type="tel"
+            placeholder="+96891234567"
+            value={values.phone_number ?? ''}
+            onChange={v => onChange('phone_number', v)}
+          />
+          <Field
+            label="Messaging Service SID (optional)"
+            id="twilio_mss"
+            placeholder="MGxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+            value={values.messaging_service_sid ?? ''}
+            onChange={v => onChange('messaging_service_sid', v)}
+          />
+          <p className="text-xs text-muted-foreground">
+            Get these from the Twilio Console. Chatwoot validates credentials when creating the inbox.
+          </p>
+        </div>
       );
     case 'Channel::Whatsapp':
       return (
@@ -48,6 +75,14 @@ export function ChannelConfigFields({ channelType, values, onChange }: Props) {
     case 'Channel::WebWidget':
       return (
         <div className="space-y-3">
+          <Field
+            label="Website URL *"
+            id="wurl"
+            type="url"
+            placeholder="https://app.blinksone.com"
+            value={values.website_url ?? ''}
+            onChange={v => onChange('website_url', v)}
+          />
           <Field
             label="Widget title"
             id="wtitle"
@@ -81,13 +116,20 @@ export function ChannelConfigFields({ channelType, values, onChange }: Props) {
       );
     case 'Channel::Voice':
       return (
-        <Field
-          label="SIP extension"
-          id="sipext"
-          placeholder="e.g. 100"
-          value={values.sip_extension ?? ''}
-          onChange={v => onChange('sip_extension', v)}
-        />
+        <div className="space-y-3">
+          <p className="text-xs text-muted-foreground">
+            Voice routing uses BlinkOne telephony. This creates an API inbox for programmatic call
+            events (configure SIP in Calling settings).
+          </p>
+          <Field
+            label="Webhook URL (optional)"
+            id="voicehook"
+            type="url"
+            placeholder="https://app.blinksone.com/api/calls/..."
+            value={values.webhook_url ?? ''}
+            onChange={v => onChange('webhook_url', v)}
+          />
+        </div>
       );
     case 'Channel::Api':
       return (

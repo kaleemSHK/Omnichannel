@@ -168,7 +168,7 @@ export function useSnoozeConversation(conversationId: number) {
   });
 }
 
-export function useAssignTeam(conversationId: number) {
+export function useAssignTeam(conversationId: number, currentAssigneeId?: number | null) {
   const qc = useQueryClient();
 
   return useMutation({
@@ -179,7 +179,7 @@ export function useAssignTeam(conversationId: number) {
       }
       await assignConversation(
         conversationId,
-        null,
+        currentAssigneeId ?? null,
         teamId ? Number(teamId) : null,
       );
       return teamId;

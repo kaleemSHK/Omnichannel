@@ -7,6 +7,7 @@ export const ROLE_PERMISSIONS = {
   routes: {
     '/conversations': ['agent', 'supervisor', 'admin', 'platform_admin'],
     '/calling': ['agent', 'supervisor', 'admin', 'platform_admin'],
+    '/calling/history': ['agent', 'supervisor', 'admin', 'platform_admin'],
     '/calling/wallboard': ['supervisor', 'admin', 'platform_admin'],
     '/calling/ivr': ['admin', 'platform_admin'],
     '/contacts': ['agent', 'supervisor', 'admin', 'platform_admin'],
@@ -23,6 +24,8 @@ export const ROLE_PERMISSIONS = {
   features: {
     sendPrivateNote: ['agent', 'supervisor', 'admin', 'platform_admin'],
     assignConversation: ['supervisor', 'admin', 'platform_admin'],
+    assignTeam: ['agent', 'supervisor', 'admin', 'platform_admin'],
+    manageAgentScripts: ['supervisor', 'admin', 'platform_admin'],
     resolveConversation: ['agent', 'supervisor', 'admin', 'platform_admin'],
     viewReports: ['supervisor', 'admin', 'platform_admin'],
     manageBilling: ['admin', 'platform_admin'],

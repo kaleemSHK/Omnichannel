@@ -15,6 +15,7 @@ import * as assist from '../lib/assist/service.js';
 import * as voice from '../lib/voicebot/fsm.js';
 import { synthesize } from '../lib/tts/piper.js';
 import * as botRouting from '../lib/bot-routing.js';
+import * as agentScripts from '../lib/agent-scripts.js';
 
 const log = createLogger('ai');
 const PORT = parseInt(process.env.PORT || '8793', 10);
@@ -451,6 +452,31 @@ app.post('/v1/bot-routing/evaluate', auth, async (req, res) => {
   }
 });
 
+// ─── Agent script checklist (Settings CRUD) ────────────────────────────────
+
+app.get('/v1/agent-scripts', auth, agentAssist, (req, res) => {
+  const tenantId = resolveTenantId(req);
+  return ok(res, getAgentScriptPayload(tenantId));
+});
+
+app.put('/v1/agent-scripts', auth, agentAssist, (req, res) => {
+  const tenantId = resolveTenantId(req);
+  try {
+    const saved = agentScripts.saveAgentScript(tenantId, req.body ?? {});
+    return ok(res, getAgentScriptPayload(tenantId, saved));
+  } catch (e) {
+    return fail(res, 'INTERNAL_ERROR', e.message, 500);
+  }
+});
+
+function getAgentScriptPayload(tenantId, saved) {
+  const row = saved ?? agentScripts.getAgentScript(tenantId);
+  return {
+    openingLine: row.openingLine,
+    steps: row.steps.map((s) => ({ id: s.id, label: s.label, description: s.description })),
+  };
+}
+
 // ─── AI Next Best Action (D21) ───────────────────────────────────────────────
 
 function defaultSteps(category) {
@@ -472,6 +498,7 @@ function defaultSteps(category) {
 app.post('/v1/next-action', auth, agentAssist, async (req, res) => {
   const { conversationId, messages = [], category, intent } = req.body ?? {};
   const tenantId = resolveTenantId(req);
+  const configured = agentScripts.getAgentScript(tenantId);
 
   const context = messages.slice(-5).map((m) => `${m.role}: ${m.content}`).join('\n');
   const prompt = `You are a contact center agent assist AI. Based on this conversation, provide the next best action steps.
@@ -499,11 +526,12 @@ Return a JSON object with:
       escalate: raw.escalate ?? false,
     });
   } catch {
-    // Graceful fallback — LLM unavailable or parse error
+    // Graceful fallback — use Settings checklist, then built-in defaults
+    const steps = configured.steps?.length ? configured.steps : defaultSteps(category);
     return ok(res, {
       conversationId: conversationId ?? null,
-      steps: defaultSteps(category),
-      script: '',
+      steps,
+      script: configured.openingLine ?? '',
       escalate: false,
     });
   }

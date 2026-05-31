@@ -47,6 +47,8 @@ async function handleResponse<T>(res: Response): Promise<T> {
 
   let errBody: Partial<ApiError> & {
     error?: string | { code?: string; message?: string };
+    attributes?: string[];
+    errors?: string[] | Record<string, string[]>;
   } = {};
   try {
     errBody = (await readJsonBody(res)) ?? {};
@@ -54,16 +56,24 @@ async function handleResponse<T>(res: Response): Promise<T> {
     /* ignore */
   }
 
-  // BlinkOne services return { error: { code, message } }; Chatwoot returns
-  // { message } or { error: "..." }. Support all shapes so the real reason surfaces.
   const nestedError =
     errBody.error && typeof errBody.error === 'object' ? errBody.error : undefined;
 
-  const message =
+  let message =
     errBody.message ??
     nestedError?.message ??
     (typeof errBody.error === 'string' ? errBody.error : undefined) ??
     `Request failed with status ${res.status}`;
+
+  if (Array.isArray(errBody.errors)) {
+    message = errBody.errors.join('; ');
+  } else if (errBody.errors && typeof errBody.errors === 'object') {
+    message = Object.entries(errBody.errors)
+      .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`)
+      .join('; ');
+  } else if (errBody.attributes?.length) {
+    message = `${message} (${errBody.attributes.join(', ')})`;
+  }
 
   const code = errBody.code ?? nestedError?.code ?? 'HTTP_ERROR';
 

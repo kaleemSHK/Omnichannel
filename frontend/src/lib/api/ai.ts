@@ -308,6 +308,37 @@ export interface NextActionResult {
   escalate: boolean;
 }
 
+export interface AgentScriptConfig {
+  openingLine: string;
+  steps: { id: string; label: string; description: string }[];
+}
+
+export async function getAgentScriptConfig(): Promise<AgentScriptConfig> {
+  try {
+    const res = await bnFetch<{ data: AgentScriptConfig }>(SVC, '/v1/agent-scripts');
+    return res.data;
+  } catch {
+    return {
+      openingLine: 'Thank you for contacting us. How can I help you today?',
+      steps: [
+        { id: '1', label: 'Greet customer', description: 'Introduce yourself and confirm customer identity' },
+        { id: '2', label: 'Verify account', description: 'Ask for account number or email to pull up record' },
+        { id: '3', label: 'Understand issue', description: "Listen and paraphrase the customer's concern" },
+        { id: '4', label: 'Resolve or escalate', description: 'Apply solution from knowledge base or escalate to tier 2' },
+        { id: '5', label: 'Close & survey', description: 'Confirm resolution and offer satisfaction survey' },
+      ],
+    };
+  }
+}
+
+export async function saveAgentScriptConfig(config: AgentScriptConfig): Promise<AgentScriptConfig> {
+  const res = await bnFetch<{ data: AgentScriptConfig }>(SVC, '/v1/agent-scripts', {
+    method: 'PUT',
+    body: JSON.stringify(config),
+  });
+  return res.data;
+}
+
 export async function getNextAction(params: {
   conversationId: string;
   messages: { role: 'user' | 'assistant'; content: string }[];

@@ -245,12 +245,47 @@ export interface AutomationCondition {
   attribute_key: string;
   filter_operator: string;
   values: string[];
-  query_operator: 'AND' | 'OR' | null;
+  query_operator: 'AND' | 'OR' | 'and' | 'or' | null;
 }
 
 export interface AutomationAction {
   action_name: string;
   action_params: unknown[];
+}
+
+/** Chatwoot expects inbox_id / team_id / labels keys and string action_params. */
+function normalizeAutomationPayload(data: Partial<AutomationRule>): Partial<AutomationRule> {
+  const conditions = data.conditions?.map((c, index) => {
+    let key = c.attribute_key;
+    if (key === 'inbox') key = 'inbox_id';
+    if (key === 'team') key = 'team_id';
+    if (key === 'assignee') key = 'assignee_id';
+    if (key === 'language') key = 'conversation_language';
+    if (key === 'label') key = 'labels';
+
+    const row: AutomationCondition = {
+      attribute_key: key,
+      filter_operator: c.filter_operator,
+      values: (c.values ?? []).map(v => String(v)),
+      query_operator: c.query_operator ?? (index === 0 ? null : 'and'),
+    };
+    // Chatwoot rejects null query_operator on some versions — omit when unset
+    if (row.query_operator == null) {
+      return { ...row, query_operator: null };
+    }
+    return row;
+  });
+
+  const actions = data.actions?.map(a => ({
+    action_name: a.action_name,
+    action_params: (a.action_params ?? []).map(p => String(p)),
+  }));
+
+  return {
+    ...data,
+    ...(conditions ? { conditions } : {}),
+    ...(actions ? { actions } : {}),
+  };
 }
 
 export async function listAutomations(): Promise<{ payload: AutomationRule[] }> {
@@ -262,7 +297,10 @@ export async function listAutomations(): Promise<{ payload: AutomationRule[] }> 
 }
 
 export async function createAutomation(data: Partial<AutomationRule>): Promise<{ payload: AutomationRule }> {
-  return cwFetch(`/accounts/${aid()}/automation_rules`, { method: 'POST', body: JSON.stringify(data) });
+  return cwFetch(`/accounts/${aid()}/automation_rules`, {
+    method: 'POST',
+    body: JSON.stringify(normalizeAutomationPayload(data)),
+  });
 }
 
 export async function updateAutomation(
@@ -271,7 +309,7 @@ export async function updateAutomation(
 ): Promise<{ payload: AutomationRule }> {
   return cwFetch(`/accounts/${aid()}/automation_rules/${id}`, {
     method: 'PATCH',
-    body: JSON.stringify(data),
+    body: JSON.stringify(normalizeAutomationPayload(data)),
   });
 }
 
