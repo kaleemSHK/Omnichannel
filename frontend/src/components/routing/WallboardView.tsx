@@ -129,13 +129,13 @@ export function WallboardView() {
   }, [slaData]);
 
   // Derived metrics
-  const waiting      = queues.reduce((n, q) => n + (q.waiting ?? 0), 0);
+  const waiting      = queues.reduce((n: number, q) => n + (q.waiting ?? 0), 0);
   const activeCalls  = agents.filter(a => a.currentCallId).length;
   const online       = agents.filter(a => a.state !== 'offline').length;
   const onBreak      = agents.filter(a => a.state === 'break').length;
   const missRate     = data.totalToday > 0 ? Math.round((data.missedToday / data.totalToday) * 100) : 0;
   const avgWait      = queues.length
-    ? Math.round(queues.reduce((s, q) => s + (q.longestWait ?? 0), 0) / queues.length)
+    ? Math.round(queues.reduce((s: number, q) => s + (q.longestWait ?? 0), 0) / queues.length)
     : 0;
 
   const kpis: KPI[] = [
