@@ -30,6 +30,11 @@ import { IntegrationMarketplace } from '@/components/settings/IntegrationMarketp
 import { ApiKeysSection } from '@/components/settings/ApiKeysSection';
 import { SurveyWorkspace } from '@/components/surveys/SurveyWorkspace';
 import { VipCallerPanel } from '@/components/routing/VipCallerPanel';
+import { QueuesSection } from '@/components/settings/QueuesSection';
+import { SLAPoliciesSection } from '@/components/settings/SLAPoliciesSection';
+import { RecordingSection } from '@/components/settings/RecordingSection';
+import { ACWSection } from '@/components/settings/ACWSection';
+import { VoiceSection } from '@/components/settings/VoiceSection';
 
 export default function SettingsPage() {
   const [view, setView] = useState<SettingsView>('profile');
@@ -63,6 +68,11 @@ export default function SettingsPage() {
     webhooks: <WebhooksSection />,
     'api-keys': <ApiKeysSection />,
     'business-hours': <BusinessHoursSection />,
+    queues: <QueuesSection />,
+    'sla-policies': <SLAPoliciesSection />,
+    recording: <RecordingSection />,
+    acw: <ACWSection />,
+    voice: <VoiceSection />,
   };
 
   return (

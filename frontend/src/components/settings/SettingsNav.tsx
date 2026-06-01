@@ -26,6 +26,11 @@ import {
   Megaphone,
   Store,
   BarChart3,
+  Layers,
+  Mic,
+  ShieldAlert,
+  Volume2,
+  PhoneCall,
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store/auth';
 import { can } from '@/lib/rbac';
@@ -49,8 +54,13 @@ const NAV_ITEMS = [
   { id: 'agent-scripts', label: 'Agent Scripts', icon: ClipboardList, group: 'Automation' },
   { id: 'campaigns', label: 'Campaigns', icon: Megaphone, group: 'Automation' },
   { id: 'surveys', label: 'Surveys', icon: BarChart3, group: 'Automation' },
-  { id: 'vip-callers', label: 'VIP Callers', icon: Star, group: 'Workspace' },
-  { id: 'mfa', label: 'Two-Factor Auth', icon: ShieldCheck, group: 'Security' },
+  { id: 'vip-callers',   label: 'VIP Callers',        icon: Star,        group: 'Workspace' },
+  { id: 'queues',        label: 'Queues',             icon: Layers,      group: 'Voice & Calling' },
+  { id: 'sla-policies',  label: 'SLA Policies',       icon: ShieldAlert, group: 'Voice & Calling' },
+  { id: 'recording',     label: 'Recording',          icon: Mic,         group: 'Voice & Calling' },
+  { id: 'acw',           label: 'After Call Work',    icon: Clock,       group: 'Voice & Calling' },
+  { id: 'voice',         label: 'Voice & Language',   icon: Volume2,     group: 'Voice & Calling' },
+  { id: 'mfa',           label: 'Two-Factor Auth',    icon: ShieldCheck, group: 'Security' },
   { id: 'totp', label: 'Authenticator App', icon: ShieldCheck, group: 'Security' },
   { id: 'branding', label: 'Branding', icon: Palette, group: 'Platform' },
   { id: 'integrations', label: 'Integrations', icon: Puzzle, group: 'Integrations' },
@@ -91,6 +101,11 @@ export function SettingsNav({ active, onChange }: Props) {
     if (item.id === 'webhooks') return can(role, 'manageWebhooks');
     if (item.id === 'api-keys') return can(role, 'manageWebhooks');
     if (item.id === 'branding') return can(role, 'manageTeam');
+    if (item.id === 'queues') return can(role, 'manageTeam');
+    if (item.id === 'sla-policies') return can(role, 'manageTeam');
+    if (item.id === 'recording') return can(role, 'manageTeam');
+    if (item.id === 'acw') return can(role, 'manageTeam');
+    if (item.id === 'voice') return can(role, 'manageTeam');
     if (item.id === 'mfa') return true; // every user manages their own MFA
     return true;
   });
