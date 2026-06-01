@@ -21,7 +21,7 @@ export interface CWConversation {
   status: 'open' | 'resolved' | 'pending' | 'snoozed';
   inbox_id: number;
   meta: {
-    sender: { id: number; name: string; avatar?: string };
+    sender: { id: number; name: string; avatar?: string; phone_number?: string };
     assignee?: { id: number; name: string };
     team?: { id: number; name: string };
   };
@@ -235,10 +235,25 @@ export interface IVRSkillRequirement {
   required: boolean;
 }
 
+export type IVRNodeType =
+  | 'play'
+  | 'dtmf'
+  | 'voicebot'
+  | 'transfer'
+  | 'enqueue'
+  | 'condition'
+  | 'schedule'
+  | 'webhook'
+  | 'set_variable'
+  | 'voicemail'
+  | 'sms'
+  | 'callback'
+  | 'hangup';
+
 export interface IVRNode {
   id: string;
   /** 'transfer' is the frontend-canvas alias for the backend 'enqueue' node type */
-  type: 'play' | 'voicebot' | 'dtmf' | 'transfer' | 'enqueue' | 'hangup' | 'condition';
+  type: IVRNodeType;
   label: string;
   config: Record<string, unknown>;
   position: { x: number; y: number };

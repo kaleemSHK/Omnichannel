@@ -1,60 +1,208 @@
 'use client';
 
-import type { IVRNode } from '@/types';
+import { useState } from 'react';
+import {
+  Search,
+  Plus,
+  ChevronRight,
+  ChevronDown,
+  Zap,
+} from 'lucide-react';
+import { NODE_META } from './IVRNodeCard';
+import type { IVRNodeType } from '@/types';
+import { cn } from '@/lib/utils/cn';
 
-const NODE_TYPES: { type: IVRNode['type']; label: string; color: string }[] = [
-  { type: 'play', label: 'Play message', color: 'bg-blue-500' },
-  { type: 'dtmf', label: 'DTMF menu', color: 'bg-green-500' },
-  { type: 'voicebot', label: 'Voice bot', color: 'bg-amber-500' },
-  { type: 'transfer', label: 'Route to queue', color: 'bg-teal-500' },
-  { type: 'condition', label: 'Condition', color: 'bg-purple-500' },
-  { type: 'hangup', label: 'Hangup', color: 'bg-red-500' },
+// ─── Category groups ───────────────────────────────────────────────────────────
+
+const CATEGORIES: { name: string; types: IVRNodeType[] }[] = [
+  { name: 'Messaging', types: ['play', 'voicemail', 'sms'] },
+  { name: 'Input', types: ['dtmf', 'voicebot'] },
+  { name: 'Logic', types: ['condition', 'schedule'] },
+  { name: 'Routing', types: ['transfer', 'callback'] },
+  { name: 'Actions', types: ['webhook', 'set_variable'] },
+  { name: 'Terminal', types: ['hangup'] },
 ];
 
+// ─── Props ─────────────────────────────────────────────────────────────────────
+
 interface Props {
-  flows: { id: string; name: string }[];
+  flows: { id: string; name: string; isActive?: boolean }[];
   activeFlowId: string;
   onSelectFlow: (id: string) => void;
-  onAddNode?: (type: IVRNode['type']) => void;
+  onAddNode: (type: IVRNodeType) => void;
   onCreateFlow?: () => void;
   creating?: boolean;
 }
 
-export function IVRNodePalette({ flows, activeFlowId, onSelectFlow, onAddNode, onCreateFlow, creating }: Props) {
+// ─── Palette item ──────────────────────────────────────────────────────────────
+
+function PaletteItem({ type, onAdd }: { type: IVRNodeType; onAdd: (t: IVRNodeType) => void }) {
+  const meta = NODE_META[type];
+  const Icon = meta.icon;
+
+  const handleDragStart = (e: React.DragEvent) => {
+    e.dataTransfer.setData('application/ivr-node-type', type);
+    e.dataTransfer.effectAllowed = 'copy';
+  };
+
   return (
-    <aside className="w-[180px] shrink-0 bg-white border-e border-gray-200 flex flex-col h-full">
-      <div className="p-2 border-b border-gray-100">
-        <p className="text-xs font-semibold text-muted-foreground uppercase px-1">Nodes</p>
-        <ul className="mt-2 space-y-1">
-          {NODE_TYPES.map(n => (
-            <li key={n.type}>
-              <button
-                type="button"
-                onClick={() => onAddNode?.(n.type)}
-                className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs hover:bg-muted text-start"
-              >
-                <span className={`size-2 rounded-full shrink-0 ${n.color}`} />
-                {n.label}
-              </button>
-            </li>
-          ))}
-        </ul>
+    <div
+      draggable
+      onDragStart={handleDragStart}
+      className="group flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-grab active:cursor-grabbing hover:bg-gray-50 border border-transparent hover:border-gray-200 transition-colors"
+    >
+      <span
+        className={cn(
+          'flex items-center justify-center w-6 h-6 rounded-md shrink-0',
+          meta.bg,
+        )}
+      >
+        <Icon className="w-3 h-3 text-white" />
+      </span>
+      <div className="flex-1 min-w-0">
+        <p className="text-[11px] font-medium text-gray-800 truncate">{meta.label}</p>
+        <p className="text-[10px] text-muted-foreground truncate hidden group-hover:block">
+          {meta.description}
+        </p>
       </div>
-      <div className="p-2 flex-1 overflow-y-auto">
-        <p className="text-xs font-semibold text-muted-foreground uppercase px-1">Flows</p>
-        <ul className="mt-2 space-y-1">
+      <button
+        type="button"
+        onClick={() => onAdd(type)}
+        title={`Add ${meta.label}`}
+        className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-gray-200"
+      >
+        <Plus className="w-3 h-3 text-gray-500" />
+      </button>
+    </div>
+  );
+}
+
+// ─── Category section ──────────────────────────────────────────────────────────
+
+function CategorySection({
+  name,
+  types,
+  defaultOpen = true,
+  onAdd,
+}: {
+  name: string;
+  types: IVRNodeType[];
+  defaultOpen?: boolean;
+  onAdd: (t: IVRNodeType) => void;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+
+  return (
+    <div className="mb-1">
+      <button
+        type="button"
+        onClick={() => setOpen(p => !p)}
+        className="w-full flex items-center gap-1 px-2 py-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wide hover:text-gray-700 transition-colors"
+      >
+        {open ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+        {name}
+      </button>
+      {open && (
+        <div className="space-y-0.5">
+          {types.map(t => (
+            <PaletteItem key={t} type={t} onAdd={onAdd} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Main palette ──────────────────────────────────────────────────────────────
+
+export function IVRNodePalette({
+  flows,
+  activeFlowId,
+  onSelectFlow,
+  onAddNode,
+  onCreateFlow,
+  creating,
+}: Props) {
+  const [search, setSearch] = useState('');
+
+  const filtered = search.trim()
+    ? (Object.entries(NODE_META) as [IVRNodeType, (typeof NODE_META)[IVRNodeType]][])
+        .filter(([, m]) =>
+          m.label.toLowerCase().includes(search.toLowerCase()) ||
+          m.description.toLowerCase().includes(search.toLowerCase()),
+        )
+        .map(([t]) => t)
+    : null;
+
+  return (
+    <aside className="w-[200px] shrink-0 bg-white border-e border-gray-200 flex flex-col h-full">
+      {/* Header */}
+      <div className="px-3 py-2.5 border-b border-gray-100">
+        <div className="flex items-center gap-1.5 mb-2">
+          <Zap className="w-3.5 h-3.5 text-brand-primary" />
+          <span className="text-xs font-semibold text-gray-800">IVR Builder</span>
+        </div>
+        <div className="relative">
+          <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search nodes…"
+            className="w-full pl-6 pr-2 py-1 text-[11px] border border-gray-200 rounded-md bg-gray-50 focus:outline-none focus:ring-1 focus:ring-brand-primary focus:bg-white"
+          />
+        </div>
+      </div>
+
+      {/* Node catalogue */}
+      <div className="flex-1 overflow-y-auto px-1 py-2">
+        <p className="px-2 text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-1">
+          Drag or click to add
+        </p>
+        {filtered ? (
+          <div className="space-y-0.5">
+            {filtered.map(t => (
+              <PaletteItem key={t} type={t} onAdd={onAddNode} />
+            ))}
+            {filtered.length === 0 && (
+              <p className="text-[11px] text-muted-foreground px-2 py-3 text-center">No match</p>
+            )}
+          </div>
+        ) : (
+          CATEGORIES.map((cat, i) => (
+            <CategorySection
+              key={cat.name}
+              name={cat.name}
+              types={cat.types}
+              defaultOpen={i < 3}
+              onAdd={onAddNode}
+            />
+          ))
+        )}
+      </div>
+
+      {/* Flows list */}
+      <div className="border-t border-gray-100 px-1 py-2 max-h-[40%] flex flex-col min-h-0">
+        <p className="px-2 text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-1">
+          Flows
+        </p>
+        <ul className="overflow-y-auto flex-1 space-y-0.5">
           {flows.map(f => (
             <li key={f.id}>
               <button
                 type="button"
                 onClick={() => onSelectFlow(f.id)}
-                className={
+                className={cn(
+                  'w-full text-start px-2 py-1.5 rounded-lg text-[11px] transition-colors flex items-center gap-1.5',
                   activeFlowId === f.id
-                    ? 'w-full text-start px-2 py-1.5 rounded text-xs bg-blue-50 text-brand-primary font-medium'
-                    : 'w-full text-start px-2 py-1.5 rounded text-xs hover:bg-muted'
-                }
+                    ? 'bg-blue-50 text-brand-primary font-semibold'
+                    : 'hover:bg-gray-50 text-gray-700',
+                )}
               >
-                {f.name}
+                <span className={cn(
+                  'w-1.5 h-1.5 rounded-full shrink-0',
+                  f.isActive ? 'bg-green-400' : 'bg-gray-300',
+                )} />
+                <span className="truncate">{f.name}</span>
               </button>
             </li>
           ))}
@@ -63,8 +211,9 @@ export function IVRNodePalette({ flows, activeFlowId, onSelectFlow, onAddNode, o
           type="button"
           disabled={creating}
           onClick={() => onCreateFlow?.()}
-          className="mt-2 w-full py-1.5 text-xs border border-dashed border-gray-200 rounded text-muted-foreground hover:border-brand-primary hover:text-brand-primary disabled:opacity-50"
+          className="mt-1 w-full py-1.5 text-[11px] border border-dashed border-gray-200 rounded-lg text-muted-foreground hover:border-brand-primary hover:text-brand-primary disabled:opacity-50 flex items-center justify-center gap-1 transition-colors"
         >
+          <Plus className="w-3 h-3" />
           {creating ? 'Creating…' : 'New flow'}
         </button>
       </div>
