@@ -686,7 +686,7 @@ services:
     ports:
       - "10000-10100:10000-10100/udp"
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:8088/asterisk/ari/api-info -u blinkone:${AST_ARI_PASS:-blinkone-ari-secret} > /dev/null"]
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:8088/ari/applications -u blinkone:${AST_ARI_PASS:-blinkone-ari-secret} > /dev/null"]
       interval: 15s
       timeout: 10s
       retries: 5
