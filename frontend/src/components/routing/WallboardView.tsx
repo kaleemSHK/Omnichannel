@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRealtimeWallboard, type QueueStatEntry } from '@/lib/hooks/useRealtimeWallboard';
+import type { RoutingAgent } from '@/types';
 import { useCsatReport, useSlaBreachReport } from '@/lib/hooks/useReports';
 import { isDemoDataEnabled } from '@/lib/demo/config';
 import { getDemoWallboard, DEMO_WALLBOARD_AGENTS, DEMO_WALLBOARD_QUEUES } from '@/lib/demo/wallboardFixture';
@@ -130,9 +131,9 @@ export function WallboardView() {
 
   // Derived metrics
   const waiting      = queues.reduce((n: number, q: QueueStatEntry) => n + (q.waiting ?? 0), 0);
-  const activeCalls  = agents.filter(a => a.currentCallId).length;
-  const online       = agents.filter(a => a.state !== 'offline').length;
-  const onBreak      = agents.filter(a => a.state === 'break').length;
+  const activeCalls  = agents.filter((a: RoutingAgent) => a.currentCallId).length;
+  const online       = agents.filter((a: RoutingAgent) => a.state !== 'offline').length;
+  const onBreak      = agents.filter((a: RoutingAgent) => a.state === 'break').length;
   const missRate     = data.totalToday > 0 ? Math.round((data.missedToday / data.totalToday) * 100) : 0;
   const avgWait      = queues.length
     ? Math.round(queues.reduce((s: number, q: QueueStatEntry) => s + (q.longestWait ?? 0), 0) / queues.length)
