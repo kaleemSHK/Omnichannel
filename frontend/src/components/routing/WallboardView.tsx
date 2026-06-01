@@ -245,7 +245,7 @@ export function WallboardView() {
             )}
           >
             <option value="all">All queues</option>
-            {queues.map(q => (
+            {queues.map((q: QueueStatEntry) => (
               <option key={q.id} value={q.id}>{q.name}</option>
             ))}
           </select>

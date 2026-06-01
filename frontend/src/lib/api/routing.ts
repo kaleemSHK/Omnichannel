@@ -4,28 +4,67 @@
  */
 
 import { bnFetch } from './client';
-import type { RoutingAgent, Queue, QueueStats, AgentSkill, AgentWithSkills } from '@/types';
+import { normalizeRoutingAgent } from './routing-agents';
+import type {
+  RoutingAgent,
+  Queue,
+  QueueStats,
+  AgentSkill,
+  AgentWithSkills,
+  RealtimeDashboard,
+} from '@/types';
 
 const SVC = 'routing';
 
 // ─── Agents ───────────────────────────────────────────────────────────────────
 export async function listAgents(): Promise<RoutingAgent[]> {
-  const res = await bnFetch<{ data: RoutingAgent[] }>(SVC, '/v1/agents');
-  return res.data;
+  const res = await bnFetch<{ data: Record<string, unknown>[] }>(SVC, '/v1/agents');
+  return (res.data ?? []).map(a => normalizeRoutingAgent(a));
 }
 
 export async function getAgent(agentId: string): Promise<RoutingAgent> {
-  const res = await bnFetch<{ data: RoutingAgent }>(SVC, `/v1/agents/${agentId}`);
-  return res.data;
+  const res = await bnFetch<{ data: Record<string, unknown> }>(SVC, `/v1/agents/${agentId}`);
+  return normalizeRoutingAgent(res.data);
 }
+
+/** Live wallboard snapshot (Postgres + Redis) — same payload as WS realtime ticks. */
+export async function getRealtimeDashboard(): Promise<RealtimeDashboard> {
+  const res = await bnFetch<{ data: Record<string, unknown> }>(SVC, '/v1/dashboards/realtime');
+  const d = res.data ?? {};
+  const agentsRaw = Array.isArray(d.agents) ? d.agents : [];
+  const queuesRaw = Array.isArray(d.queues) ? d.queues : [];
+  return {
+    agents: agentsRaw.map(a => normalizeRoutingAgent(a as Record<string, unknown>)),
+    queues: queuesRaw.map(q => ({
+      id: String((q as { id?: string }).id ?? ''),
+      queueKey: (q as { queueKey?: string }).queueKey,
+      name: String((q as { name?: string }).name ?? 'Queue'),
+      waiting: Number((q as { waiting?: number }).waiting ?? 0),
+      active: Number((q as { active?: number }).active ?? 0),
+      longestWait: Number((q as { longestWait?: number }).longestWait ?? 0),
+    })),
+    handledToday: Number(d.handledToday ?? 0),
+    missedToday: Number(d.missedToday ?? 0),
+    totalToday: Number(d.totalToday ?? 0),
+    updatedAt: String(d.updatedAt ?? new Date().toISOString()),
+  };
+}
+
+const DEFAULT_AGENT_SKILLS = ['support'];
+const DEFAULT_AGENT_QUEUES = ['support', 'default'];
 
 export async function setAgentState(
   agentId: string,
   state: 'available' | 'busy' | 'break' | 'offline' | 'acw',
+  opts?: { skills?: string[]; queueKeys?: string[] },
 ): Promise<RoutingAgent> {
   const res = await bnFetch<{ data: RoutingAgent }>(SVC, `/v1/agents/${agentId}`, {
     method: 'PATCH',
-    body: JSON.stringify({ state }),
+    body: JSON.stringify({
+      state,
+      skills: opts?.skills ?? DEFAULT_AGENT_SKILLS,
+      queueKeys: opts?.queueKeys ?? DEFAULT_AGENT_QUEUES,
+    }),
   });
   return res.data;
 }
@@ -185,4 +224,61 @@ export async function scheduleCallback(payload: Omit<CallbackRequest, 'id' | 'st
     body: JSON.stringify(payload),
   });
   return res.data;
+}
+
+// ─── ACD route lifecycle (unified calling) ───────────────────────────────────
+
+export type RouteRequestResult = {
+  status: 'queued' | 'assigned' | 'overflow';
+  callId: string;
+  queueKey?: string;
+  position?: number;
+  depth?: number;
+  agentId?: string;
+  sessionId?: string;
+};
+
+export async function requestRoute(body: {
+  callId: string;
+  queueKey?: string;
+  callerId?: string;
+}): Promise<RouteRequestResult> {
+  const res = await bnFetch<{ data: RouteRequestResult }>(SVC, '/v1/route/request', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+  return res.data;
+}
+
+export async function completeRoute(body: {
+  callId: string;
+  agentId?: string;
+  disposition?: string;
+}): Promise<void> {
+  await bnFetch(SVC, '/v1/route/complete', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
+export async function getCallRouteStatus(callId: string): Promise<{
+  callId: string;
+  status: string;
+  position?: number;
+  depth?: number;
+  agentId?: string;
+  eventType?: string;
+}> {
+  const res = await bnFetch<{ data: Record<string, unknown> }>(
+    SVC,
+    `/v1/route/calls/${encodeURIComponent(callId)}/status`,
+  );
+  return res.data as {
+    callId: string;
+    status: string;
+    position?: number;
+    depth?: number;
+    agentId?: string;
+    eventType?: string;
+  };
 }
