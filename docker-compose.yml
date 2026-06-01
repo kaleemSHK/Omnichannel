@@ -173,6 +173,7 @@ services:
       CUSTOMER_CHATWOOT_TOKEN: ${CUSTOMER_CHATWOOT_TOKEN:-${CHATWOOT_API_ACCESS_TOKEN}}
       CUSTOMER_DEFAULT_ACCOUNT: ${CUSTOMER_DEFAULT_ACCOUNT:-1}
       DEVICE_STORE_PATH: /data/devices.json
+      FCM_SERVER_KEY: ${FCM_SERVER_KEY:-}
     volumes:
       - gateway_data:/data
     networks: [blinkone]
@@ -256,6 +257,9 @@ services:
       TENANT_URL:            http://tenant:8802
       TENANT_TOKEN:          ${TENANT_TOKEN:-${PLATFORM_TOKEN}}
       FEATURE_FAILOPEN:      ${FEATURE_FAILOPEN:-0}
+      GATEWAY_URL:           http://gateway:8787
+      PLATFORM_TOKEN:        ${PLATFORM_TOKEN}
+      PUSH_CALLS_ENABLED:    ${PUSH_CALLS_ENABLED:-0}
     volumes: [calls_data:/data]
     depends_on:
       postgres_app: { condition: service_healthy }
@@ -430,6 +434,12 @@ services:
       VOICEBOT_LANGUAGE:     ${VOICEBOT_LANGUAGE:-ar-OM}
       ROUTING_URL:           http://routing:8798
       ROUTING_TOKEN:         ${ROUTING_TOKEN}
+      ASTERISK_ARI_ENABLED:  "1"
+      ASTERISK_ARI_URL:      http://blinkone-asterisk:8088
+      ASTERISK_ARI_USER:     "${AST_ARI_USER:-blinkone}"
+      ASTERISK_ARI_PASSWORD: "${AST_ARI_PASS:-blinkone-ari-secret}"
+      ASTERISK_ARI_APP:      blinkone-ivr
+      IVR_AGENT_DIAL_TEMPLATE: "PJSIP/${agentId}@agent-webrtc"
     volumes: [ivr_data:/data]
     depends_on:
       postgres_app: { condition: service_healthy }
@@ -544,6 +554,10 @@ services:
       MINIO_SECRET_KEY:       ${MINIO_ROOT_PASSWORD:-blinkone-minio-secret}
       MINIO_BUCKET:           recordings
       MINIO_STUB:             ${MINIO_STUB:-0}
+      AI_URL:                 http://ai:8793
+      AI_TOKEN:               ${AI_TOKEN}
+      AUTO_STT_ON_RECORDING:  ${AUTO_STT_ON_RECORDING:-0}
+      STT_LANGUAGE_HINT:      ${STT_LANGUAGE_HINT:-ar-OM}
     volumes: [recording_data:/data]
     depends_on:
       blinkone-minio: { condition: service_started }
@@ -640,6 +654,44 @@ services:
       admin-panels: { condition: service_started }
     networks: [blinkone]
 
+  # ═══════════════════════════════════════════════════════════════════════════
+  # ASTERISK 20 — SIP/WebRTC media server + ARI for IVR execution
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  asterisk:
+    build:
+      context: ./infra/asterisk
+      dockerfile: Dockerfile
+    image: blinkone/asterisk:20
+    container_name: blinkone-asterisk
+    restart: unless-stopped
+    environment:
+      AST_EXTERNAL_IP:     "204.168.137.104"
+      AST_LOCAL_NET:       "172.18.0.0/16"
+      AST_ARI_USER:        "${AST_ARI_USER:-blinkone}"
+      AST_ARI_PASS:        "${AST_ARI_PASS:-blinkone-ari-secret}"
+      AST_AGENT_SIP_PASS:  "${AST_AGENT_SIP_PASS:-blinkone-agent-dev}"
+      AST_TRUNK_SIP_PASS:  "${AST_TRUNK_SIP_PASS:-blinkone-trunk-dev}"
+      AST_WSS_DOMAIN:      "${AST_WSS_DOMAIN:-sip.blinksone.com}"
+      TWILIO_SIP_HOST:     "${TWILIO_SIP_HOST:-intelysys.pstn.twilio.com}"
+      TWILIO_DID:          "${TWILIO_DID:-+96824000000}"
+      ASTERISK_CERT_DIR:   /var/lib/asterisk/certs
+    volumes:
+      - asterisk_certs:/var/lib/asterisk/certs
+      - asterisk_recordings:/var/spool/asterisk/recordings
+    networks: [blinkone]
+    expose:
+      - "5060"
+      - "8088"
+    ports:
+      - "10000-10100:10000-10100/udp"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:8088/asterisk/ari/api-info -u blinkone:${AST_ARI_PASS:-blinkone-ari-secret} > /dev/null"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
 networks:
   blinkone:
     driver: bridge
@@ -667,3 +719,5 @@ volumes:
   minio_data:
   prometheus_data:
   grafana_data:
+  asterisk_certs:
+  asterisk_recordings:
