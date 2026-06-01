@@ -1,26 +1,13 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { getRealtimeDashboard } from '@/lib/api/routing';
+import { normalizeRoutingAgent } from '@/lib/api/routing-agents';
 import { useAuthStore } from '@/lib/store/auth';
-import type { AgentState, RoutingAgent } from '@/types';
+import { isLiveGatewayEnabled } from '@/lib/live-data/policy';
+import type { QueueStatEntry, RealtimeDashboard, RoutingAgent } from '@/types';
 
-export interface QueueStatEntry {
-  id: string;
-  queueKey?: string;
-  name: string;
-  waiting: number;
-  active: number;
-  longestWait: number;
-}
-
-export interface RealtimeDashboard {
-  agents: RoutingAgent[];
-  queues: QueueStatEntry[];
-  handledToday: number;
-  missedToday: number;
-  totalToday: number;
-  updatedAt: string;
-}
+export type { QueueStatEntry, RealtimeDashboard };
 
 const INITIAL: RealtimeDashboard = {
   agents: [],
@@ -32,25 +19,7 @@ const INITIAL: RealtimeDashboard = {
 };
 
 function mapAgent(raw: Record<string, unknown>): RoutingAgent {
-  const stateRaw = String(raw.state ?? raw.status ?? 'offline');
-  const state: AgentState =
-    stateRaw === 'away'
-      ? 'break'
-      : stateRaw === 'available' || stateRaw === 'busy' || stateRaw === 'break'
-        ? stateRaw
-        : 'offline';
-
-  return {
-    id: String(raw.id ?? raw.agentId ?? ''),
-    tenantId: String(raw.tenantId ?? 'default'),
-    agentId: String(raw.agentId ?? raw.id ?? ''),
-    name: String(raw.name ?? raw.displayName ?? 'Agent'),
-    state,
-    skills: Array.isArray(raw.skills) ? (raw.skills as string[]) : [],
-    queueKeys: Array.isArray(raw.queueKeys) ? (raw.queueKeys as string[]) : undefined,
-    currentCallId: raw.currentCallId != null ? String(raw.currentCallId) : undefined,
-    lastStateChange: String(raw.updatedAt ?? raw.liveUpdatedAt ?? new Date().toISOString()),
-  };
+  return normalizeRoutingAgent(raw);
 }
 
 function mapQueue(raw: Record<string, unknown>): QueueStatEntry {
@@ -89,9 +58,30 @@ function normalizePayload(data: Record<string, unknown>): RealtimeDashboard {
 export function useRealtimeWallboard() {
   const [data, setData] = useState<RealtimeDashboard>(INITIAL);
   const [connected, setConnected] = useState(false);
+  const [bootstrapped, setBootstrapped] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const retryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tenantId = useAuthStore(s => String(s.user?.chatwootAccountId ?? s.user?.tenantId ?? 'default'));
+
+  // REST bootstrap — real DB/Redis snapshot before/alongside WebSocket ticks.
+  useEffect(() => {
+    if (!isLiveGatewayEnabled()) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const snap = await getRealtimeDashboard();
+        if (!cancelled) {
+          setData(snap);
+          setBootstrapped(true);
+        }
+      } catch {
+        if (!cancelled) setBootstrapped(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [tenantId]);
 
   useEffect(() => {
     let destroyed = false;
@@ -144,5 +134,5 @@ export function useRealtimeWallboard() {
     };
   }, [tenantId]);
 
-  return { data, connected };
+  return { data, connected, bootstrapped };
 }
