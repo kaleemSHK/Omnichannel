@@ -5,7 +5,7 @@ import { useCallsStore } from '@/lib/store/calls';
 import { useAuthStore } from '@/lib/store/auth';
 import { isDemoDataEnabled, shouldSkipGatewayFetch } from '@/lib/demo/config';
 import { isPlaceholderEnv, isSipReady, resolveSipWsUri } from '@/lib/env/telephony';
-import { getWebRTCCredentials } from '@/lib/api/routing';
+import { getWebRTCCredentials, setAgentState as syncRoutingAgentState } from '@/lib/api/routing';
 import { pstnSipTarget } from '@/lib/utils/phone';
 import {
   bindSessionRemoteAudio,
@@ -90,6 +90,9 @@ const sessionRef = { current: null as JsSIPRTCSession | null };
 const incomingIdRef = { current: null as string | null };
 const iceServersRef = { current: [{ urls: 'stun:stun.l.google.com:19302' }] as RTCIceServer[] };
 const sipCredsRef = { current: { wsUri: SIP_WSS, sipUri: '', password: SIP_PASS } };
+// Set when agent clicks Answer before Asterisk has dialled them (ARI-bridge race).
+// The next incoming newRTCSession will be answered automatically.
+const pendingAnswerRef = { current: false };
 let sipInitOwners = 0;
 
 function sessionEnded(session: JsSIPRTCSession | null): boolean {
@@ -184,12 +187,20 @@ export function useJsSip() {
           setSipRegistered(true);
           setSipError(null);
           setAgentState('available');
+          if (user?.id && !shouldSkipGatewayFetch()) {
+            void syncRoutingAgentState(String(user.id), 'available').catch((e: unknown) => {
+              console.warn('[JsSIP] routing agent sync failed', e);
+            });
+          }
         });
 
         ua.on('unregistered', () => {
           if (destroyed) return;
           setSipRegistered(false);
           setAgentState('offline');
+          if (user?.id && !shouldSkipGatewayFetch()) {
+            void syncRoutingAgentState(String(user.id), 'offline').catch(() => {});
+          }
         });
 
         ua.on('registrationFailed', (data: unknown) => {
@@ -199,6 +210,9 @@ export function useJsSip() {
           setSipRegistered(false);
           setSipError(cause);
           setAgentState('offline');
+          if (user?.id && !shouldSkipGatewayFetch()) {
+            void syncRoutingAgentState(String(user.id), 'offline').catch(() => {});
+          }
           toast.error(`Softphone registration failed: ${cause}`);
         });
 
@@ -218,6 +232,23 @@ export function useJsSip() {
               'unknown';
             const callId = crypto.randomUUID();
             incomingIdRef.current = callId;
+
+            // If the agent already clicked Answer before the SIP INVITE arrived
+            // (ARI-bridge or routing push beat the SIP signalling), auto-answer now.
+            if (pendingAnswerRef.current) {
+              pendingAnswerRef.current = false;
+              stopIncomingRingtone();
+              try {
+                session.answer({
+                  mediaConstraints: { audio: true, video: false },
+                  rtcAnswerConstraints: { offerToReceiveAudio: true, offerToReceiveVideo: false },
+                  pcConfig: { iceServers: iceServersRef.current },
+                });
+              } catch {
+                /* session may have ended before answer */
+              }
+              return;
+            }
 
             // Screen pop — async CRM lookup on caller ANI (D16)
             if (callerNum && callerNum !== 'unknown') {
@@ -501,9 +532,13 @@ export function useJsSip() {
   const answerCall = useCallback(() => {
     const session = sessionRef.current;
     if (!session) {
-      toast.error('No active call to answer');
+      // No SIP session yet — agent clicked Answer before Asterisk/Kamailio dialled them.
+      // Set a pending flag: the next incoming newRTCSession will be auto-answered.
+      pendingAnswerRef.current = true;
+      console.info('[JsSIP] answerCall: no session yet, pending auto-answer on next INVITE');
       return;
     }
+    pendingAnswerRef.current = false;
     stopIncomingRingtone();
     try {
       session.answer({
@@ -519,6 +554,7 @@ export function useJsSip() {
   const hangup = useCallback(() => {
     stopIncomingRingtone();
     stopOutgoingRingback();
+    pendingAnswerRef.current = false;
     const s = sessionRef.current;
     if (s && !sessionEnded(s)) {
       try { s.terminate(); } catch { /* already ended */ }

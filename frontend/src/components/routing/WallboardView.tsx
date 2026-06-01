@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRealtimeWallboard } from '@/lib/hooks/useRealtimeWallboard';
 import { useCsatReport, useSlaBreachReport } from '@/lib/hooks/useReports';
+import { isDemoDataEnabled } from '@/lib/demo/config';
 import { getDemoWallboard, DEMO_WALLBOARD_AGENTS, DEMO_WALLBOARD_QUEUES } from '@/lib/demo/wallboardFixture';
 import { QueueStats } from '@/components/routing/QueueStats';
 import { WallboardTable } from '@/components/routing/WallboardTable';
@@ -75,21 +76,20 @@ function KPICard({ kpi, dark }: { kpi: KPI; dark: boolean }) {
 // ─── Main wallboard ────────────────────────────────────────────────────────────
 
 export function WallboardView() {
-  const { data: liveData, connected } = useRealtimeWallboard();
+  const { data: liveData, connected, bootstrapped } = useRealtimeWallboard();
   const [queueFilter, setQueueFilter] = useState<string>('all');
   const [darkMode, setDarkMode] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [tick, setTick] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Use demo data when WS has no payload yet
-  const isDemo = !connected || (!liveData.agents.length && !liveData.queues.length);
+  const allowDemo = isDemoDataEnabled();
+  const isEmptyLive = bootstrapped && !liveData.agents.length && !liveData.queues.length;
+  const useDemoWallboard = allowDemo && (!connected || isEmptyLive);
   const demo = useMemo(() => getDemoWallboard(), []);
-  const data = isDemo ? demo : liveData;
-
-  // Inject extended demo agent/queue data for richer display
-  const agents = isDemo ? DEMO_WALLBOARD_AGENTS : data.agents;
-  const queues = isDemo ? DEMO_WALLBOARD_QUEUES : data.queues;
+  const data = useDemoWallboard ? demo : liveData;
+  const agents = useDemoWallboard ? DEMO_WALLBOARD_AGENTS : data.agents;
+  const queues = useDemoWallboard ? DEMO_WALLBOARD_QUEUES : data.queues;
 
   // Clock tick for "last updated"
   useEffect(() => {
@@ -224,7 +224,7 @@ export function WallboardView() {
           </span>
           <span className={cn('text-[11px]', darkMode ? 'text-gray-400' : 'text-muted-foreground')}>
             {connected ? 'Connected' : 'Reconnecting…'}
-            {isDemo && <span className="ml-1 text-amber-500">(demo data)</span>}
+            {useDemoWallboard && <span className="ml-1 text-amber-500">(demo data)</span>}
           </span>
         </div>
 
