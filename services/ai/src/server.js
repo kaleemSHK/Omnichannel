@@ -205,6 +205,33 @@ app.post('/v1/rag/query', auth, ragFeature, async (req, res) => {
   }
 });
 
+// Unified assist dispatcher — frontend calls POST /v1/assist with { action, ... }
+app.post('/v1/assist', auth, agentAssist, async (req, res) => {
+  const tenantId = resolveTenantId(req);
+  const { action, conversationId, messages, language, text } = req.body ?? {};
+  try {
+    if (action === 'suggestReply' || action === 'suggest') {
+      const quotaCheck = await checkQuota(tenantId);
+      if (!quotaCheck.ok) return fail(res, quotaCheck.code, quotaCheck.message, quotaCheck.code === 'LIMIT_EXCEEDED' ? 402 : 429);
+      const r = await assist.suggestReply(tenantId, { conversation_id: conversationId, messages, language, text, tone: 'professional' });
+      return ok(res, { data: r });
+    }
+    if (action === 'summarize') {
+      const quotaCheck = await checkQuota(tenantId);
+      if (!quotaCheck.ok) return fail(res, quotaCheck.code, quotaCheck.message, quotaCheck.code === 'LIMIT_EXCEEDED' ? 402 : 429);
+      const r = await assist.summarizeConversation(tenantId, { conversation_id: conversationId, text });
+      return ok(res, { data: r });
+    }
+    if (action === 'classify') {
+      const r = await assist.classifyTicket(tenantId, { message_sample: text });
+      return ok(res, { data: r });
+    }
+    return fail(res, 'VALIDATION_ERROR', 'action must be suggestReply, summarize, or classify');
+  } catch (e) {
+    return fail(res, 'AI_ERROR', e.message, 500);
+  }
+});
+
 // Legacy alias
 app.post('/v1/suggest', auth, agentAssist, async (req, res) => {
   const tenantId = resolveTenantId(req);

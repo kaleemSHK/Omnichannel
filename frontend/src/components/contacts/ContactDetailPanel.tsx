@@ -349,7 +349,7 @@ export function ContactDetailPanel({ contactId, onEdit }: Props) {
           <div className="flex gap-2">
             <StatCard label="Conversations" value={conversations.length} sub={openConversations.length > 0 ? `${openConversations.length} open` : 'none open'} />
             <StatCard label="Tickets" value={tickets.length} sub={openTickets.length > 0 ? `${openTickets.length} open` : 'none open'} />
-            <StatCard label="Since" value={new Date(contact.created_at).getFullYear().toString()} sub={formatRelativeDate(contact.created_at)} />
+            <StatCard label="Since" value={contact.created_at ? new Date(contact.created_at).getFullYear().toString() : '—'} sub={contact.created_at ? formatRelativeDate(contact.created_at) : '—'} />
           </div>
         </div>
 
@@ -360,8 +360,8 @@ export function ContactDetailPanel({ contactId, onEdit }: Props) {
             <InfoRow icon={Phone}    label="Phone"    value={contact.phone_number ?? '—'} copyable href={contact.phone_number ? `tel:${contact.phone_number}` : undefined} />
             <InfoRow icon={Mail}     label="Email"    value={contact.email ?? '—'}        copyable href={contact.email ? `mailto:${contact.email}` : undefined} />
             <InfoRow icon={MapPin}   label="Location" value={contact.location ?? '—'}     copyable={false} />
-            <InfoRow icon={Hash}     label="ID"       value={String(contact.id)}          copyable />
-            <InfoRow icon={Calendar} label="Created"  value={formatRelativeDate(contact.created_at)} />
+            <InfoRow icon={Hash}     label="ID"       value={contact.id != null ? String(contact.id) : '—'} copyable />
+            <InfoRow icon={Calendar} label="Created"  value={contact.created_at ? formatRelativeDate(contact.created_at) : '—'} />
           </div>
         </div>
 
