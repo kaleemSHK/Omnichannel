@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useRef } from 'react';
 import { useCallsStore } from '@/lib/store/calls';
 import { useAuthStore } from '@/lib/store/auth';
 import { isDemoDataEnabled, shouldSkipGatewayFetch } from '@/lib/demo/config';
@@ -16,8 +16,18 @@ import {
   startOutgoingRingback,
   stopOutgoingRingback,
 } from '@/lib/telephony/ringtone';
-import { presentIncomingCall, clearIncomingCallUi } from '@/lib/calling/incoming-call-ui';
+import {
+  presentIncomingCall,
+  clearIncomingCallUi,
+  resolveBackendCallSessionId,
+  resolveBackendCallRoomId,
+} from '@/lib/calling/incoming-call-ui';
+import { resolveCallerName } from '@/lib/utils/calling';
+import { unlockSipAudio } from '@/lib/telephony/sip-audio';
 import { answerCall as apiAnswerCall, declineCall as apiDeclineCall } from '@/lib/api/calls';
+import { syncCallTeardown } from '@/lib/calling/sync-call-teardown';
+import { startCallRecording, uploadCallRecording } from '@/lib/telephony/call-recording';
+import { linkCallRecording } from '@/lib/api/calls';
 import { lookupContactAll } from '@/lib/api/connectors';
 import { toast } from 'sonner';
 import type { CallSession } from '@/types';
@@ -93,7 +103,18 @@ const sipCredsRef = { current: { wsUri: SIP_WSS, sipUri: '', password: SIP_PASS 
 // Set when agent clicks Answer before Asterisk has dialled them (ARI-bridge race).
 // The next incoming newRTCSession will be answered automatically.
 const pendingAnswerRef = { current: false };
+const teardownGuardRef = { current: false };
+const callRecorderRef = { current: null as ReturnType<typeof startCallRecording> | null };
+const callConnectedAtRef = { current: null as number | null };
 let sipInitOwners = 0;
+
+function sipAnswerOptions() {
+  return {
+    mediaConstraints: { audio: true, video: false } as const,
+    rtcAnswerConstraints: { offerToReceiveAudio: true, offerToReceiveVideo: false },
+    pcConfig: { iceServers: iceServersRef.current },
+  };
+}
 
 function sessionEnded(session: JsSIPRTCSession | null): boolean {
   if (!session) return true;
@@ -117,6 +138,82 @@ export function useJsSip() {
     setSipControls,
   } = useCallsStore();
   const { user } = useAuthStore();
+  const teardownRef = useRef<(opts: { sendBye: boolean }) => void>(() => {});
+
+  const teardownCallSession = useCallback(
+    async ({ sendBye }: { sendBye: boolean }) => {
+      if (teardownGuardRef.current && !sendBye) return;
+      if (sendBye && teardownGuardRef.current) return;
+      teardownGuardRef.current = true;
+
+      stopIncomingRingtone();
+      stopOutgoingRingback();
+      pendingAnswerRef.current = false;
+
+      const s = sessionRef.current;
+      if (sendBye && s && !sessionEnded(s)) {
+        try {
+          s.terminate();
+        } catch {
+          /* already ended */
+        }
+      }
+
+      sessionRef.current = null;
+      if (incomingIdRef.current) {
+        removeIncomingCall(incomingIdRef.current);
+        incomingIdRef.current = null;
+      }
+
+      const endedCall = useCallsStore.getState().activeCall;
+      const recorder = callRecorderRef.current;
+      callRecorderRef.current = null;
+      const connectedAt = callConnectedAtRef.current;
+      callConnectedAtRef.current = null;
+
+      if (recorder && endedCall?.id && !isDemoDataEnabled() && !shouldSkipGatewayFetch()) {
+        try {
+          const blob = await recorder.stop();
+          if (blob && blob.size > 500) {
+            const durationMs =
+              connectedAt != null ? Math.max(0, Date.now() - connectedAt) : undefined;
+            const uploaded = await uploadCallRecording({
+              callSessionId: endedCall.id,
+              blob,
+              durationMs,
+              direction: endedCall.direction,
+            });
+            if (uploaded?.id) {
+              await linkCallRecording(
+                endedCall.id,
+                uploaded.id,
+                endedCall.roomId,
+                uploaded.storageKey,
+              );
+            }
+          }
+        } catch (e) {
+          console.warn('[JsSIP] call recording upload failed', e);
+        }
+      }
+
+      clearRemoteAudio();
+      setActiveCall(null);
+      setMuted(false);
+      setHeld(false);
+      setAgentState('available');
+
+      await syncCallTeardown(endedCall, {
+        agentId: user?.id ? String(user.id) : undefined,
+        outcome: 'completed',
+      });
+    },
+    [removeIncomingCall, setActiveCall, setMuted, setHeld, setAgentState, user?.id],
+  );
+
+  teardownRef.current = (opts) => {
+    void teardownCallSession(opts);
+  };
 
   useEffect(() => {
     if (isDemoDataEnabled()) return;
@@ -223,6 +320,7 @@ export function useJsSip() {
             originator?: string;
           };
           const { session, originator } = ev;
+          teardownGuardRef.current = false;
           sessionRef.current = session;
 
           if (originator === 'remote') {
@@ -230,7 +328,25 @@ export function useJsSip() {
               ev.request?.from?.uri?.user ??
               ev.request?.from?.uri?.toString?.()?.split('@')[0] ??
               'unknown';
-            const callId = crypto.randomUUID();
+            const store = useCallsStore.getState();
+            const pendingAcd = store.incomingCalls.find(c => {
+              if (c.direction !== 'inbound' || c.status !== 'ringing') return false;
+              const meta = c.metadata as { callerName?: string } | undefined;
+              return (
+                c.transport === 'webrtc' ||
+                Boolean(meta?.callerName?.trim()) ||
+                (c.customerPhone && !['customer', 'desk', 'web', 'blinkone'].includes(c.customerPhone.toLowerCase()))
+              );
+            });
+            const backendId =
+              resolveBackendCallSessionId(callerNum) ?? pendingAcd?.id ?? null;
+            const backendRoomId =
+              resolveBackendCallRoomId(callerNum) ??
+              pendingAcd?.roomId ??
+              (pendingAcd?.metadata as { externalCallId?: string } | undefined)?.externalCallId ??
+              null;
+            const callId = backendId ?? crypto.randomUUID();
+            const routeCallId = backendRoomId ?? backendId ?? callId;
             incomingIdRef.current = callId;
 
             // If the agent already clicked Answer before the SIP INVITE arrived
@@ -239,45 +355,56 @@ export function useJsSip() {
               pendingAnswerRef.current = false;
               stopIncomingRingtone();
               try {
-                session.answer({
-                  mediaConstraints: { audio: true, video: false },
-                  rtcAnswerConstraints: { offerToReceiveAudio: true, offerToReceiveVideo: false },
-                  pcConfig: { iceServers: iceServersRef.current },
-                });
+                void unlockSipAudio();
+                session.answer(sipAnswerOptions());
               } catch {
                 /* session may have ended before answer */
               }
               return;
             }
 
-            // Screen pop — async CRM lookup on caller ANI (D16)
-            if (callerNum && callerNum !== 'unknown') {
-              lookupContactAll(callerNum).then(contact => {
-                if (contact) {
-                  useCallsStore.getState().cacheContact(callerNum, contact.name ?? callerNum);
-                  window.dispatchEvent(
-                    new CustomEvent('blinkone:screen-pop', { detail: { phone: callerNum, contact } }),
-                  );
-                }
-              }).catch(() => undefined);
-            }
-
             const incomingSession = buildCallSession(
               {
                 id: callId,
-                customerPhone: callerNum,
+                roomId: routeCallId,
+                customerPhone: pendingAcd?.customerPhone ?? callerNum,
                 status: 'ringing',
                 direction: 'inbound',
+                transport: 'webrtc',
+                metadata: pendingAcd?.metadata,
+                contactId: pendingAcd?.contactId,
               },
               user,
             );
 
+            const displayName = resolveCallerName(
+              incomingSession,
+              useCallsStore.getState().contactCache,
+            );
+            if (incomingSession.customerPhone && displayName) {
+              useCallsStore.getState().cacheContact(incomingSession.customerPhone, displayName);
+            }
+
+            if (callerNum && callerNum !== 'unknown' && callerNum !== 'customer') {
+              lookupContactAll(callerNum)
+                .then(contact => {
+                  if (contact) {
+                    useCallsStore.getState().cacheContact(callerNum, contact.name ?? callerNum);
+                    window.dispatchEvent(
+                      new CustomEvent('blinkone:screen-pop', { detail: { phone: callerNum, contact } }),
+                    );
+                  }
+                })
+                .catch(() => undefined);
+            }
+
+            // Mobile customer WebRTC calls arrive as From: customer — always show Answer UI.
             presentIncomingCall(incomingSession, {
               onAnswer: () => {
                 clearIncomingCallUi(callId);
-                // SIP answer — sends 200 OK regardless of backend sync result
+                void unlockSipAudio();
                 try {
-                  session.answer({ mediaConstraints: { audio: true, video: false } });
+                  session.answer(sipAnswerOptions());
                 } catch {
                   /* session may have ended */
                 }
@@ -286,9 +413,8 @@ export function useJsSip() {
                   status: 'connected' as const,
                   connectedAt: new Date().toISOString(),
                 };
-                // Try to sync with backend calls service; fall back gracefully
-                // because WebRTC-only calls have no pre-existing call record.
-                void apiAnswerCall(callId)
+                const apiId = backendId ?? callId;
+                void apiAnswerCall(apiId, incomingSession.roomId)
                   .then(s => setActiveCall(s))
                   .catch(() => setActiveCall(connectedSession));
               },
@@ -299,7 +425,7 @@ export function useJsSip() {
                 } catch {
                   /* ignore */
                 }
-                void apiDeclineCall(callId).catch(() => undefined);
+                void apiDeclineCall(callId, incomingSession.roomId).catch(() => undefined);
               },
             });
 
@@ -313,9 +439,11 @@ export function useJsSip() {
 
             session.on('ended', () => {
               if (incomingIdRef.current) clearIncomingCallUi(incomingIdRef.current);
+              teardownRef.current({ sendBye: false });
             });
             session.on('failed', () => {
               if (incomingIdRef.current) clearIncomingCallUi(incomingIdRef.current);
+              teardownRef.current({ sendBye: false });
             });
           } else {
             // Outbound call — show ringing state immediately
@@ -334,6 +462,11 @@ export function useJsSip() {
 
           session.on('peerconnection', () => {
             bindSessionRemoteAudio(session as unknown as { connection?: RTCPeerConnection });
+            if (!callRecorderRef.current) {
+              callRecorderRef.current = startCallRecording(
+                session as unknown as { connection?: RTCPeerConnection },
+              );
+            }
           });
 
           session.on('progress', () => {
@@ -348,26 +481,53 @@ export function useJsSip() {
             stopIncomingRingtone();
             stopOutgoingRingback();
             bindSessionRemoteAudio(session as unknown as { connection?: RTCPeerConnection });
+            callConnectedAtRef.current = Date.now();
+            callRecorderRef.current = startCallRecording(
+              session as unknown as { connection?: RTCPeerConnection },
+            );
             setMuted(false);
             setHeld(false);
             setAgentState('busy');
 
             if (originator === 'remote' && incomingIdRef.current) {
               const id = incomingIdRef.current;
+              const callerNum =
+                ev.request?.from?.uri?.user ??
+                ev.request?.from?.uri?.toString?.()?.split('@')[0] ??
+                'unknown';
+              const backendId = resolveBackendCallSessionId(callerNum) ?? id;
+              const backendRoom = resolveBackendCallRoomId(callerNum) ?? id;
+              const pending = useCallsStore
+                .getState()
+                .incomingCalls.find(c => c.id === id);
               removeIncomingCall(id);
-              setActiveCall(
-                buildCallSession(
-                  {
-                    id,
-                    customerPhone: ev.request?.from?.uri?.user ?? 'unknown',
-                    status: 'connected',
-                    direction: 'inbound',
-                    connectedAt: new Date().toISOString(),
-                  },
-                  user,
-                ),
-              );
               incomingIdRef.current = null;
+              void apiAnswerCall(backendId, backendRoom)
+                .then(s =>
+                  setActiveCall({
+                    ...s,
+                    status: 'connected',
+                    connectedAt: new Date().toISOString(),
+                    transport: 'webrtc',
+                  }),
+                )
+                .catch(() =>
+                  setActiveCall(
+                    buildCallSession(
+                      {
+                        id: backendId,
+                        roomId: backendRoom,
+                        customerPhone: pending?.customerPhone ?? callerNum,
+                        status: 'connected',
+                        direction: 'inbound',
+                        transport: 'webrtc',
+                        connectedAt: new Date().toISOString(),
+                        metadata: pending?.metadata,
+                      },
+                      user,
+                    ),
+                  ),
+                );
             } else {
               const prev = useCallsStore.getState().activeCall;
               if (prev) {
@@ -382,14 +542,7 @@ export function useJsSip() {
 
           session.on('ended', () => {
             if (destroyed) return;
-            stopIncomingRingtone();
-            stopOutgoingRingback();
-            sessionRef.current = null;
-            clearRemoteAudio();
-            setActiveCall(null);
-            setMuted(false);
-            setHeld(false);
-            setAgentState('available');
+            teardownRef.current({ sendBye: false });
           });
 
           session.on('failed', (ev: unknown) => {
@@ -420,13 +573,8 @@ export function useJsSip() {
                 ? ' — check Twilio trial verified numbers, geo permissions, and trunk credentials'
                 : '';
             toast.error(`Call failed: ${detail}${userHint}`);
-
-            sessionRef.current = null;
-            setActiveCall(null);
             setSipError(String(cause));
-            setMuted(false);
-            setHeld(false);
-            setAgentState('available');
+            teardownRef.current({ sendBye: false });
           });
         });
 
@@ -530,10 +678,9 @@ export function useJsSip() {
   );
 
   const answerCall = useCallback(() => {
+    void unlockSipAudio();
     const session = sessionRef.current;
     if (!session) {
-      // No SIP session yet — agent clicked Answer before Asterisk/Kamailio dialled them.
-      // Set a pending flag: the next incoming newRTCSession will be auto-answered.
       pendingAnswerRef.current = true;
       console.info('[JsSIP] answerCall: no session yet, pending auto-answer on next INVITE');
       return;
@@ -541,34 +688,15 @@ export function useJsSip() {
     pendingAnswerRef.current = false;
     stopIncomingRingtone();
     try {
-      session.answer({
-        mediaConstraints: { audio: true, video: false },
-        rtcAnswerConstraints: { offerToReceiveAudio: true, offerToReceiveVideo: false },
-        pcConfig: pcConfig(),
-      });
+      session.answer(sipAnswerOptions());
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Answer failed');
     }
-  }, [pcConfig]);
+  }, []);
 
   const hangup = useCallback(() => {
-    stopIncomingRingtone();
-    stopOutgoingRingback();
-    pendingAnswerRef.current = false;
-    const s = sessionRef.current;
-    if (s && !sessionEnded(s)) {
-      try { s.terminate(); } catch { /* already ended */ }
-    }
-    sessionRef.current = null;
-    if (incomingIdRef.current) {
-      removeIncomingCall(incomingIdRef.current);
-      incomingIdRef.current = null;
-    }
-    setActiveCall(null);
-    setMuted(false);
-    setHeld(false);
-    clearRemoteAudio();
-  }, [removeIncomingCall, setActiveCall, setMuted, setHeld]);
+    teardownRef.current({ sendBye: true });
+  }, []);
 
   const toggleMute = useCallback(() => {
     const s = sessionRef.current;

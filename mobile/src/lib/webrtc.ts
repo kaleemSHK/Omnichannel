@@ -16,14 +16,33 @@ export function installWebRtcGlobals(): boolean {
   }
 
   try {
-    const { RTCPeerConnection, RTCSessionDescription } = require('react-native-webrtc');
-    (globalThis as Record<string, unknown>).RTCPeerConnection = RTCPeerConnection;
-    (globalThis as Record<string, unknown>).RTCSessionDescription = RTCSessionDescription;
+    const rnWebRTC = require('react-native-webrtc') as {
+      registerGlobals: () => void;
+      mediaDevices: { getUserMedia: (c: unknown) => Promise<unknown> };
+    };
+
+    const g = globalThis as typeof globalThis & {
+      navigator?: { mediaDevices?: { getUserMedia?: unknown } };
+    };
+    if (!g.navigator || typeof g.navigator !== 'object') {
+      (g as { navigator: object }).navigator = {};
+    }
+
+    // JsSIP uses navigator.mediaDevices.getUserMedia — not global.getUserMedia alone.
+    rnWebRTC.registerGlobals();
+
+    if (!g.navigator?.mediaDevices?.getUserMedia) {
+      console.warn('[WebRTC] registerGlobals did not set navigator.mediaDevices.getUserMedia');
+      available = false;
+      return false;
+    }
+
     available = true;
     return true;
-  } catch {
+  } catch (e) {
     console.warn(
-      '[WebRTC] Failed to load native module. Install the BlinkOne dev client APK (EAS build).',
+      '[WebRTC] Failed to load native module.',
+      e instanceof Error ? e.message : e,
     );
     available = false;
     return false;

@@ -1,4 +1,4 @@
-import { bnFetch } from './client';
+import { bnFetch, BlinkoneApiError } from './client';
 import type { CallSession, CDRRecord, ApiResponse, CallDirection, CallTransport } from '@/types';
 
 const SVC = 'calls';
@@ -23,25 +23,59 @@ export async function listActiveSessions(): Promise<CallSession[]> {
   return res.data;
 }
 
-export async function answerCall(sessionId: string): Promise<CallSession> {
-  const res = await bnFetch<{ data: CallSession }>(SVC, `/v1/calls/${sessionId}/answer`, {
-    method: 'POST',
-  });
-  return res.data;
+export async function answerCall(sessionId: string, roomId?: string): Promise<CallSession> {
+  const post = (id: string) =>
+    bnFetch<{ data: CallSession }>(SVC, `/v1/calls/${encodeURIComponent(id)}/answer`, {
+      method: 'POST',
+      body: '{}',
+    });
+  try {
+    const res = await post(sessionId);
+    return res.data;
+  } catch (e) {
+    const alt = roomId?.trim();
+    if (alt && alt !== sessionId && e instanceof BlinkoneApiError && e.status === 404) {
+      const res = await post(alt);
+      return res.data;
+    }
+    throw e;
+  }
 }
 
-export async function declineCall(sessionId: string): Promise<void> {
-  await bnFetch<void>(SVC, `/v1/calls/${sessionId}/decline`, {
-    method: 'POST',
-    body: '{}',
-  });
+export async function declineCall(sessionId: string, roomId?: string): Promise<void> {
+  const post = (id: string) =>
+    bnFetch<void>(SVC, `/v1/calls/${encodeURIComponent(id)}/decline`, {
+      method: 'POST',
+      body: '{}',
+    });
+  try {
+    await post(sessionId);
+  } catch (e) {
+    const alt = roomId?.trim();
+    if (alt && alt !== sessionId && e instanceof BlinkoneApiError && e.status === 404) {
+      await post(alt);
+      return;
+    }
+    throw e;
+  }
 }
 
-export async function hangupCall(sessionId: string): Promise<void> {
-  await bnFetch<void>(SVC, `/v1/calls/${sessionId}/hangup`, {
-    method: 'POST',
-    body: '{}',
-  });
+export async function hangupCall(sessionId: string, roomId?: string): Promise<void> {
+  const post = (id: string) =>
+    bnFetch<void>(SVC, `/v1/calls/${encodeURIComponent(id)}/hangup`, {
+      method: 'POST',
+      body: '{}',
+    });
+  try {
+    await post(sessionId);
+  } catch (e) {
+    const alt = roomId?.trim();
+    if (alt && alt !== sessionId && e instanceof BlinkoneApiError && e.status === 404) {
+      await post(alt);
+      return;
+    }
+    throw e;
+  }
 }
 
 export async function endCall(_sessionId: string, _outcome = 'completed'): Promise<void> {

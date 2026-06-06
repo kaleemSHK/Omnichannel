@@ -6,6 +6,7 @@ import {
   createTenant,
   impersonateTenant,
   listTenants,
+  updateTenant,
   updateTenantFeatures,
   listAdmins,
   createAdmin,
@@ -48,20 +49,17 @@ const QUERY_KEY = ['platform-tenants'];
 
 async function loadTenants(): Promise<PlatformTenantView[]> {
   if (isDemoDataEnabled()) return DEMO_PLATFORM_TENANTS;
-  try {
-    const rows = await listTenants();
-    return rows.map(t => normalizeTenant(t));
-  } catch {
-    return [];
-  }
+  const rows = await listTenants();
+  return rows.map(t => normalizeTenant(t));
 }
 
 export function usePlatformTenants() {
   const gwEnabled = isGatewayQueryEnabled();
+  const isPlatformAdmin = useAuthStore(s => s.user?.role === 'platform_admin');
   return useQuery({
     queryKey: [...QUERY_KEY, isDemoDataEnabled()],
     queryFn: loadTenants,
-    enabled: gwEnabled,
+    enabled: gwEnabled && (isDemoDataEnabled() || isPlatformAdmin),
   });
 }
 
@@ -108,9 +106,32 @@ export function useUpdateTenantFeature() {
       if (ctx?.prev) qc.setQueryData(key, ctx.prev);
       toast.error('Could not update feature flag');
     },
-    onSuccess: data => {
-      qc.setQueryData([...QUERY_KEY, isDemoDataEnabled()], data);
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: QUERY_KEY });
     },
+  });
+}
+
+export function useUpdateTenant() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      tenantId,
+      patch,
+    }: {
+      tenantId: string;
+      patch: { name?: string; status?: PlatformTenantView['status'] };
+    }) => {
+      if (!isDemoDataEnabled()) {
+        await updateTenant(tenantId, patch);
+      }
+      return patch;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: QUERY_KEY });
+      toast.success('Tenant updated');
+    },
+    onError: () => toast.error('Could not update tenant'),
   });
 }
 
@@ -129,13 +150,21 @@ export function useCreatePlatformTenant() {
         Object.assign(apiFeatures, featuresToApiPatch(k as PlatformFeatureKey, v));
       }
       if (!isDemoDataEnabled()) {
-        await createTenant({
+        const created = await createTenant({
           name: payload.name,
           slug: payload.slug,
           plan: payload.plan,
           adminEmail: payload.adminEmail,
           features: apiFeatures,
         });
+        if (created.chatwootStub) {
+          toast.warning('Tenant created in stub mode — set CHATWOOT_PLATFORM_TOKEN on the server');
+        } else if (created.ownerTempPassword) {
+          toast.success(
+            `Tenant created. Owner login: ${payload.adminEmail} / ${created.ownerTempPassword}`,
+            { duration: 20000 },
+          );
+        }
       }
       const row: PlatformTenantView = {
         id: `new-${Date.now()}`,
@@ -156,7 +185,7 @@ export function useCreatePlatformTenant() {
     onSuccess: () => {
       const key = [...QUERY_KEY, isDemoDataEnabled()];
       qc.invalidateQueries({ queryKey: key });
-      toast.success('Tenant created');
+      if (isDemoDataEnabled()) toast.success('Tenant created');
     },
     onError: () => toast.error('Could not create tenant'),
   });
@@ -166,27 +195,37 @@ export function useImpersonateTenant() {
   const setAuth = useAuthStore(s => s.setAuth);
   const user = useAuthStore(s => s.user);
   const tokens = useAuthStore(s => s.tokens);
+  const updateTokens = useAuthStore(s => s.updateTokens);
 
   return useMutation({
     mutationFn: async (tenant: PlatformTenantView) => {
+      if (!user || !tokens) throw new Error('Not signed in');
       if (!isDemoDataEnabled()) {
-        try {
-          await impersonateTenant(tenant.id);
-        } catch {
-          /* demo fallback below */
-        }
-      }
-      if (user && tokens) {
+        const result = await impersonateTenant(tenant.id);
+        if (!result.token) throw new Error('No impersonation token');
+        const newTokens = { ...tokens, gatewayJwt: result.token };
+        await updateTokens(newTokens);
+        const { hydratePermissionsFromJwt } = await import('@/lib/store/permissions');
+        hydratePermissionsFromJwt(result.token);
         setAuth(
           {
             ...user,
-            tenantId: tenant.id,
-            chatwootAccountId: Number(tenant.id) || user.chatwootAccountId,
-            role: user.role,
+            tenantId: result.tenantId,
+            chatwootAccountId:
+              result.chatwootAccountId ?? (Number(tenant.id) || user.chatwootAccountId),
           },
-          tokens,
+          newTokens,
         );
+        return tenant;
       }
+      setAuth(
+        {
+          ...user,
+          tenantId: tenant.id,
+          chatwootAccountId: Number(tenant.id) || user.chatwootAccountId,
+        },
+        tokens,
+      );
       return tenant;
     },
     onSuccess: t => {

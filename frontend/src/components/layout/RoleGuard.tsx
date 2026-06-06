@@ -4,7 +4,7 @@ import { useEffect, useLayoutEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store/auth';
-import { canAccessRoute } from '@/lib/rbac';
+import { canAccessRoute, defaultRouteForRole } from '@/lib/rbac';
 
 export function RoleGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -25,7 +25,7 @@ export function RoleGuard({ children }: { children: React.ReactNode }) {
       return;
     }
     if (!canAccessRoute(user.role, pathname)) {
-      router.replace('/conversations');
+      router.replace(defaultRouteForRole(user.role));
     }
   }, [hydrated, tokens, user, pathname, router]);
 

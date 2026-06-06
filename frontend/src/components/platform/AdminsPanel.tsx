@@ -89,6 +89,7 @@ function InviteForm({ onClose }: { onClose: () => void }) {
 
 function AdminRow({ admin }: { admin: PlatformAdmin }) {
   const del = useDeleteAdmin();
+  const configured = admin.source === 'configured' || admin.id.startsWith('env-');
   return (
     <div className="flex items-center justify-between gap-3 py-3 border-b border-gray-100 last:border-0">
       <div className="flex items-center gap-3 min-w-0">
@@ -114,9 +115,9 @@ function AdminRow({ admin }: { admin: PlatformAdmin }) {
         <button
           type="button"
           onClick={() => del.mutate(admin.id)}
-          disabled={del.isPending}
-          className="text-gray-400 hover:text-red-500 transition-colors p-1 rounded"
-          title="Remove admin"
+          disabled={del.isPending || configured}
+          className="text-gray-400 hover:text-red-500 transition-colors p-1 rounded disabled:opacity-30 disabled:cursor-not-allowed"
+          title={configured ? 'Configured in PLATFORM_ADMIN_EMAILS' : 'Remove admin'}
         >
           <Trash2 size={14} />
         </button>
@@ -126,7 +127,8 @@ function AdminRow({ admin }: { admin: PlatformAdmin }) {
 }
 
 export function AdminsPanel() {
-  const { data: admins = [], isLoading } = useAdmins();
+  const { data, isLoading } = useAdmins();
+  const admins = Array.isArray(data) ? data : [];
   const [inviting, setInviting] = useState(false);
 
   return (
@@ -135,7 +137,7 @@ export function AdminsPanel() {
         <div>
           <h3 className="text-sm font-semibold text-gray-800">Platform administrators</h3>
           <p className="text-xs text-gray-500 mt-0.5">
-            Manage who has access to the platform admin panel.
+            Manage who has access to the platform admin panel. Server-configured emails (PLATFORM_ADMIN_EMAILS) appear as active.
           </p>
         </div>
         <Button size="sm" onClick={() => setInviting(true)} disabled={inviting}>

@@ -14,6 +14,12 @@ import {
   patchToYamlOverride,
   loadBrandingConfig,
 } from '../lib/branding.js';
+import {
+  configuredAdminEmails,
+  isConfiguredAdminId,
+  listPlatformAdmins,
+  newInvitedAdmin,
+} from '../lib/platform-admins.js';
 
 const log   = createLogger('platform');
 const PORT  = parseInt(process.env.PORT || '8790', 10);
@@ -373,7 +379,7 @@ app.post('/v1/mfa/verify', async (req, res) => {
 // ─── Platform Admins (P1) ─────────────────────────────────────────────────────
 
 app.get('/v1/admins', auth, (_req, res) => {
-  ok(res, store.load().admins ?? []);
+  ok(res, listPlatformAdmins(store.load()));
 });
 
 app.post('/v1/admins', auth, async (req, res) => {
@@ -390,14 +396,7 @@ app.post('/v1/admins', auth, async (req, res) => {
       if (s.admins.some(a => a.email === normalized)) {
         throw Object.assign(new Error(), { code: 409 });
       }
-      const row = {
-        id: randomUUID(),
-        email: normalized,
-        name: name?.trim() || normalized.split('@')[0],
-        role,
-        status: 'invited',
-        createdAt: new Date().toISOString(),
-      };
+      const row = newInvitedAdmin({ email, name, role });
       s.admins.push(row);
       return row;
     });
@@ -410,6 +409,9 @@ app.post('/v1/admins', auth, async (req, res) => {
 });
 
 app.delete('/v1/admins/:id', auth, async (req, res) => {
+  if (isConfiguredAdminId(req.params.id)) {
+    return fail(res, 'FORBIDDEN', 'Configured platform admins cannot be removed here — update PLATFORM_ADMIN_EMAILS', 403);
+  }
   await store.withStore(s => {
     s.admins = (s.admins ?? []).filter(a => a.id !== req.params.id);
   });

@@ -10,6 +10,7 @@ import { applySuperviseMode } from './supervise.js';
 import { dbEnabled, runMigrations, closePool, getPool } from '../lib/db.js';
 import { resolveTenantId } from '../lib/tenant.js';
 import { requireFeature } from '../_shared/lib/features.js';
+import { requireIvrRbac } from '../_shared/lib/rbac.js';
 import { validateGraph } from '../lib/graph.js';
 import * as flowRepo from '../lib/flow-repo.js';
 import { twilioVoicebotRouter } from '../lib/twilio-voicebot.js';
@@ -39,6 +40,7 @@ const app  = express();
 app.disable('x-powered-by');
 app.use(express.json({ limit: '2mb' }));
 app.use(requestId);
+app.use(requireIvrRbac());
 healthRouter(app, 'ivr');
 mountMetrics(app, 'ivr');
 
@@ -78,6 +80,25 @@ app.get('/v1/flows', async (req, res) => {
     }
   }
   return ok(res, fileListFlows());
+});
+
+app.get('/v1/flows/welcome', async (req, res) => {
+  const tenantId = resolveTenantId(req);
+  try {
+    if (dbEnabled()) {
+      return ok(res, await flowRepo.getWelcomeMessage(tenantId));
+    }
+    const flows = fileListFlows();
+    const def = flows.find((f) => f.isDefault) ?? flows[0];
+    const text = def?.graph?.nodes?.find((n) => n.id === def.graph?.entry)?.text;
+    return ok(res, {
+      message: text || 'Welcome to BlinkOne support. Please wait while we connect you to an agent.',
+      flowName: def?.name ?? 'Default IVR',
+    });
+  } catch (e) {
+    log.error({ err: e.message }, 'welcome message');
+    return fail(res, 'INTERNAL_ERROR', 'Failed to load welcome message', 500);
+  }
 });
 
 app.get('/v1/flows/:id', async (req, res) => {

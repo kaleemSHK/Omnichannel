@@ -3,7 +3,7 @@
  * Gateway route: gateway → services/calls
  */
 
-import { bnFetch } from './client';
+import { bnFetch, BlinkoneApiError } from './client';
 import type { CallSession, CDRRecord, ApiResponse } from '@/types';
 
 const SVC = 'calls';
@@ -34,25 +34,109 @@ export async function createSession(payload: {
   return res.data;
 }
 
-export async function answerCall(sessionId: string): Promise<CallSession> {
-  const res = await bnFetch<{ data: CallSession }>(SVC, `/v1/calls/${sessionId}/answer`, {
-    method: 'POST',
-  });
-  return res.data;
+export async function answerCall(sessionId: string, roomId?: string): Promise<CallSession> {
+  const post = (id: string) =>
+    bnFetch<{ data: CallSession }>(SVC, `/v1/calls/${encodeURIComponent(id)}/answer`, {
+      method: 'POST',
+      body: '{}',
+    });
+  try {
+    const res = await post(sessionId);
+    return res.data;
+  } catch (e) {
+    const alt = roomId?.trim();
+    if (
+      alt &&
+      alt !== sessionId &&
+      e instanceof BlinkoneApiError &&
+      e.status === 404
+    ) {
+      const res = await post(alt);
+      return res.data;
+    }
+    throw e;
+  }
 }
 
-export async function declineCall(sessionId: string): Promise<void> {
-  await bnFetch<void>(SVC, `/v1/calls/${sessionId}/decline`, {
-    method: 'POST',
-    body: '{}',
-  });
+export async function declineCall(sessionId: string, roomId?: string): Promise<void> {
+  const post = (id: string) =>
+    bnFetch<void>(SVC, `/v1/calls/${encodeURIComponent(id)}/decline`, {
+      method: 'POST',
+      body: '{}',
+    });
+  try {
+    await post(sessionId);
+  } catch (e) {
+    const alt = roomId?.trim();
+    if (alt && alt !== sessionId && e instanceof BlinkoneApiError && e.status === 404) {
+      await post(alt);
+      return;
+    }
+    throw e;
+  }
 }
 
-export async function endCall(sessionId: string, outcome = 'completed'): Promise<void> {
-  await bnFetch<void>(SVC, `/v1/calls/${sessionId}`, {
-    method: 'PATCH',
-    body: JSON.stringify({ status: 'ended', outcome }),
-  });
+export async function linkCallRecording(
+  sessionId: string,
+  recordingId: string,
+  roomId?: string,
+  storageKey?: string,
+): Promise<void> {
+  const post = (id: string) =>
+    bnFetch<void>(SVC, `/v1/calls/${encodeURIComponent(id)}/recording-link`, {
+      method: 'POST',
+      body: JSON.stringify({ recordingId, storageKey: storageKey ?? null }),
+    });
+  try {
+    await post(sessionId);
+  } catch (e) {
+    const alt = roomId?.trim();
+    if (alt && alt !== sessionId && e instanceof BlinkoneApiError && e.status === 404) {
+      await post(alt);
+      return;
+    }
+    throw e;
+  }
+}
+
+export async function hangupCall(sessionId: string, roomId?: string): Promise<void> {
+  const post = (id: string) =>
+    bnFetch<void>(SVC, `/v1/calls/${encodeURIComponent(id)}/hangup`, {
+      method: 'POST',
+      body: '{}',
+    });
+  try {
+    await post(sessionId);
+  } catch (e) {
+    const alt = roomId?.trim();
+    if (alt && alt !== sessionId && e instanceof BlinkoneApiError && e.status === 404) {
+      await post(alt);
+      return;
+    }
+    throw e;
+  }
+}
+
+export async function endCall(
+  sessionId: string,
+  outcome = 'completed',
+  roomId?: string,
+): Promise<void> {
+  const patch = (id: string) =>
+    bnFetch<void>(SVC, `/v1/calls/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status: 'ended', outcome }),
+    });
+  try {
+    await patch(sessionId);
+  } catch (e) {
+    const alt = roomId?.trim();
+    if (alt && alt !== sessionId && e instanceof BlinkoneApiError && e.status === 404) {
+      await patch(alt);
+      return;
+    }
+    throw e;
+  }
 }
 
 export async function holdCall(sessionId: string, hold: boolean): Promise<void> {
@@ -70,11 +154,32 @@ export async function listIncomingCalls(): Promise<CallSession[]> {
 export async function addCallNotes(
   sessionId: string,
   data: { outcome: string; notes?: string },
+  roomId?: string,
 ): Promise<void> {
-  await bnFetch<void>(SVC, `/v1/calls/${sessionId}`, {
-    method: 'PATCH',
-    body: JSON.stringify({ outcome: data.outcome, metadata: { notes: data.notes ?? '' } }),
+  const payload = JSON.stringify({
+    outcome: data.outcome,
+    metadata: { notes: data.notes ?? '' },
   });
+  const tryPatch = (id: string) =>
+    bnFetch<void>(SVC, `/v1/calls/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: payload,
+    });
+
+  try {
+    await tryPatch(sessionId);
+  } catch (e) {
+    if (
+      roomId &&
+      roomId !== sessionId &&
+      e instanceof BlinkoneApiError &&
+      e.status === 404
+    ) {
+      await tryPatch(roomId);
+      return;
+    }
+    throw e;
+  }
 }
 
 export async function listCDR(filters: {

@@ -12,7 +12,7 @@ BEGIN
     SELECT 1 FROM pg_constraint WHERE conname = 'call_sessions_transport_check'
   ) THEN
     ALTER TABLE call_sessions ADD CONSTRAINT call_sessions_transport_check
-      CHECK (transport IN ('pstn', 'whatsapp'));
+      CHECK (transport IN ('pstn', 'whatsapp', 'webrtc'));
   END IF;
   IF NOT EXISTS (
     SELECT 1 FROM pg_constraint WHERE conname = 'call_sessions_direction_check'

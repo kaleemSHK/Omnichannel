@@ -24,6 +24,8 @@ import {
 } from '@/components/ui/select-radix';
 import { Layers, Pencil, Trash2, Plus, X } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
+import { isDemoDataEnabled } from '@/lib/demo/config';
+import { useAuthStore } from '@/lib/store/auth';
 
 // ─── Demo fallback ─────────────────────────────────────────────────────────────
 
@@ -238,15 +240,17 @@ async function updateQueueById(id: string, data: Partial<Queue>): Promise<Queue>
 
 export function QueuesSection() {
   const qc = useQueryClient();
+  const tenantId = useAuthStore(s => s.user?.tenantId ?? '');
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<Queue | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Queue | null>(null);
 
-  const { data: queues = [], isLoading } = useQuery({
-    queryKey: ['queues-settings'],
+  const { data: queues = [], isLoading, isError, error } = useQuery({
+    queryKey: ['queues-settings', tenantId],
+    enabled: Boolean(tenantId) || isDemoDataEnabled(),
     queryFn: async () => {
-      try { return await listQueues(); }
-      catch { return DEMO_QUEUES; }
+      if (isDemoDataEnabled()) return DEMO_QUEUES;
+      return listQueues();
     },
   });
 

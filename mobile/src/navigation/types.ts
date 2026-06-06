@@ -31,6 +31,7 @@ export type CustomerStackParamList = {
   ChatDetail: { id: string };
   TicketDetail: { id: string };
   NewTicket: undefined;
+  CallQueue: { callId: string; welcomeMessage?: string };
 };
 
 export type RootStackParamList = {

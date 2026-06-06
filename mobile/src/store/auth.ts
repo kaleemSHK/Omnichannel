@@ -1,8 +1,11 @@
 import { create } from 'zustand';
 import { saveTokens, loadTokens, clearTokens } from '@/lib/storage';
 import { fetchProfile, refreshGatewayToken } from '@/api/auth';
+import { hydratePermissionsFromJwt } from '@/lib/permissions';
+import { usePermissionsStore } from '@/lib/permissions';
 import { registerPushDevice } from '@/api/devices';
-import { disconnectCable } from '@/api/websocket';
+import { registerChatwootPush } from '@/api/chatwoot-push';
+import { disconnectCable, reconnectAgentRoom } from '@/api/websocket';
 import type { BlinkoneUser, AuthTokens } from '@/types';
 
 async function syncPushRegistration() {
@@ -10,6 +13,9 @@ async function syncPushRegistration() {
   if (!pushToken || !tokens?.gatewayJwt) return;
   try {
     await registerPushDevice(pushToken);
+    if (tokens.accessToken) {
+      await registerChatwootPush(tokens.accessToken, pushToken);
+    }
   } catch (err) {
     console.warn('[push] registration failed', err);
   }
@@ -37,16 +43,22 @@ export const useAuthStore = create<AuthState>((set) => ({
     const stored = await loadTokens();
     if (stored?.accessToken) {
       try {
-        const user = await fetchProfile(stored.accessToken);
+        const profile = await fetchProfile(stored.accessToken);
         let gatewayJwt = stored.gatewayJwt;
         try {
           gatewayJwt = await refreshGatewayToken(stored.accessToken);
         } catch {
           if (!gatewayJwt) throw new Error('Gateway JWT missing');
         }
-        const tokens = { ...stored, gatewayJwt };
+        const tokens = {
+          ...stored,
+          gatewayJwt,
+          pubsubToken: profile.pubsubToken ?? stored.pubsubToken,
+        };
         await saveTokens(tokens);
-        set({ user, tokens, hydrated: true });
+        hydratePermissionsFromJwt(tokens.gatewayJwt);
+        set({ user: profile.user, tokens, hydrated: true });
+        reconnectAgentRoom();
         void syncPushRegistration();
         return;
       } catch {
@@ -61,13 +73,16 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   setAuth: async (user, tokens) => {
     await saveTokens(tokens);
+    hydratePermissionsFromJwt(tokens.gatewayJwt);
     set({ user, tokens });
+    reconnectAgentRoom();
     void syncPushRegistration();
   },
 
   clearAuth: async () => {
     disconnectCable();
     await clearTokens();
+    usePermissionsStore.getState().clear();
     set({ user: null, tokens: null, pushToken: null });
   },
 

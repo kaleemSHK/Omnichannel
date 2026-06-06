@@ -2,41 +2,36 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { listAgents, listQueues, setAgentState } from '@/lib/api/routing';
-import { isDemoDataEnabled, shouldSkipGatewayFetch } from '@/lib/demo/config';
+import { isDemoDataEnabled } from '@/lib/demo/config';
+import { isLiveGatewayEnabled } from '@/lib/live-data/policy';
 import { DEMO_AGENTS, DEMO_QUEUES } from '@/lib/demo/callingFixture';
 import type { AgentState } from '@/types';
 
 export function useAgents() {
-  const live = !shouldSkipGatewayFetch() || isDemoDataEnabled();
+  const live = isLiveGatewayEnabled();
   return useQuery({
-    queryKey: ['agents', isDemoDataEnabled(), live],
+    queryKey: ['agents', 'live', live],
     queryFn: async () => {
-      if (shouldSkipGatewayFetch()) return DEMO_AGENTS;
-      try {
-        const rows = await listAgents();
-        return rows.length ? rows : DEMO_AGENTS;
-      } catch {
-        return DEMO_AGENTS;
-      }
+      if (isDemoDataEnabled()) return DEMO_AGENTS;
+      if (!live) return [];
+      return listAgents();
     },
     refetchInterval: live ? 5_000 : false,
+    enabled: live || isDemoDataEnabled(),
   });
 }
 
 export function useQueues() {
-  const live = !shouldSkipGatewayFetch() || isDemoDataEnabled();
+  const live = isLiveGatewayEnabled();
   return useQuery({
-    queryKey: ['queues', isDemoDataEnabled(), live],
+    queryKey: ['queues', 'live', live],
     queryFn: async () => {
-      if (shouldSkipGatewayFetch()) return DEMO_QUEUES;
-      try {
-        const rows = await listQueues();
-        return rows.length ? rows : DEMO_QUEUES;
-      } catch {
-        return DEMO_QUEUES;
-      }
+      if (isDemoDataEnabled()) return DEMO_QUEUES;
+      if (!live) return [];
+      return listQueues();
     },
     refetchInterval: live ? 10_000 : false,
+    enabled: live || isDemoDataEnabled(),
   });
 }
 
@@ -45,6 +40,8 @@ export function useSetAgentState() {
   return useMutation({
     mutationFn: ({ agentId, state }: { agentId: string; state: AgentState }) =>
       setAgentState(agentId, state),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['agents'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['agents'] });
+    },
   });
 }

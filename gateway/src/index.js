@@ -10,6 +10,7 @@ import { piiSerializer, pinoMixin, PII_REDACT, maskString } from '../../services
 import { rateLimitMiddleware, authRateLimitMiddleware } from './rate-limiter.js';
 import { mountMetrics } from '../../services/_shared/lib/metrics-middleware.js';
 import { mountCustomerRoutes } from '../lib/customer-routes.js';
+import { rbacApiGuard } from '../lib/rbac-guard.js';
 import { mountDeviceRoutes } from '../lib/device-routes.js';
 
 const log = pino({
@@ -128,11 +129,56 @@ function signTenantHeaders(payload) {
   if ((payload.roles || []).includes('platform_admin')) {
     headers['x-blinkone-platform-role'] = 'platform_admin';
   }
+  if (Array.isArray(payload.permissions) && payload.permissions.length) {
+    headers['x-blinkone-permissions'] = payload.permissions.join(',');
+  }
+  if (Array.isArray(payload.pages) && payload.pages.length) {
+    headers['x-blinkone-pages'] = payload.pages.join(',');
+  }
   return headers;
+}
+
+async function loadEffectiveRbac({ tenantId, userId, roles, email, name, chatwootRole }) {
+  if (!U.tenant || !TOKENS.tenant) return null;
+  const isPlatformAdmin = roles.includes('platform_admin');
+  const qs = new URLSearchParams({
+    user_id: String(userId),
+    ...(chatwootRole ? { chatwoot_role: chatwootRole } : {}),
+    ...(email ? { email } : {}),
+    ...(name ? { name } : {}),
+  });
+  try {
+    const res = await fetch(`${U.tenant}/v1/rbac/effective?${qs}`, {
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${TOKENS.tenant}`,
+        'X-Blinkone-Tenant-Id': String(tenantId),
+        'X-Blinkone-User-Id': String(userId),
+        ...(isPlatformAdmin ? { 'X-Blinkone-Platform-Role': 'platform_admin' } : {}),
+      },
+    });
+    if (!res.ok) return null;
+    const body = await res.json();
+    return body?.data ?? body;
+  } catch {
+    return null;
+  }
 }
 
 function isPlatformAdminPayload(payload) {
   return (payload?.roles || []).includes('platform_admin');
+}
+
+function requiresPlatformAdminForTenantRoute(path, method) {
+  if (path === '/api/tenant/v1/tenants' || path.startsWith('/api/tenant/v1/tenants?')) {
+    return true;
+  }
+  if (method === 'PATCH' && /^\/api\/tenant\/v1\/tenants\/[^/]+$/.test(path)) return true;
+  if (method === 'POST' && /^\/api\/tenant\/v1\/tenants\/[^/]+\/suspend$/.test(path)) return true;
+  if (method === 'POST' && /^\/api\/tenant\/v1\/tenants\/[^/]+\/impersonate$/.test(path)) return true;
+  if (method === 'POST' && /^\/api\/tenant\/v1\/tenants\/[^/]+\/domains$/.test(path)) return true;
+  if (method === 'POST' && /^\/api\/tenant\/v1\/domains\/[^/]+\/verify-acme$/.test(path)) return true;
+  return false;
 }
 
 function requirePlatformAdmin(req, res, next) {
@@ -146,11 +192,10 @@ function requirePlatformAdmin(req, res, next) {
     const pathTenant = path.match(/\/tenants\/([^/]+)\/branding$/)?.[1] ?? '';
     if (jwtTenant && pathTenant && jwtTenant === pathTenant) return next();
   }
-  const tenantRoute =
-    path.startsWith('/api/tenant') && path !== '/api/tenant/v1/health';
   const platformMutate =
     path.startsWith('/api/platform') && ['POST', 'PATCH', 'PUT', 'DELETE'].includes(req.method);
-  if (!tenantRoute && !platformMutate) return next();
+  const tenantPlatformOnly = requiresPlatformAdminForTenantRoute(path, req.method);
+  if (!platformMutate && !tenantPlatformOnly) return next();
   if (isPlatformAdminPayload(req.gatewayAuth?.payload)) return next();
   return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Platform admin required' } });
 }
@@ -346,6 +391,7 @@ mountCustomerRoutes(app, { JWT_SECRET, log, U, TOKENS });
 mountDeviceRoutes(app, { JWT_SECRET, log, jwt });
 
 app.use(authenticateGatewayJwt);
+app.use(rbacApiGuard());
 app.use(requirePlatformAdmin);
 app.use(usageLimitGuard);
 
@@ -388,9 +434,17 @@ app.post('/api/auth/token', authRateLimitMiddleware(), express.json(), async (re
     const tenantId = String(accountId);
     const roles = mapChatwootRoles(user.role);
     const email = String(user.email || '').trim().toLowerCase();
-    if (email && PLATFORM_ADMIN_EMAILS.includes(email)) {
-      roles.push('platform_admin');
+    if (isChatwootSuperAdmin(user) || (email && PLATFORM_ADMIN_EMAILS.includes(email))) {
+      if (!roles.includes('platform_admin')) roles.push('platform_admin');
     }
+    const rbac = await loadEffectiveRbac({
+      tenantId,
+      userId,
+      roles,
+      email: user.email,
+      name: user.name,
+      chatwootRole: user.role,
+    });
     const expiresIn = 12 * 60 * 60;
 
     // ── MFA check (Sprint 2 M01) ───────────────────────────────────────────
@@ -431,12 +485,21 @@ app.post('/api/auth/token', authRateLimitMiddleware(), express.json(), async (re
         tenant_id: tenantId,
         roles,
         account_id: accountId,
+        permissions: rbac?.permissions ?? [],
+        pages: rbac?.pages ?? [],
       },
       JWT_SECRET,
       { expiresIn, issuer: 'blinkone-gateway' },
     );
 
-    return res.json({ token, expiresIn });
+    return res.json({
+      token,
+      expiresIn,
+      roles,
+      permissions: rbac?.permissions ?? [],
+      pages: rbac?.pages ?? [],
+      rbacRoles: rbac?.roles ?? [],
+    });
   } catch (e) {
     log.error({ err: e.message }, 'auth token exchange failed');
     return res.status(502).json({ error: { code: 'BAD_GATEWAY', message: 'Token exchange failed' } });
@@ -448,6 +511,11 @@ function mapChatwootRoles(role) {
   if (role === 'supervisor') return ['supervisor'];
   if (role === 'agent') return ['agent'];
   return ['viewer'];
+}
+
+/** Chatwoot SuperAdmin (platform operator) → BlinkOne platform_admin. */
+function isChatwootSuperAdmin(user) {
+  return String(user?.type ?? '').trim() === 'SuperAdmin';
 }
 
 // ─── MFA step-up — Sprint 2 M01 ─────────────────────────────────────────────
@@ -505,6 +573,81 @@ app.post('/api/auth/mfa', authRateLimitMiddleware(), express.json(), async (req,
 
   log.info({ userId, tenantId }, 'MFA verified — JWT issued');
   return res.json({ token, expiresIn });
+});
+
+/** Platform admin — switch JWT tenant context (impersonation). */
+app.post('/api/auth/impersonate-tenant', authRateLimitMiddleware(), express.json(), async (req, res) => {
+  const auth = String(req.headers.authorization || '');
+  if (!auth.startsWith('Bearer ')) {
+    return res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Bearer token required' } });
+  }
+  let payload;
+  try {
+    payload = jwt.verify(auth.slice(7).trim(), JWT_SECRET);
+  } catch {
+    return res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Invalid or expired token' } });
+  }
+  if (!isPlatformAdminPayload(payload)) {
+    return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Platform admin required' } });
+  }
+  const targetTenantId = String(req.body?.tenant_id ?? req.body?.tenantId ?? '');
+  if (!targetTenantId) {
+    return res.status(400).json({ error: { code: 'VALIDATION_ERROR', message: 'tenant_id required' } });
+  }
+  if (!U.tenant || !TOKENS.tenant) {
+    return res.status(501).json({ error: { code: 'NOT_CONFIGURED', message: 'Tenant service unavailable' } });
+  }
+  try {
+    const tenantRes = await fetch(`${U.tenant}/v1/tenants/${encodeURIComponent(targetTenantId)}`, {
+      headers: { Accept: 'application/json', Authorization: `Bearer ${TOKENS.tenant}` },
+    });
+    if (!tenantRes.ok) {
+      return res.status(tenantRes.status === 404 ? 404 : 502).json({
+        error: { code: 'NOT_FOUND', message: 'Tenant not found' },
+      });
+    }
+    const tenantBody = await tenantRes.json();
+    const tenant = tenantBody?.data ?? tenantBody;
+    const accountId = Number(tenant.chatwootAccountId ?? tenant.chatwoot_account_id ?? targetTenantId);
+    const roles = Array.isArray(payload.roles) ? [...payload.roles] : [];
+    if (!roles.includes('platform_admin')) roles.push('platform_admin');
+    const rbac = await loadEffectiveRbac({
+      tenantId: targetTenantId,
+      userId: payload.sub,
+      roles,
+      email: payload.email,
+      name: payload.name,
+      chatwootRole: 'administrator',
+    });
+    const expiresIn = 12 * 60 * 60;
+    const token = jwt.sign(
+      {
+        sub: String(payload.sub),
+        tenant_id: targetTenantId,
+        account_id: accountId,
+        roles,
+        permissions: rbac?.permissions ?? payload.permissions ?? [],
+        pages: rbac?.pages ?? payload.pages ?? [],
+        impersonating: true,
+        impersonated_from: payload.tenant_id,
+      },
+      JWT_SECRET,
+      { expiresIn, issuer: 'blinkone-gateway' },
+    );
+    log.info({ actor: payload.sub, targetTenantId }, 'tenant impersonation JWT issued');
+    return res.json({
+      token,
+      expiresIn,
+      tenantId: targetTenantId,
+      chatwootAccountId: accountId,
+      roles,
+      permissions: rbac?.permissions ?? [],
+      pages: rbac?.pages ?? [],
+    });
+  } catch (e) {
+    log.error({ err: e.message }, 'impersonate-tenant failed');
+    return res.status(502).json({ error: { code: 'BAD_GATEWAY', message: 'Impersonation failed' } });
+  }
 });
 
 // Chatwoot pass-through (must be after /api/auth/token)

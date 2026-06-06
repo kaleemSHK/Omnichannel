@@ -8,14 +8,16 @@ import {
   answerCall,
 } from '@/lib/api/calls';
 import { bnFetch } from '@/lib/api/client';
-import { isDemoDataEnabled, isGatewayQueryEnabled, shouldSkipGatewayFetch } from '@/lib/demo/config';
+import { isDemoDataEnabled } from '@/lib/demo/config';
+import { isLiveGatewayEnabled } from '@/lib/live-data/policy';
+import { shouldSkipGatewayFetch } from '@/lib/demo/config';
 import { BlinkoneApiError } from '@/lib/api/client';
 import { DEMO_CDR } from '@/lib/demo/callingFixture';
 import { DEMO_CALLS } from '@/lib/demo/callsFixture';
 import type { CallSession, CDRFilters, CDRRecord } from '@/types';
 
 export function useActiveSessions() {
-  const live = isGatewayQueryEnabled();
+  const live = isLiveGatewayEnabled();
   return useQuery({
     queryKey: ['activeSessions', isDemoDataEnabled(), live],
     queryFn: async () => {
@@ -46,7 +48,7 @@ export function useCDR(filters?: CDRFilters) {
   const from = filters?.from ?? '';
   const to = filters?.to ?? '';
   const agentId = filters?.agentId ?? '';
-  const live = isGatewayQueryEnabled();
+  const live = isLiveGatewayEnabled();
   return useQuery({
     queryKey: ['cdr', page, limit, from, to, agentId, isDemoDataEnabled(), live],
     queryFn: async () => {
@@ -83,7 +85,7 @@ async function fetchAllCalls(): Promise<CallSession[]> {
 }
 
 export function useCallsList() {
-  const gwEnabled = isGatewayQueryEnabled();
+  const gwEnabled = isLiveGatewayEnabled();
   return useQuery({
     queryKey: ['calls', 'all', isDemoDataEnabled()],
     queryFn: fetchAllCalls,

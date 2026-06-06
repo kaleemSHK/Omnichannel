@@ -189,6 +189,7 @@ services:
       DATA_DIR: /data
       TOKEN:    ${PLATFORM_TOKEN}
       JWT_SECRET: ${JWT_SECRET}
+      PLATFORM_ADMIN_EMAILS: ${PLATFORM_ADMIN_EMAILS:-admin@blinksone.com,admin@blinkone.ai,admin@labbik.om}
       BLINKONE_BRANDING_CONFIG: /config/blinkone/branding.yml
       BLINKONE_BRAND_UPLOADS_DIR: /data/brand-uploads
     volumes:

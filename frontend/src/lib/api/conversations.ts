@@ -119,6 +119,14 @@ export async function updateConversationStatus(
   );
 }
 
+/** Clears agent unread count for this conversation (Chatwoot update_last_seen). */
+export async function markConversationAsRead(conversationId: number): Promise<void> {
+  await cwFetch<void>(
+    `/accounts/${accountId()}/conversations/${conversationId}/update_last_seen`,
+    { method: 'POST' },
+  );
+}
+
 export async function listInboxes(): Promise<CWInbox[]> {
   const res = await cwFetch<{ payload?: CWInbox[] }>(`/accounts/${accountId()}/inboxes`);
   return res.payload ?? [];

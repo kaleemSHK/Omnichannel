@@ -6,6 +6,8 @@ import { toast } from 'sonner';
 import { listAgents, createAgent, updateAgent, deleteAgent, type Agent } from '@/lib/api/settings';
 import { DEMO_AGENTS, settingsDemoDelay } from '@/lib/demo/settingsFixture';
 import { isDemoDataEnabled } from '@/lib/demo/config';
+import { withDemoOnly } from '@/lib/demo/tenantSettingsQuery';
+import { useTenantAccountId } from '@/lib/hooks/useTenantAccountId';
 import { SectionHeader } from './shared/SectionHeader';
 import { ConfirmDialog } from './shared/ConfirmDialog';
 import { EmptyState } from './shared/EmptyState';
@@ -33,17 +35,11 @@ const STATUS_DOT: Record<string, string> = {
 
 export function AgentsSection() {
   const qc = useQueryClient();
-  const { data: agents = [], isLoading } = useQuery({
-    queryKey: ['agents'],
-    queryFn: async () => {
-      if (isDemoDataEnabled()) return DEMO_AGENTS;
-      try {
-        const list = await listAgents();
-        return list.length ? list : DEMO_AGENTS;
-      } catch {
-        return DEMO_AGENTS;
-      }
-    },
+  const accountId = useTenantAccountId();
+  const { data: agents = [], isLoading, isError, error } = useQuery({
+    queryKey: ['agents', accountId],
+    enabled: accountId > 0,
+    queryFn: () => withDemoOnly(DEMO_AGENTS, () => listAgents()),
   });
 
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -66,7 +62,7 @@ export function AgentsSection() {
       return createAgent(payload);
     },
     onSuccess: created => {
-      qc.setQueryData<Agent[]>(['agents'], prev => [...(prev ?? []), created]);
+      qc.setQueryData<Agent[]>(['agents', accountId], prev => [...(prev ?? []), created]);
       toast.success(`Invite sent to ${inviteEmail}`);
       setInviteOpen(false);
       setInviteName('');
@@ -87,7 +83,7 @@ export function AgentsSection() {
       return updateAgent(editAgent!.id, { role: editRole });
     },
     onSuccess: updated => {
-      qc.setQueryData<Agent[]>(['agents'], prev =>
+      qc.setQueryData<Agent[]>(['agents', accountId], prev =>
         (prev ?? []).map(a => (a.id === updated.id ? { ...a, ...updated } : a)),
       );
       toast.success('Role updated');
@@ -107,7 +103,7 @@ export function AgentsSection() {
       await deleteAgent(deleteTarget!.id);
     },
     onSuccess: () => {
-      qc.setQueryData<Agent[]>(['agents'], prev =>
+      qc.setQueryData<Agent[]>(['agents', accountId], prev =>
         (prev ?? []).filter(a => a.id !== deleteTarget?.id),
       );
       toast.success('Agent removed');
@@ -125,7 +121,11 @@ export function AgentsSection() {
         onAction={() => setInviteOpen(true)}
       />
 
-      {isLoading ? (
+      {isError ? (
+        <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+          {error instanceof Error ? error.message : 'Failed to load agents'}
+        </div>
+      ) : isLoading ? (
         <div className="space-y-2">
           {[1, 2, 3].map(i => (
             <Skeleton key={i} className="h-14 rounded-lg" />

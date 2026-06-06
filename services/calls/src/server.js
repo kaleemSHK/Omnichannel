@@ -9,6 +9,7 @@ import { scoreFromRtpStats } from '../lib/mos-scoring.js';
 import { dbEnabled, runMigrations, closePool, getPool } from '../lib/db.js';
 import * as cdrRepo from '../lib/cdr-repo.js';
 import { requireFeature } from '../_shared/lib/features.js';
+import { requireCallsRbac } from '../_shared/lib/rbac.js';
 import { broadcastCallEvent, broadcastCallRinging } from '../lib/chatwoot-broadcast.js';
 
 const log = createLogger('calls');
@@ -67,6 +68,7 @@ const app = express();
 app.disable('x-powered-by');
 app.use(express.json({ limit: '256kb' }));
 app.use(requestId);
+app.use(requireCallsRbac());
 healthRouter(app, 'calls');
 mountMetrics(app, 'calls');
 
@@ -74,21 +76,38 @@ mountMetrics(app, 'calls');
 const callsActive = registry.gauge('blinkone_calls_active', 'Active calls currently in progress', ['tenant']);
 const callsTotal = registry.counter('blinkone_calls_total', 'Total calls processed', ['tenant', 'direction', 'outcome']);
 
-function notifyRecording(session) {
-  if (process.env.NOTIFY_RECORDING !== '1') return;
+async function notifyRecording(session) {
+  if (process.env.NOTIFY_RECORDING !== '1' || !session?.id) return;
+  // WebRTC/browser uploads attach audio via /v1/recordings multipart — skip empty metadata rows.
+  if (session.transport === 'webrtc') return;
+  const tenantId = String(session.tenantId ?? session.chatwootAccountId ?? 'default');
   const headers = { 'Content-Type': 'application/json', ...(REC_TOKEN ? { Authorization: `Bearer ${REC_TOKEN}` } : {}) };
-  fetch(`${REC_URL}/v1/recordings`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      chatwootAccountId: session.chatwootAccountId,
-      callSessionId: session.id,
-      channel: session.channel,
-      durationMs: session.durationMs,
-      startedAt: session.startedAt,
-      endedAt: session.endedAt,
-    }),
-  }).catch((e) => log.warn({ err: e.message }, 'recording notify failed'));
+  try {
+    const res = await fetch(`${REC_URL}/v1/recordings`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        chatwootAccountId: session.chatwootAccountId ?? tenantId,
+        callSessionId: session.id,
+        channel: session.channel,
+        durationMs: session.durationMs,
+        startedAt: session.startedAt,
+        endedAt: session.endedAt,
+      }),
+    });
+    if (!res.ok) return;
+    const body = await res.json().catch(() => ({}));
+    const rec = body?.data ?? body;
+    const sidecarId = rec?.id ? String(rec.id) : null;
+    const storageKey = rec?.storageKey ?? rec?.storage_key ?? null;
+    if (!dbEnabled() || !sidecarId || !storageKey) return;
+    await cdrRepo.linkCallRecording(tenantId, session.id, {
+      recordingId: sidecarId,
+      storageKey,
+    });
+  } catch (e) {
+    log.warn({ err: e.message }, 'recording notify failed');
+  }
 }
 
 app.get('/readyz', async (_req, res) => {
@@ -219,6 +238,11 @@ app.post('/v1/cdr', auth, async (req, res) => {
     endedAt,
     durationMs,
     asteriskChannelId,
+    sessionId,
+    callerName,
+    callerPhone,
+    transport,
+    metadata,
   } = req.body ?? {};
   const accountId = Number(chatwootAccountId);
   if (!Number.isFinite(accountId)) return fail(res, 'VALIDATION_ERROR', 'chatwootAccountId required');
@@ -231,12 +255,17 @@ app.post('/v1/cdr', auth, async (req, res) => {
         channel,
         agentLabel,
         customerPhone,
+        callerName,
+        callerPhone,
         queueKey,
         disposition,
         startedAt,
         endedAt,
         durationMs,
         asteriskChannelId,
+        sessionId,
+        transport,
+        metadata,
         status: 'ended',
       });
       log.info({ sessionId: session.id, disposition: session.outcome }, 'CDR recorded');
@@ -315,7 +344,7 @@ app.get('/v1/calls', auth, async (req, res) => {
 app.get('/v1/calls/:id', auth, async (req, res) => {
   const tenantId = resolveTenantId(req);
   if (!dbEnabled()) return fail(res, 'NOT_CONFIGURED', 'Postgres required', 501);
-  const c = await cdrRepo.getCall(tenantId, req.params.id);
+  const c = await cdrRepo.resolveCall(tenantId, req.params.id);
   return c ? ok(res, c) : fail(res, 'NOT_FOUND', 'Call not found', 404);
 });
 
@@ -342,6 +371,47 @@ app.post('/v1/internal/calls/inbound', auth, async (req, res) => {
     return ok(res, session, 201);
   } catch (e) {
     log.error({ err: e.message }, 'internal inbound');
+    return fail(res, 'INTERNAL_ERROR', e.message, 500);
+  }
+});
+
+/** ACD assigned a WebRTC/mobile caller to an agent — ring Calling UI */
+app.post('/v1/internal/calls/acd-assign', auth, async (req, res) => {
+  const tenantId = resolveTenantId(req);
+  if (!dbEnabled()) return fail(res, 'NOT_CONFIGURED', 'Postgres required', 501);
+  const { callId, agentId, queueKey, customerPhone, transport, contactId, metadata: bodyMeta, agentLabel } =
+    req.body ?? {};
+  if (!callId || !agentId) return fail(res, 'VALIDATION_ERROR', 'callId and agentId required', 400);
+  try {
+    const meta = bodyMeta && typeof bodyMeta === 'object' ? bodyMeta : {};
+    const agentName =
+      (agentLabel && String(agentLabel).trim()) ||
+      (await cdrRepo.lookupAgentDisplayName(tenantId, agentId)) ||
+      null;
+    const session = await cdrRepo.createCall({
+      roomId: String(callId),
+      customerPhone: customerPhone ?? null,
+      queueKey: queueKey ?? 'support',
+      status: 'ringing',
+      transport: transport ?? 'webrtc',
+      direction: 'inbound',
+      chatwootAccountId: tenantId,
+      assignedAgentId: String(agentId),
+      agentLabel: agentName,
+      contactId: contactId ? String(contactId) : null,
+      metadata: {
+        ...meta,
+        externalCallId: callId,
+        assignedAgentId: agentId,
+        acd: true,
+      },
+    });
+    callsActive.inc({ tenant: String(tenantId) });
+    await broadcastCallRinging(session);
+    log.info({ callId, agentId, sessionId: session?.id }, 'acd assign ringing');
+    return ok(res, session ?? { callId, agentId }, 201);
+  } catch (e) {
+    log.error({ err: e.message }, 'acd-assign');
     return fail(res, 'INTERNAL_ERROR', e.message, 500);
   }
 });
@@ -403,6 +473,46 @@ async function callAction(req, res, status, eventType) {
 app.post('/v1/calls/:id/answer', auth, pstnFeature, (req, res) => callAction(req, res, 'connected', 'answer'));
 app.post('/v1/calls/:id/decline', auth, pstnFeature, (req, res) => callAction(req, res, 'missed', 'decline'));
 app.post('/v1/calls/:id/hangup', auth, pstnFeature, (req, res) => callAction(req, res, 'ended', 'hangup'));
+
+/** Link browser-uploaded recording (rec-*) to CDR row */
+app.post('/v1/calls/:id/recording-link', auth, async (req, res) => {
+  const tenantId = resolveTenantId(req);
+  if (!dbEnabled()) return fail(res, 'NOT_CONFIGURED', 'Postgres required', 501);
+  const { recordingId, storageKey } = req.body ?? {};
+  if (!recordingId) return fail(res, 'VALIDATION_ERROR', 'recordingId required', 400);
+  try {
+    const session = await cdrRepo.linkCallRecording(tenantId, req.params.id, {
+      recordingId: String(recordingId),
+      storageKey: storageKey ? String(storageKey) : null,
+    });
+    if (!session) return fail(res, 'NOT_FOUND', 'Call not found', 404);
+    return ok(res, session);
+  } catch (e) {
+    log.error({ err: e.message }, 'recording-link');
+    return fail(res, 'INTERNAL_ERROR', 'Failed', 500);
+  }
+});
+
+/** ACW wrap-up notes, disposition, hold/resume (frontend PATCH /v1/calls/:id) */
+app.patch('/v1/calls/:id', auth, pstnFeature, async (req, res) => {
+  const tenantId = resolveTenantId(req);
+  if (!dbEnabled()) return fail(res, 'NOT_CONFIGURED', 'Postgres required', 501);
+  const agentId = req.body?.agentId ?? req.headers['x-blinkone-user-id'];
+  const { status, outcome, metadata } = req.body ?? {};
+  try {
+    const session = await cdrRepo.patchCallSession(tenantId, req.params.id, {
+      status: status ? String(status).trim() : undefined,
+      outcome: outcome ? String(outcome).trim() : undefined,
+      metadata: metadata && typeof metadata === 'object' ? metadata : {},
+      agentId: agentId ? String(agentId) : null,
+    });
+    if (!session) return fail(res, 'NOT_FOUND', 'Call not found', 404);
+    return ok(res, session);
+  } catch (e) {
+    log.error({ err: e.message, callId: req.params.id }, 'patch call');
+    return fail(res, 'INTERNAL_ERROR', e.message || 'Failed', 500);
+  }
+});
 
 // ─── PCI Recording Pause / Resume — Sprint 1 G02 ─────────────────────────────
 // PCI DSS §3.2: recording MUST be paused during card-number / CVV collection.

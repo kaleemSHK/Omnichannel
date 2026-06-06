@@ -10,8 +10,12 @@ import {
   declineCall as apiDeclineCall,
   hangupCall as apiHangupCall,
 } from '@/api/calls';
-import { getWebRTCCredentials } from '@/api/routing';
-import { SIP_WSS, SIP_DOMAIN, SIP_PASS, STUN, resolveSipWsUri } from '@/lib/env';
+import { getWebRTCCredentials, completeRoute, setAgentState as syncRoutingAgentState } from '@/api/routing';
+import { SIP_WSS, SIP_DOMAIN, SIP_PASS, STUN, TURN_SERVER, TURN_USER, TURN_PASS, resolveSipWsUri } from '@/lib/env';
+import { sipDialUri } from '@/lib/utils/sip-target';
+import { cancelCustomerCall } from '@/api/customer';
+import { prepareOutboundCallAudio } from '@/lib/sip-media';
+import { startCallAudio, stopCallAudio } from '@/lib/audio';
 import type { CallSession } from '@/types';
 
 interface SipUA {
@@ -37,8 +41,16 @@ export function useJsSip() {
   const uaRef = useRef<SipUA | null>(null);
   const sessionRef = useRef<SipSession | null>(null);
   const backendSessionIdRef = useRef<string | null>(null);
+  const routingCallIdRef = useRef<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const iceServersRef = useRef<RTCIceServer[]>([{ urls: STUN }]);
+  const isAgentRef = useRef(false);
+  const localStreamRef = useRef<MediaStream | null>(null);
+  const teardownGuardRef = useRef(false);
+  const outboundDialLockRef = useRef(false);
+  const teardownRef = useRef<(opts: { sendBye: boolean; outcome?: 'hangup' | 'decline' }) => void>(
+    () => {},
+  );
 
   const {
     setActiveCall,
@@ -70,6 +82,7 @@ export function useJsSip() {
           ...payload,
         });
         backendSessionIdRef.current = session.id;
+        if (payload.customerPhone) routingCallIdRef.current = session.id;
         return session;
       } catch (err) {
         console.warn('[JsSIP] backend session sync failed', err);
@@ -79,17 +92,88 @@ export function useJsSip() {
     [tokens?.gatewayJwt, user],
   );
 
-  const finishBackendCall = useCallback(async (outcome: 'hangup' | 'decline' = 'hangup') => {
-    const id = backendSessionIdRef.current;
-    backendSessionIdRef.current = null;
-    if (!id) return;
-    try {
-      if (outcome === 'decline') await apiDeclineCall(id);
-      else await apiHangupCall(id);
-    } catch {
-      /* CDR sync best-effort */
-    }
-  }, []);
+  const finishBackendCall = useCallback(
+    async (outcome: 'hangup' | 'decline' = 'hangup') => {
+      const store = useCallsStore.getState();
+      const active = store.activeCall;
+      const acdId = store.customerQueueCallId;
+      const roomId = active?.roomId?.trim();
+
+      if (!isAgentRef.current && acdId) {
+        try {
+          await cancelCustomerCall(acdId);
+        } catch {
+          /* best-effort */
+        }
+        store.setCustomerQueueCallId(null);
+      }
+
+      const routeId =
+        routingCallIdRef.current ??
+        (roomId && roomId !== active?.id ? roomId : roomId) ??
+        acdId ??
+        null;
+      routingCallIdRef.current = null;
+
+      if (isAgentRef.current && routeId && user?.id) {
+        try {
+          await completeRoute({
+            callId: routeId,
+            agentId: String(user.id),
+            disposition: outcome === 'decline' ? 'declined' : 'completed',
+          });
+        } catch {
+          /* ACD sync best-effort */
+        }
+      }
+
+      const id = backendSessionIdRef.current ?? active?.id;
+      backendSessionIdRef.current = null;
+      if (!id) return;
+      try {
+        if (outcome === 'decline') await apiDeclineCall(id, roomId);
+        else await apiHangupCall(id, roomId);
+      } catch {
+        /* CDR sync best-effort */
+      }
+    },
+    [user?.id],
+  );
+
+  const teardownCallSession = useCallback(
+    async ({ sendBye, outcome = 'hangup' }: { sendBye: boolean; outcome?: 'hangup' | 'decline' }) => {
+      if (!sendBye && teardownGuardRef.current) return;
+      teardownGuardRef.current = true;
+      outboundDialLockRef.current = false;
+
+      const session = sessionRef.current;
+      if (sendBye && session) {
+        try {
+          session.terminate();
+        } catch {
+          /* already ended */
+        }
+      }
+
+      localStreamRef.current?.getTracks().forEach((t) => t.stop());
+      localStreamRef.current = null;
+      sessionRef.current = null;
+      stopCallAudio();
+      clearTimer();
+      setActiveCall(null);
+      setMuted(false);
+      setOnHold(false);
+      setCallDuration(0);
+      if (isAgentRef.current) setAgentState('available');
+
+      await finishBackendCall(outcome);
+    },
+    [clearTimer, finishBackendCall, setActiveCall, setAgentState, setCallDuration, setMuted, setOnHold],
+  );
+
+  teardownRef.current = (opts) => {
+    void teardownCallSession(opts);
+  };
 
   useEffect(() => {
     if (!installWebRtcGlobals()) return;
@@ -99,18 +183,21 @@ export function useJsSip() {
     (async () => {
       const prefs = await loadPrefs();
       const isAgent = prefs.role === 'agent';
+      isAgentRef.current = isAgent;
       if (isAgent && !tokens?.gatewayJwt) return;
 
       let wssUrl = SIP_WSS;
-      let sipUri = `sip:customer@${SIP_DOMAIN}`;
+      let sipUri = isAgent ? `sip:blinkone@${SIP_DOMAIN}` : `sip:customer@${SIP_DOMAIN}`;
       let sipPassword = SIP_PASS;
 
       if (isAgent && user?.id) {
         try {
           const creds = await getWebRTCCredentials(String(user.id));
           wssUrl = resolveSipWsUri(creds.wsUri);
-          sipUri = creds.sipUri;
           sipPassword = creds.password || SIP_PASS;
+          // Per-agent AOR — do not register as shared "blinkone" or mobile steals the
+          // browser softphone registration used for PSTN inbound + web agent calls.
+          sipUri = `sip:${user.id}@${SIP_DOMAIN}`;
           iceServersRef.current = [
             ...creds.stunServers.map((s) => ({ urls: s })),
             ...creds.turnServers.map((t) => ({
@@ -128,10 +215,26 @@ export function useJsSip() {
         return;
       }
 
+      if (!isAgent) {
+        iceServersRef.current = [{ urls: STUN }];
+        if (TURN_SERVER) {
+          iceServersRef.current.push({
+            urls: TURN_SERVER,
+            username: TURN_USER || undefined,
+            credential: TURN_PASS || undefined,
+          });
+        }
+      }
+
       if (!wssUrl || !sipPassword) return;
 
       try {
         const JsSIP = require('jssip');
+        try {
+          (JsSIP as { debug?: { enable: (s: string) => void } }).debug?.enable('JsSIP:*');
+        } catch {
+          /* optional */
+        }
 
         const ua: SipUA = new (JsSIP as unknown as { UA: new (c: unknown) => SipUA }).UA({
           sockets: [
@@ -149,15 +252,30 @@ export function useJsSip() {
 
         ua.on('registered', () => {
           setSipRegistered(true);
-          if (isAgent) setAgentState('available');
+          if (isAgent) {
+            setAgentState('available');
+            if (user?.id) {
+              void syncRoutingAgentState(String(user.id), 'available').catch(() => {});
+            }
+          }
         });
         ua.on('unregistered', () => {
           setSipRegistered(false);
-          if (isAgent) setAgentState('offline');
+          if (isAgent) {
+            setAgentState('offline');
+            if (user?.id) {
+              void syncRoutingAgentState(String(user.id), 'offline').catch(() => {});
+            }
+          }
         });
         ua.on('registrationFailed', () => {
           setSipRegistered(false);
-          if (isAgent) setAgentState('offline');
+          if (isAgent) {
+            setAgentState('offline');
+            if (user?.id) {
+              void syncRoutingAgentState(String(user.id), 'offline').catch(() => {});
+            }
+          }
         });
 
         ua.on('newRTCSession', (data: unknown) => {
@@ -167,6 +285,7 @@ export function useJsSip() {
             request?: { from?: { display_name?: string; uri?: { user?: string } } };
           };
           const { session, originator } = evt;
+          teardownGuardRef.current = false;
           sessionRef.current = session;
 
           const callerNum = evt.request?.from?.uri?.user ?? 'unknown';
@@ -190,14 +309,12 @@ export function useJsSip() {
 
             session.on('ended', () => {
               removeIncomingCall(incoming.callId);
+              teardownRef.current({ sendBye: false, outcome: 'hangup' });
             });
 
             session.on('failed', () => {
               removeIncomingCall(incoming.callId);
-              sessionRef.current = null;
-              setActiveCall(null);
-              if (isAgent) setAgentState('available');
-              void finishBackendCall('decline');
+              teardownRef.current({ sendBye: false, outcome: 'decline' });
             });
           }
 
@@ -222,7 +339,8 @@ export function useJsSip() {
 
             if (backendId) {
               try {
-                const s = await apiAnswerCall(backendId);
+                const roomId = useCallsStore.getState().activeCall?.roomId;
+                const s = await apiAnswerCall(backendId, roomId);
                 setActiveCall(s);
                 return;
               } catch {
@@ -245,12 +363,11 @@ export function useJsSip() {
           });
 
           session.on('ended', () => {
-            sessionRef.current = null;
-            setActiveCall(null);
-            if (isAgent) setAgentState('available');
-            setCallDuration(0);
-            clearTimer();
-            void finishBackendCall('hangup');
+            teardownRef.current({ sendBye: false, outcome: 'hangup' });
+          });
+
+          session.on('failed', () => {
+            teardownRef.current({ sendBye: false, outcome: 'decline' });
           });
         });
 
@@ -282,37 +399,111 @@ export function useJsSip() {
   ]);
 
   const makeCall = useCallback(
-    (destination: string, transport: 'pstn' | 'webrtc' = 'pstn') => {
-      const registered = uaRef.current?.isRegistered();
-      console.log('[JsSIP] makeCall dest=', destination, 'uaRef=', !!uaRef.current, 'registered=', registered);
-      if (!registered) { console.warn('[JsSIP] UA not registered, aborting call'); return; }
-      const phone = destination.replace(/^sip:/, '').split('@')[0];
+    async (destination: string, transport: 'pstn' | 'webrtc' = 'pstn'): Promise<boolean> => {
+      const ua = uaRef.current;
+      if (!ua?.isRegistered()) {
+        console.warn('[JsSIP] UA not registered, aborting call');
+        return false;
+      }
+
+      const existing = sessionRef.current;
+      const active = useCallsStore.getState().activeCall;
+      if (existing || active || outboundDialLockRef.current) {
+        console.warn('[JsSIP] outbound skipped — call already active');
+        return !!existing || !!active;
+      }
+      outboundDialLockRef.current = true;
+
+      const raw = destination.trim();
+      const lower = raw.toLowerCase();
+      let dialUser = raw.replace(/^sip:/, '').split('@')[0];
+      let callTransport: 'pstn' | 'webrtc' = transport;
+
+      if (lower === 'blinkone' || lower === 'desk' || lower === 'web') {
+        dialUser = 'blinkone';
+        callTransport = 'webrtc';
+      } else if (/^[0-9]{1,8}$/.test(dialUser)) {
+        callTransport = 'webrtc';
+      } else if (/^\+?[0-9]{10,15}$/.test(dialUser.replace(/\D/g, ''))) {
+        callTransport = 'pstn';
+      }
+
+      let localStream: Awaited<ReturnType<typeof prepareOutboundCallAudio>>;
+      try {
+        localStream = await prepareOutboundCallAudio();
+        localStreamRef.current = localStream;
+      } catch (e) {
+        console.warn('[JsSIP] microphone / WebRTC setup failed', e);
+        outboundDialLockRef.current = false;
+        return false;
+      }
+
+      const queueId = useCallsStore.getState().customerQueueCallId;
+      if (queueId) routingCallIdRef.current = queueId;
+      teardownGuardRef.current = false;
+
       void syncBackendSession({
-        customerPhone: phone,
+        customerPhone: dialUser,
         direction: 'outbound',
-        transport,
+        transport: callTransport,
       });
 
-      const target = destination.startsWith('sip:') ? destination : `sip:${destination}@${SIP_DOMAIN}`;
-      const outSession = uaRef.current.call(target, {
+      const target = sipDialUri(raw.startsWith('sip:') ? raw : dialUser);
+      const ringingSession: CallSession = {
+        id: queueId ?? randomId(),
+        tenantId: user?.tenantId ?? '1',
+        roomId: queueId ?? randomId(),
+        channel: 'voice',
+        agentLabel: 'BlinkOne Support',
+        customerPhone: dialUser === 'blinkone' ? 'Support Agent' : dialUser,
+        status: 'ringing',
+        transport: callTransport,
+        direction: 'outbound',
+        startedAt: new Date().toISOString(),
+      };
+      setActiveCall(ringingSession);
+
+      console.log('[JsSIP] outbound call', { target, dialUser });
+      const outSession = ua.call(target, {
+        mediaStream: localStream,
         mediaConstraints: { audio: true, video: false },
         rtcOfferConstraints: { offerToReceiveAudio: true },
         pcConfig: { iceServers: iceServersRef.current },
       });
-      // Reset calling state when outbound call fails or ends
-      outSession.on('failed', () => {
-        sessionRef.current = null;
-        setActiveCall(null);  // triggers setCalling(false) in CustomerHome
+
+      outSession.on('peerconnection', () => {
+        void startCallAudio();
       });
+
+      outSession.on('confirmed', () => {
+        if (isAgentRef.current) setAgentState('busy');
+        clearTimer();
+        let sec = 0;
+        timerRef.current = setInterval(() => {
+          sec++;
+          setCallDuration(sec);
+        }, 1000);
+        setActiveCall({
+          ...ringingSession,
+          status: 'connected',
+          connectedAt: new Date().toISOString(),
+        });
+      });
+
+      outSession.on('failed', (data: unknown) => {
+        const cause = (data as { cause?: string })?.cause ?? 'unknown';
+        console.warn('[JsSIP] outbound failed', cause);
+        teardownRef.current({ sendBye: false, outcome: 'decline' });
+      });
+
       outSession.on('ended', () => {
-        sessionRef.current = null;
-        setActiveCall(null);
-        if (!isAgent) return;
-        setAgentState('available');
+        teardownRef.current({ sendBye: false, outcome: 'hangup' });
       });
+
       sessionRef.current = outSession;
+      return true;
     },
-    [syncBackendSession],
+    [syncBackendSession, user, clearTimer, finishBackendCall, setActiveCall, setCallDuration, setAgentState],
   );
 
   const makePeerCall = useCallback(
@@ -322,25 +513,26 @@ export function useJsSip() {
     [makeCall],
   );
 
-  const answerCall = useCallback(() => {
-    sessionRef.current?.answer({
-      mediaConstraints: { audio: true, video: false },
-      pcConfig: { iceServers: iceServersRef.current },
-    });
+  const answerCall = useCallback(async () => {
+    try {
+      const stream = await prepareOutboundCallAudio();
+      sessionRef.current?.answer({
+        mediaStream: stream,
+        mediaConstraints: { audio: true, video: false },
+        pcConfig: { iceServers: iceServersRef.current },
+      });
+    } catch (e) {
+      console.warn('[JsSIP] answer failed — no microphone', e);
+    }
   }, []);
 
   const hangup = useCallback(() => {
-    sessionRef.current?.terminate();
-    sessionRef.current = null;
-    clearTimer();
-    void finishBackendCall('hangup');
-  }, [clearTimer, finishBackendCall]);
+    teardownRef.current({ sendBye: true, outcome: 'hangup' });
+  }, []);
 
   const declineCall = useCallback(() => {
-    sessionRef.current?.terminate();
-    sessionRef.current = null;
-    void finishBackendCall('decline');
-  }, [finishBackendCall]);
+    teardownRef.current({ sendBye: true, outcome: 'decline' });
+  }, []);
 
   const mute = useCallback(() => {
     sessionRef.current?.mute({ audio: true });

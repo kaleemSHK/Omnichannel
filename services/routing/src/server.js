@@ -21,6 +21,8 @@ import { getQueueStats, listAgentStates, getAgentState, setAgentState } from '..
 import { startQueueWorker } from '../lib/queue-worker.js';
 import { attachRealtimeWs } from '../lib/realtime-ws.js';
 import { agentSipPassword } from '../lib/sip-secret.js';
+import { getCallRouteStatus } from '../lib/call-queue-status.js';
+import { abandonCall } from '../lib/abandon-call.js';
 
 const log = createLogger('routing');
 const PORT = parseInt(process.env.PORT || '8798', 10);
@@ -304,7 +306,20 @@ app.post('/v1/agents', auth, telephonyWrite, async (req, res) => {
 app.patch('/v1/agents/:agentId', auth, telephonyWrite, async (req, res) => {
   const tenantId = resolveTenantId(req);
   if (useDbRedis()) {
-    const a = await agentRepo.patchAgent(tenantId, req.params.agentId, req.body ?? {});
+    const agentId = req.params.agentId;
+    const body = req.body ?? {};
+    let a = await agentRepo.patchAgent(tenantId, agentId, body);
+    if (!a && (body.status || body.state)) {
+      const status = body.status ?? body.state;
+      a = await agentRepo.createAgent(tenantId, {
+        agentId,
+        displayName: body.displayName,
+        chatwootUserId: body.chatwootUserId ?? agentId,
+        skills: body.skills ?? ['support'],
+        queueKeys: body.queueKeys ?? ['support', 'default'],
+        status: status === 'break' ? 'away' : status,
+      });
+    }
     return a ? ok(res, a) : fail(res, 'NOT_FOUND', 'Agent not found', 404);
   }
   return fail(res, 'NOT_CONFIGURED', 'Postgres required', 501);
@@ -511,6 +526,30 @@ app.post('/v1/route/complete', auth, telephonyWrite, async (req, res) => {
   }
 });
 
+app.get('/v1/route/calls/:callId/status', auth, async (req, res) => {
+  if (!useDbRedis()) return fail(res, 'NOT_CONFIGURED', 'Postgres + Redis required', 501);
+  try {
+    const status = await getCallRouteStatus(resolveTenantId(req), req.params.callId);
+    return ok(res, status);
+  } catch (e) {
+    log.error({ err: e.message }, 'route status');
+    return fail(res, 'INTERNAL_ERROR', e.message, 500);
+  }
+});
+
+app.post('/v1/route/calls/:callId/abandon', auth, async (req, res) => {
+  if (!useDbRedis()) return fail(res, 'NOT_CONFIGURED', 'Postgres + Redis required', 501);
+  try {
+    const result = await abandonCall(resolveTenantId(req), req.params.callId, {
+      reason: req.body?.reason ?? 'caller_cancel',
+    });
+    return ok(res, result);
+  } catch (e) {
+    log.error({ err: e.message }, 'route abandon');
+    return fail(res, 'INTERNAL_ERROR', e.message, 500);
+  }
+});
+
 app.post('/v1/route/process-queue', auth, telephonyWrite, async (req, res) => {
   if (!useDbRedis()) return fail(res, 'NOT_CONFIGURED', 'Postgres + Redis required', 501);
   try {
@@ -628,7 +667,12 @@ app.use(errorHandler(log));
 async function boot() {
   if (dbEnabled()) {
     await runMigrations(log);
-    await queueRepo.ensureDefaultQueues(process.env.ROUTING_DEFAULT_TENANT || 'default');
+    const defaultTenant = process.env.ROUTING_DEFAULT_TENANT || 'default';
+    await queueRepo.ensureDefaultQueues(defaultTenant);
+    const accountTenant = String(process.env.CHATWOOT_DEFAULT_ACCOUNT || process.env.IVR_DEFAULT_TENANT || '').trim();
+    if (accountTenant && accountTenant !== defaultTenant) {
+      await queueRepo.ensureDefaultQueues(accountTenant);
+    }
     log.info('routing Postgres ready');
   } else {
     log.warn('BLINKONE_DATABASE_URL not set — queue model disabled');

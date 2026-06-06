@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -12,6 +12,8 @@ import {
 } from '@/lib/api/settings';
 import { DEMO_CANNED, settingsDemoDelay } from '@/lib/demo/settingsFixture';
 import { isDemoDataEnabled } from '@/lib/demo/config';
+import { withDemoOnly } from '@/lib/demo/tenantSettingsQuery';
+import { useTenantAccountId } from '@/lib/hooks/useTenantAccountId';
 import { useAuthStore } from '@/lib/store/auth';
 import { can } from '@/lib/rbac';
 import { SectionHeader } from './shared/SectionHeader';
@@ -32,31 +34,24 @@ export function CannedSection() {
   const role = useAuthStore(s => s.user?.role);
   const canDeleteAny = can(role, 'manageTeam');
 
+  const accountId = useTenantAccountId();
   const [search, setSearch] = useState('');
 
-  const { data: canned = [], isLoading } = useQuery({
-    queryKey: ['canned', search],
-    queryFn: async () => {
-      if (isDemoDataEnabled()) {
-        const q = search.toLowerCase();
-        if (!q) return DEMO_CANNED;
-        return DEMO_CANNED.filter(
-          c => c.short_code.includes(q) || c.content.toLowerCase().includes(q),
-        );
-      }
-      try {
-        const list = await listCannedResponses(search || undefined);
-        return list.length ? list : DEMO_CANNED;
-      } catch {
-        return DEMO_CANNED;
-      }
-    },
+  const { data: canned = [], isLoading, isError, error } = useQuery({
+    queryKey: ['canned', accountId, search],
+    enabled: accountId > 0,
+    queryFn: () =>
+      withDemoOnly(
+        search
+          ? DEMO_CANNED.filter(
+              c => c.short_code.includes(search.toLowerCase()) || c.content.toLowerCase().includes(search.toLowerCase()),
+            )
+          : DEMO_CANNED,
+        () => listCannedResponses(search || undefined),
+      ),
   });
 
-  const filtered = useMemo(() => {
-    if (isDemoDataEnabled() || search) return canned;
-    return canned;
-  }, [canned, search, isDemoDataEnabled]);
+  const filtered = canned;
 
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editing, setEditing] = useState<CannedResponse | null>(null);

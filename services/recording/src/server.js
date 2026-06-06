@@ -13,6 +13,7 @@ import {
   storageUrlFromKey,
   objectKeyFromStorageUrl,
 } from '../lib/minio.js';
+import { enqueueRecordingTranscription } from '../lib/stt-hook.js';
 
 const log = createLogger('recording');
 const PORT = parseInt(process.env.PORT || '8799', 10);
@@ -178,6 +179,15 @@ app.post('/v1/recordings', auth, upload.single('audio'), async (req, res) => {
     log.info({ recordingId: r.id, storageKey, storageUrl }, 'recording created');
     return r;
   });
+
+  if (storageKey) {
+    void enqueueRecordingTranscription({
+      tenantId: chatwootAccountId,
+      storageKey,
+      callSessionId,
+      log,
+    });
+  }
 
   return ok(res, mapRecording(row), 201);
 });

@@ -89,7 +89,14 @@ export async function handleRouteRequest(tenantId, body) {
     throw err;
   }
 
-  const queue = await queueRepo.getQueueByKey(tenantId, queueKey);
+  let queue = await queueRepo.getQueueByKey(tenantId, queueKey);
+  if (!queue) {
+    await queueRepo.ensureDefaultQueues(tenantId);
+    queue = await queueRepo.getQueueByKey(tenantId, queueKey);
+  }
+  if (!queue && queueKey !== 'default') {
+    queue = await queueRepo.getQueueByKey(tenantId, 'default');
+  }
   if (!queue) {
     const err = new Error(`Queue "${queueKey}" not found`);
     err.code = 'NOT_FOUND';
@@ -108,6 +115,9 @@ export async function handleRouteRequest(tenantId, body) {
     queueKey,
     queueId: queue.id,
     callerId: body.callerId ?? null,
+    callerName: body.callerName ?? null,
+    callerPhone: body.callerPhone ?? null,
+    contactId: body.contactId ?? null,
     enqueuedAt: new Date().toISOString(),
     ...(skillOverride ? { skillOverride } : {}),
   });
@@ -155,6 +165,9 @@ export async function handleRouteRequest(tenantId, body) {
 
   const priority = vipBoost ? Math.max(Number(body.priority ?? 0), 10) : Number(body.priority ?? 0);
   const { position, depth } = await enqueueCall(tenantId, queueKey, callId, priority);
+
+  // Try to assign waiting callers immediately when an agent is free (don't wait for worker tick).
+  void processQueue(tenantId, queueKey).catch(() => {});
 
   await queueRepo.recordDecision({
     tenantId,

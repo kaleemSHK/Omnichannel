@@ -208,9 +208,11 @@ export async function bnFetch<T>(
       const code = body?.error?.code;
       const msg  = body?.error?.message ?? '';
       isGatewayAuthError =
-        (code === 'UNAUTHORIZED' || code === 'FORBIDDEN') &&
-        // Gateway-level messages contain these substrings; service-level ones say "Unauthorized"
-        (msg.includes('token') || msg.includes('Token') || msg.includes('expired') || msg.includes('required'));
+        code === 'UNAUTHORIZED' ||
+        (code === 'FORBIDDEN' &&
+          (/invalid or expired/i.test(msg) ||
+            /bearer token required/i.test(msg) ||
+            /token required/i.test(msg)));
       if (isGatewayAuthError) {
         const { markGatewayAuthFailed } = await import('@/lib/demo/config');
         markGatewayAuthFailed();

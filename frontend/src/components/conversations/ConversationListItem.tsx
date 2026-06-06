@@ -154,7 +154,7 @@ export function ConversationListItem({ conversation, selected, onClick }: Props)
               {assignee.name.split(' ')[0]}
             </span>
           )}
-          {unread > 0 && (
+          {unread > 0 && !selected && (
             <span className="ms-auto shrink-0 bg-brand-primary text-white text-[10px] font-bold rounded-full px-1.5 min-w-[18px] text-center">
               {unread > 99 ? '99+' : unread}
             </span>

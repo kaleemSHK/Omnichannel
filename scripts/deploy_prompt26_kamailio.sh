@@ -18,6 +18,14 @@ else
   ufw allow 10000:20000/udp comment "RTP media" || true
 fi
 
+echo "=== PART C — RTPEngine (WebRTC ↔ Twilio RTP) ==="
+if [ -x "${BLINKONE_ROOT}/scripts/setup_rtpengine_demo.sh" ]; then
+  bash "${BLINKONE_ROOT}/scripts/setup_rtpengine_demo.sh"
+else
+  echo "Missing setup_rtpengine_demo.sh — Kamailio needs UDP 22222"
+  exit 1
+fi
+
 echo "=== PART C — Install Kamailio ==="
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
@@ -40,7 +48,7 @@ systemctl is-active kamailio && echo "✅ Kamailio running"
 echo "=== PART D — Nginx /sip proxy ==="
 NGINX_SITE=/etc/nginx/sites-available/blinkone
 if ! grep -q 'location /sip' "$NGINX_SITE"; then
-  sed -i '/# Next.js frontend/i\    # SIP WebSocket — proxy to Kamailio\n    location /sip {\n        proxy_pass http://127.0.0.1:8088;\n        proxy_http_version 1.1;\n        proxy_set_header Upgrade $http_upgrade;\n        proxy_set_header Connection "upgrade";\n        proxy_set_header Host $host;\n        proxy_set_header X-Real-IP $remote_addr;\n        proxy_read_timeout 3600s;\n        proxy_send_timeout 3600s;\n    }\n' "$NGINX_SITE"
+  sed -i '/# Next.js frontend/i\    # SIP WebSocket — proxy to Kamailio\n    location /sip {\n        proxy_pass http://127.0.0.1:8088/;\n        proxy_http_version 1.1;\n        proxy_set_header Upgrade $http_upgrade;\n        proxy_set_header Connection "upgrade";\n        proxy_set_header Host $host;\n        proxy_set_header X-Real-IP $remote_addr;\n        proxy_read_timeout 3600s;\n        proxy_send_timeout 3600s;\n    }\n' "$NGINX_SITE"
 fi
 nginx -t
 systemctl reload nginx
@@ -52,7 +60,8 @@ NEXT_PUBLIC_CHATWOOT_URL=https://app.blinksone.com
 NEXT_PUBLIC_API_BASE=https://app.blinksone.com
 NEXT_PUBLIC_WS_URL=wss://app.blinksone.com/cable
 
-NEXT_PUBLIC_SIP_WSS=wss://app.blinksone.com/sip
+# Grey-cloud sip host — app.blinksone.com/sip breaks behind Cloudflare proxy
+NEXT_PUBLIC_SIP_WSS=wss://sip.blinksone.com
 NEXT_PUBLIC_SIP_DOMAIN=intelysys.pstn.twilio.com
 NEXT_PUBLIC_SIP_USER=blinkone
 NEXT_PUBLIC_SIP_PASS=BlinkSip2026!

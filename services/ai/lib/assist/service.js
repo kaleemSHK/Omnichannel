@@ -1,4 +1,39 @@
 import { parseJsonFromLlm } from '../llm/openai-adapter.js';
+
+const ASSIST_STUB = {
+  classify: {
+    category: 'inquiry',
+    priority: 'medium',
+    language: 'en',
+    intent: 'general',
+    confidence: 0.5,
+  },
+  sentiment: { score: 0, label: 'neutral', emotions: [] },
+  summarize: {
+    summary: 'Summary unavailable — configure OpenAI API key in AI settings.',
+    key_points: [],
+    suggested_labels: [],
+  },
+  suggest: {
+    suggestions: [
+      {
+        text: 'Thank you for contacting us. How may I assist you today?',
+        language: 'en',
+        rag_citations: [],
+      },
+    ],
+  },
+};
+
+function parseAssistJson(text, fallback) {
+  const trimmed = (text || '').trim();
+  if (trimmed.startsWith('[STUB]')) return fallback;
+  try {
+    return parseJsonFromLlm(text);
+  } catch {
+    return fallback;
+  }
+}
 import { chatCompletions, resolveModels } from '../llm/gateway.js';
 import { getPool } from '../db.js';
 import { queryRag } from '../rag/service.js';
@@ -15,7 +50,7 @@ export async function classifyTicket(tenantId, { message_sample }) {
     model: models.fast,
     maxTokens: 300,
   });
-  return parseJsonFromLlm(content);
+  return parseAssistJson(content, ASSIST_STUB.classify);
 }
 
 export async function analyzeSentiment(tenantId, { text, conversation_id, message_id }) {
@@ -28,7 +63,7 @@ export async function analyzeSentiment(tenantId, { text, conversation_id, messag
     model: models.fast,
     maxTokens: 200,
   });
-  const result = parseJsonFromLlm(content);
+  const result = parseAssistJson(content, ASSIST_STUB.sentiment);
   if (conversation_id != null && message_id != null) {
     const p = getPool();
     if (p) {
@@ -60,7 +95,7 @@ export async function summarizeConversation(tenantId, { conversation_id, text })
     model: models.default,
     maxTokens: 600,
   });
-  return parseJsonFromLlm(content);
+  return parseAssistJson(content, ASSIST_STUB.summarize);
 }
 
 export async function suggestReply(tenantId, { conversation_id, text, collection_id, tone = 'professional' }) {
@@ -81,5 +116,5 @@ export async function suggestReply(tenantId, { conversation_id, text, collection
     model: models.default,
     maxTokens: 800,
   });
-  return parseJsonFromLlm(content);
+  return parseAssistJson(content, ASSIST_STUB.suggest);
 }

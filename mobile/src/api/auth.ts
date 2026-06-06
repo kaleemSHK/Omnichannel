@@ -1,4 +1,5 @@
 import { CHATWOOT_URL, GATEWAY_URL } from '@/lib/env';
+import { hydratePermissionsFromJwt, hydratePermissionsFromLogin } from '@/lib/permissions';
 import type { BlinkoneUser, AuthTokens } from '@/types';
 
 import Config from 'react-native-config';
@@ -46,6 +47,8 @@ export async function loginWithPassword(
     throw new Error(err?.message ?? 'Gateway authentication failed');
   }
   const gw = await gwRes.json();
+  hydratePermissionsFromLogin(gw);
+  hydratePermissionsFromJwt(gw.token);
 
   const user: BlinkoneUser = {
     id: cw.data.id,
@@ -60,20 +63,25 @@ export async function loginWithPassword(
   return { user, tokens: { accessToken: cwToken, gatewayJwt: gw.token, pubsubToken: cw.data.pubsub_token } };
 }
 
-export async function fetchProfile(accessToken: string): Promise<BlinkoneUser> {
+export async function fetchProfile(
+  accessToken: string,
+): Promise<{ user: BlinkoneUser; pubsubToken?: string }> {
   const res = await fetch(`${CHATWOOT_URL}/api/v1/profile`, {
     headers: { api_access_token: accessToken },
   });
   if (!res.ok) throw new Error('Session expired');
   const profile = await res.json();
   return {
-    id: profile.id,
-    name: profile.name,
-    email: profile.email,
-    role: resolveRole(profile.role, profile.email),
-    tenantId: String(profile.account_id),
-    chatwootAccountId: profile.account_id,
-    avatarUrl: profile.avatar_url,
+    user: {
+      id: profile.id,
+      name: profile.name,
+      email: profile.email,
+      role: resolveRole(profile.role, profile.email),
+      tenantId: String(profile.account_id),
+      chatwootAccountId: profile.account_id,
+      avatarUrl: profile.avatar_url,
+    },
+    pubsubToken: profile.pubsub_token as string | undefined,
   };
 }
 
@@ -93,5 +101,7 @@ export async function refreshGatewayToken(accessToken: string): Promise<string> 
     throw new Error(err?.message ?? 'Gateway token refresh failed');
   }
   const gw = await gwRes.json();
+  hydratePermissionsFromLogin(gw);
+  hydratePermissionsFromJwt(gw.token);
   return gw.token as string;
 }

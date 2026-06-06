@@ -12,6 +12,8 @@ import {
 } from '@/lib/api/settings';
 import { DEMO_BOTS, settingsDemoDelay } from '@/lib/demo/settingsFixture';
 import { isDemoDataEnabled } from '@/lib/demo/config';
+import { withDemoOnly } from '@/lib/demo/tenantSettingsQuery';
+import { useTenantAccountId } from '@/lib/hooks/useTenantAccountId';
 import { useAuthStore } from '@/lib/store/auth';
 import { can } from '@/lib/rbac';
 import { SectionHeader } from './shared/SectionHeader';
@@ -38,17 +40,11 @@ export function BotsSection() {
   const role = useAuthStore(s => s.user?.role);
   const canManage = can(role, 'manageInboxes');
 
-  const { data: bots = [], isLoading } = useQuery({
-    queryKey: ['agent-bots'],
-    queryFn: async () => {
-      if (isDemoDataEnabled()) return DEMO_BOTS;
-      try {
-        const list = await listBots();
-        return list.length ? list : DEMO_BOTS;
-      } catch {
-        return DEMO_BOTS;
-      }
-    },
+  const accountId = useTenantAccountId();
+  const { data: bots = [], isLoading, isError, error } = useQuery({
+    queryKey: ['agent-bots', accountId],
+    enabled: accountId > 0,
+    queryFn: () => withDemoOnly(DEMO_BOTS, () => listBots()),
   });
 
   const [sheetOpen, setSheetOpen] = useState(false);

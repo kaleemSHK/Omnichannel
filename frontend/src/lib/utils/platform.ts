@@ -25,23 +25,33 @@ export interface PlatformTenantView extends Omit<Tenant, 'features'> {
 
 export function normalizeTenant(raw: unknown): PlatformTenantView {
   const r = raw as Record<string, unknown>;
-  const featuresRaw = (r.features ?? {}) as Record<string, boolean>;
-  const features = defaultFeatures(featuresRaw);
+  const featuresRaw = (r.features ?? {}) as Record<string, unknown>;
+  const planRaw = r.plan ?? r.billingPlanId ?? r.billing_plan_id;
+  let plan = (planRaw as Tenant['plan']) ?? 'starter';
+  if (r.status === 'trial') plan = 'trial';
   return {
     id: String(r.id ?? ''),
     slug: String(r.slug ?? ''),
     name: String(r.name ?? 'Tenant'),
     domain: String(r.domain ?? `${r.slug ?? 'tenant'}.blinkone.local`),
-    plan: (r.plan as Tenant['plan']) ?? 'starter',
+    plan,
     status: (r.status as Tenant['status']) ?? 'active',
     agentCount: Number(r.agentCount ?? r.agent_count ?? 0),
     createdAt: String(r.createdAt ?? r.created_at ?? new Date().toISOString()),
     location: String(r.location ?? r.region ?? 'Muscat, OM'),
-    features,
+    features: defaultFeatures(featuresRaw),
   };
 }
 
-export function defaultFeatures(partial?: Record<string, boolean>): Record<PlatformFeatureKey, boolean> {
+export function featureEnabled(val: unknown): boolean {
+  if (typeof val === 'boolean') return val;
+  if (val && typeof val === 'object' && 'enabled' in val) {
+    return (val as { enabled?: boolean }).enabled !== false;
+  }
+  return Boolean(val);
+}
+
+export function defaultFeatures(partial?: Record<string, unknown>): Record<PlatformFeatureKey, boolean> {
   const base: Record<PlatformFeatureKey, boolean> = {
     telephony: false,
     pstn: false,
@@ -56,10 +66,13 @@ export function defaultFeatures(partial?: Record<string, boolean>): Record<Platf
   };
   if (!partial) return base;
   for (const def of PLATFORM_FEATURE_FLAGS) {
-    if (partial[def.key] != null) base[def.key] = !!partial[def.key];
+    if (partial[def.key] != null) base[def.key] = featureEnabled(partial[def.key]);
   }
-  if (partial.telephony != null) base.ivr = !!partial.telephony;
-  if (partial.rag != null && partial.aiAssist == null) base.aiAssist = !!partial.rag;
+  if (partial.telephony != null) base.ivr = featureEnabled(partial.telephony);
+  if (partial.rag != null && partial.aiAssist == null) base.aiAssist = featureEnabled(partial.rag);
+  if (partial.outboundDialer != null && partial.billing == null) {
+    base.billing = featureEnabled(partial.outboundDialer);
+  }
   return base;
 }
 

@@ -3,6 +3,7 @@ import { getPool } from './db.js';
 import { createChatwootAccount } from './chatwoot-platform.js';
 import { assignBillingPlan } from './billing-client.js';
 import { DEFAULT_FEATURES, seedTenantDefaults } from './seed-defaults.js';
+import { seedTenantRoles, assignTenantOwnerRbac } from './rbac-repo.js';
 import * as repo from './repo.js';
 
 function slugify(name) {
@@ -40,7 +41,11 @@ export async function provisionTenant(body) {
     throw err;
   }
 
-  const account = await createChatwootAccount({ name: name.trim(), ownerEmail: ownerEmail.trim() });
+  const account = await createChatwootAccount({
+    name: name.trim(),
+    ownerEmail: ownerEmail.trim(),
+    ownerName: body.ownerName?.trim(),
+  });
   const tenantId = String(account.id);
   const features = { ...DEFAULT_FEATURES, ...featuresIn };
 
@@ -71,11 +76,22 @@ export async function provisionTenant(body) {
     ...brand,
   }, subdomain || `${slug}.${process.env.BLINKONE_DOMAIN_SUFFIX || 'blinkone.local'}`);
 
-  await getPool().query(
-    `INSERT INTO tenant_admins (tenant_id, chatwoot_user_id, role) VALUES ($1,$2,'owner')
-     ON CONFLICT (tenant_id, chatwoot_user_id) DO NOTHING`,
-    [tenantId, 1],
-  );
+  if (account.ownerUserId) {
+    await getPool().query(
+      `INSERT INTO tenant_admins (tenant_id, chatwoot_user_id, role) VALUES ($1,$2,'owner')
+       ON CONFLICT (tenant_id, chatwoot_user_id) DO UPDATE SET role = 'owner'`,
+      [tenantId, account.ownerUserId],
+    );
+    await assignTenantOwnerRbac(tenantId, {
+      chatwootUserId: account.ownerUserId,
+      email: ownerEmail.trim(),
+      fullName: body.ownerName?.trim() || ownerEmail.split('@')[0],
+    }).catch((e) => {
+      console.warn('[provision] owner RBAC assign failed:', e.message);
+    });
+  } else {
+    await seedTenantRoles(tenantId).catch(() => {});
+  }
 
   const seedResults = await seedTenantDefaults(tenantId, { name: name.trim(), features });
 
@@ -86,6 +102,8 @@ export async function provisionTenant(body) {
     tenant,
     chatwootAccountId: account.id,
     chatwootStub: account.stub === true,
+    ownerUserId: account.ownerUserId ?? null,
+    ownerTempPassword: account.ownerTempPassword ?? null,
     onboardingUrl,
     seedResults,
     inviteToken: randomUUID(),

@@ -80,7 +80,7 @@ export interface CWInbox {
 
 // ─── Calls sidecar ─────────────────────────────────────────────────────────────
 export type CallStatus = 'ringing' | 'connected' | 'on_hold' | 'ended' | 'missed' | 'failed';
-export type CallTransport = 'pstn' | 'whatsapp';
+export type CallTransport = 'pstn' | 'whatsapp' | 'webrtc';
 export type CallDirection = 'inbound' | 'outbound';
 
 export interface CallSession {

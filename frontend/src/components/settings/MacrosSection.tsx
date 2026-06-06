@@ -14,6 +14,8 @@ import {
 } from '@/lib/api/settings';
 import { DEMO_MACROS, settingsDemoDelay } from '@/lib/demo/settingsFixture';
 import { isDemoDataEnabled } from '@/lib/demo/config';
+import { withDemoOnly } from '@/lib/demo/tenantSettingsQuery';
+import { useTenantAccountId } from '@/lib/hooks/useTenantAccountId';
 import { useAuthStore } from '@/lib/store/auth';
 import { can } from '@/lib/rbac';
 import { SectionHeader } from './shared/SectionHeader';
@@ -54,17 +56,15 @@ export function MacrosSection() {
   const role = useAuthStore(s => s.user?.role);
   const canManageGlobal = can(role, 'manageTeam');
 
-  const { data: macros = [], isLoading } = useQuery({
-    queryKey: ['macros'],
-    queryFn: async () => {
-      if (isDemoDataEnabled()) return DEMO_MACROS;
-      try {
+  const accountId = useTenantAccountId();
+  const { data: macros = [], isLoading, isError, error } = useQuery({
+    queryKey: ['macros', accountId],
+    enabled: accountId > 0,
+    queryFn: () =>
+      withDemoOnly(DEMO_MACROS, async () => {
         const res = await listMacros();
-        return res.payload.length ? res.payload : DEMO_MACROS;
-      } catch {
-        return DEMO_MACROS;
-      }
-    },
+        return res.payload ?? [];
+      }),
   });
 
   const [sheetOpen, setSheetOpen] = useState(false);

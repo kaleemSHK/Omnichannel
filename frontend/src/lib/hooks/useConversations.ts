@@ -1,7 +1,19 @@
 'use client';
 
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { getMessages, listConversations, sendMessage } from '@/lib/api/conversations';
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type InfiniteData,
+  type QueryClient,
+} from '@tanstack/react-query';
+import {
+  getMessages,
+  listConversations,
+  markConversationAsRead,
+  sendMessage,
+} from '@/lib/api/conversations';
 import type { ConversationFilters } from '@/lib/api/conversations';
 import {
   DEMO_CONVERSATIONS,
@@ -51,6 +63,45 @@ async function fetchConversationPage(
   } catch {
     return { data: [], meta: {} };
   }
+}
+
+/** Zero unread_count for one conversation across all cached list pages. */
+export function patchConversationUnreadInCache(
+  qc: QueryClient,
+  conversationId: number,
+  unreadCount = 0,
+) {
+  qc.setQueriesData<InfiniteData<ConversationPage>>(
+    { queryKey: ['conversations'] },
+    old => {
+      if (!old?.pages?.length) return old;
+      return {
+        ...old,
+        pages: old.pages.map(page => ({
+          ...page,
+          data: page.data.map(c =>
+            c.id === conversationId ? { ...c, unread_count: unreadCount } : c,
+          ),
+        })),
+      };
+    },
+  );
+}
+
+export function useMarkConversationRead() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (conversationId: number) => {
+      if (isDemoDataEnabled()) return;
+      await markConversationAsRead(conversationId);
+    },
+    onMutate: conversationId => {
+      patchConversationUnreadInCache(qc, conversationId, 0);
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ['conversations'] });
+    },
+  });
 }
 
 export function useConversations(filters: ConversationFilters) {

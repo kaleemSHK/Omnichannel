@@ -5,7 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { CheckCircle, Mic, MicOff, PauseCircle, Phone, PhoneOff, ShieldCheck } from 'lucide-react';
 import { toast } from 'sonner';
 import { CallTimer } from '@/components/calling/CallTimer';
-import { useAnswerCall, useDeclineCall } from '@/lib/hooks/useCalls';
+import { useDeclineCall } from '@/lib/hooks/useCalls';
 import { useCallsStore } from '@/lib/store/calls';
 import { useAuthStore } from '@/lib/store/auth';
 import { isActionCableReady } from '@/lib/env/telephony';
@@ -17,7 +17,14 @@ import {
 } from '@/lib/calling/incoming-call-ui';
 import { resolveCallerName } from '@/lib/utils/calling';
 import { cn } from '@/lib/utils/cn';
-import { pauseCallRecording, resumeCallRecording, reportMosSample, type MosResult } from '@/lib/api/calls';
+import {
+  answerCall,
+  pauseCallRecording,
+  resumeCallRecording,
+  reportMosSample,
+  type MosResult,
+} from '@/lib/api/calls';
+import { unlockSipAudio } from '@/lib/telephony/sip-audio';
 
 function CallControls({ callId }: { callId?: string }) {
   const setActiveCall = useCallsStore(s => s.setActiveCall);
@@ -195,16 +202,10 @@ export function PhonePanel() {
   const setActiveCall = useCallsStore(s => s.setActiveCall);
   const sipControls = useCallsStore(s => s.sipControls);
   const contactCache = useCallsStore(s => s.contactCache);
-  const answer = useAnswerCall();
   const decline = useDeclineCall();
 
-  // The call-event handlers below close over volatile values (React Query
-  // mutation objects + sipControls) whose references change on every render.
-  // Keep them in a ref so the Action Cable subscription can stay mounted for
-  // the account's lifetime instead of tearing down/re-creating on each render
-  // (which dropped any broadcast that landed in the sub-second resubscribe gap).
-  const callHandlersRef = useRef({ answer, decline, setActiveCall, sipControls });
-  callHandlersRef.current = { answer, decline, setActiveCall, sipControls };
+  const callHandlersRef = useRef({ decline, setActiveCall, sipControls });
+  callHandlersRef.current = { decline, setActiveCall, sipControls };
 
   // MOS voice quality polling — every 5s during connected call
   const [mosResult, setMosResult] = useState<MosResult | null>(null);
@@ -233,7 +234,7 @@ export function PhonePanel() {
     if (!user?.chatwootAccountId || !isActionCableReady()) return;
 
     return subscribeToCallEvents(user.chatwootAccountId, raw => {
-      const { answer, decline, setActiveCall, sipControls } = callHandlersRef.current;
+      const { decline, setActiveCall, sipControls } = callHandlersRef.current;
       const { eventType, session } = normalizeCallEvent(
         raw as {
           eventType?: string;
@@ -246,14 +247,20 @@ export function PhonePanel() {
       if (!session?.id) return;
 
       if (eventType === 'call.ringing') {
+        const displayName = resolveCallerName(session, useCallsStore.getState().contactCache);
+        if (session.customerPhone && displayName) {
+          useCallsStore.getState().cacheContact(session.customerPhone, displayName);
+        }
         presentIncomingCall(session, {
           onAnswer: () => {
+            void unlockSipAudio();
             sipControls?.answerCall();
             clearIncomingCallUi(session.id);
-            answer.mutate(session.id, {
-              onSuccess: s => setActiveCall(s),
-              onError: () => setActiveCall(session),
-            });
+            void answerCall(session.id, session.roomId)
+              .then(s => setActiveCall(s))
+              .catch(() =>
+                setActiveCall({ ...session, status: 'connected', connectedAt: new Date().toISOString() }),
+              );
           },
           onDecline: () => {
             decline.mutate(session.id);
@@ -263,15 +270,15 @@ export function PhonePanel() {
         return;
       }
 
-      if (
-        eventType === 'call.ended' ||
-        eventType === 'call.missed' ||
-        eventType === 'call.connected'
-      ) {
+      if (eventType === 'call.ended' || eventType === 'call.missed') {
         clearIncomingCallUi(session.id);
-        if (eventType === 'call.connected') {
-          setActiveCall(session);
-        }
+        sipControls?.hangup();
+        return;
+      }
+
+      if (eventType === 'call.connected') {
+        clearIncomingCallUi(session.id);
+        setActiveCall(session);
       }
     });
     // Subscribe once per account; handlers are read from a ref to avoid churn.

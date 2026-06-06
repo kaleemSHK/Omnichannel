@@ -1,16 +1,13 @@
 'use client';
 
 import { Mic, MicOff, PauseCircle, PhoneOff } from 'lucide-react';
-import { endCall } from '@/lib/api/calls';
 import { CallTimer } from '@/components/calling/CallTimer';
 import { useCallsStore } from '@/lib/store/calls';
 import { resolveCallerName } from '@/lib/utils/calling';
 import { cn } from '@/lib/utils/cn';
-import { isDemoDataEnabled } from '@/lib/demo/config';
 
 export function ActiveCallBar() {
   const activeCall = useCallsStore(s => s.activeCall);
-  const setActiveCall = useCallsStore(s => s.setActiveCall);
   const muted = useCallsStore(s => s.muted);
   const held = useCallsStore(s => s.held);
   const contactCache = useCallsStore(s => s.contactCache);
@@ -22,10 +19,6 @@ export function ActiveCallBar() {
 
   const handleHangup = () => {
     sipControls?.hangup();
-    if (!isDemoDataEnabled()) {
-      void endCall(activeCall.id).catch(() => undefined);
-    }
-    setActiveCall(null);
   };
 
   return (

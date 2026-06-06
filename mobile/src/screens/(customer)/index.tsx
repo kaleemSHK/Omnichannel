@@ -4,13 +4,17 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { useSip } from '@/providers/sip-context';
 import { useCallsStore } from '@/store/calls';
-import { SUPPORT_EXT } from '@/lib/env';
+import { AGENT_DESK_EXT } from '@/lib/env';
 import { usePermissions } from '@/hooks/usePermissions';
 import { ActiveCallBar } from '@/components/calling/ActiveCallBar';
 import { IncomingCallSheet } from '@/components/calling/IncomingCallSheet';
 import { OfflineBanner } from '@/components/layout/OfflineBanner';
-import { navigationRef } from '@/navigation/navigationRef';
+import { navigationRef, navigate } from '@/navigation/navigationRef';
 import { hapticImpact } from '@/lib/haptics';
+import { loadCustomerSession } from '@/lib/storage';
+import { requestCustomerCall } from '@/api/customer';
+import { randomId } from '@/lib/uuid';
+import { SUPPORT_QUEUE } from '@/lib/env';
 import { C } from '@/lib/ui';
 
 export default function CustomerHome() {
@@ -23,23 +27,58 @@ export default function CustomerHome() {
   const [calling, setCalling] = useState(false);
 
   async function handleCallSupport() {
-    console.log('[CALL] Button tapped, sipRegistered=', sipRegistered, 'SUPPORT_EXT=', SUPPORT_EXT);
+    console.log('[CALL] Button tapped, sipRegistered=', sipRegistered, 'desk=', AGENT_DESK_EXT);
     const granted = await requestMic();
     console.log('[CALL] Mic granted=', granted);
     if (!granted) { Alert.alert('Microphone Required', 'Please grant microphone permission.'); return; }
-    if (!sipRegistered) {
-      Alert.alert('Connecting…', 'SIP is still connecting. Please wait a few seconds and try again.');
-      return;
-    }
     hapticImpact('medium');
     setCalling(true);
-    console.log('[CALL] Calling makeCall with', SUPPORT_EXT);
-    makeCall(SUPPORT_EXT);
-    console.log('[CALL] makeCall returned');
+    try {
+      const session = await loadCustomerSession();
+      if (!session.token) {
+        Alert.alert('Session required', 'Please complete setup from the welcome screen first.');
+        setCalling(false);
+        return;
+      }
+      const callId = randomId();
+      try {
+        const route = await requestCustomerCall({
+          callId,
+          queueKey: SUPPORT_QUEUE,
+          callerName: session.name?.trim() || undefined,
+          callerPhone: session.phone?.trim() || undefined,
+          contactId: session.contactId,
+          callerId: session.phone?.trim() || (session.contactId ? String(session.contactId) : undefined),
+        });
+        console.log('[CALL] route response', route.status, route.dialTarget, route.agentId);
+        if (route.status === 'queued') {
+          setCalling(false);
+          navigate('Customer', {
+            screen: 'CallQueue',
+            params: { callId, welcomeMessage: route.welcomeMessage },
+          });
+          return;
+        }
+        if (route.status === 'assigned') {
+          setCalling(false);
+          navigate('Customer', {
+            screen: 'CallQueue',
+            params: { callId, welcomeMessage: route.welcomeMessage },
+          });
+          return;
+        }
+      } catch (routeErr) {
+        console.warn('[CALL] ACD request failed, placing SIP call directly', routeErr);
+      }
+      void makeCall(AGENT_DESK_EXT);
+    } catch (e) {
+      setCalling(false);
+      Alert.alert('Call failed', e instanceof Error ? e.message : 'Could not reach support');
+    }
   }
 
   useEffect(() => {
-    if (activeCall) navigationRef.navigate('CallActive');
+    if (activeCall) navigate('CallActive');
     else setCalling(false);
   }, [activeCall]);
 

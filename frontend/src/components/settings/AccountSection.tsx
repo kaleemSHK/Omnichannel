@@ -6,6 +6,8 @@ import { toast } from 'sonner';
 import { getAccount, updateAccount } from '@/lib/api/settings';
 import { DEMO_ACCOUNT, settingsDemoDelay } from '@/lib/demo/settingsFixture';
 import { isDemoDataEnabled } from '@/lib/demo/config';
+import { withDemoOnly } from '@/lib/demo/tenantSettingsQuery';
+import { useTenantAccountId } from '@/lib/hooks/useTenantAccountId';
 import { SectionHeader } from './shared/SectionHeader';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -28,17 +30,11 @@ const LOCALES = [
 
 export function AccountSection() {
   const qc = useQueryClient();
-  const { data, isLoading } = useQuery({
-    queryKey: ['account'],
-    queryFn: async () => {
-      if (isDemoDataEnabled()) return DEMO_ACCOUNT;
-      try {
-        const data = await getAccount();
-        return data ?? DEMO_ACCOUNT;
-      } catch {
-        return DEMO_ACCOUNT;
-      }
-    },
+  const accountId = useTenantAccountId();
+  const { data, isLoading, isError, error } = useQuery({
+    queryKey: ['account', accountId],
+    enabled: accountId > 0,
+    queryFn: () => withDemoOnly(DEMO_ACCOUNT, () => getAccount()),
   });
 
   const { mutate, isPending } = useMutation({
@@ -50,7 +46,7 @@ export function AccountSection() {
       return updateAccount(payload);
     },
     onSuccess: saved => {
-      qc.setQueryData(['account'], saved);
+      qc.setQueryData(['account', accountId], saved);
       toast.success('Account settings saved');
     },
     onError: (e: Error) => toast.error(e.message),
@@ -81,6 +77,14 @@ export function AccountSection() {
         {[1, 2, 3, 4].map(i => (
           <Skeleton key={i} className="h-9" />
         ))}
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+        {error instanceof Error ? error.message : 'Failed to load account settings'}
       </div>
     );
   }

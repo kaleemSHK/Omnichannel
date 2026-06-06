@@ -9,6 +9,7 @@ import { ActiveCallBar } from '@/components/calling/ActiveCallBar';
 import { PhonePanel } from '@/components/calling/PhonePanel';
 import { SipInitializer } from '@/components/calling/SipInitializer';
 import { SipAudioHost } from '@/components/calling/SipAudioHost';
+import { AgentPresenceInitializer } from '@/components/layout/AgentPresenceInitializer';
 import { cn } from '@/lib/utils/cn';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -36,6 +37,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <RoleGuard>
+      <AgentPresenceInitializer />
       <SipInitializer />
       <SipAudioHost />
       <div className="flex h-screen w-full overflow-hidden bg-background">

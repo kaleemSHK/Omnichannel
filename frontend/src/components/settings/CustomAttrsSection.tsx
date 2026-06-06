@@ -13,6 +13,7 @@ import {
 } from '@/lib/api/settings';
 import { DEMO_CUSTOM_ATTRS, settingsDemoDelay } from '@/lib/demo/settingsFixture';
 import { isDemoDataEnabled } from '@/lib/demo/config';
+import { useTenantAccountId } from '@/lib/hooks/useTenantAccountId';
 import { useAuthStore } from '@/lib/store/auth';
 import { can } from '@/lib/rbac';
 import { SectionHeader } from './shared/SectionHeader';
@@ -56,11 +57,13 @@ const ATTR_TYPES: { value: AttrType; label: string }[] = [
 export function CustomAttrsSection() {
   const qc = useQueryClient();
   const role = useAuthStore(s => s.user?.role);
+  const accountId = useTenantAccountId();
   const canManage = can(role, 'manageInboxes');
   const [tab, setTab] = useState<TabId>('conversation_attribute');
 
   const { data: attrs = [], isLoading } = useQuery({
-    queryKey: ['custom-attrs', tab],
+    queryKey: ['custom-attrs', accountId, tab],
+    enabled: accountId > 0 || isDemoDataEnabled(),
     queryFn: async () => {
       if (isDemoDataEnabled()) {
         return DEMO_CUSTOM_ATTRS.filter(a => a.attribute_model === tab);

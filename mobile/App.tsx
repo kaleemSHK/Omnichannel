@@ -12,6 +12,9 @@ import { RootNavigator } from '@/navigation/RootNavigator';
 import { navigationRef } from '@/navigation/navigationRef';
 import { registerForPushNotifications, addNotificationListeners } from '@/lib/notifications';
 import '@/lib/i18n';
+import { installWebRtcGlobals } from '@/lib/webrtc';
+
+installWebRtcGlobals();
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -29,19 +32,10 @@ export default function App() {
 
   useEffect(() => {
     registerForPushNotifications().then((token) => {
-      if (token) useAuthStore.getState().setPushToken?.(token);
+      if (token) useAuthStore.getState().setPushToken(token);
     });
 
-    return addNotificationListeners({
-      onResponse: (data) => {
-        if (data?.conversationId) {
-          navigationRef.navigate('Agent', {
-            screen: 'ConversationDetail',
-            params: { id: String(data.conversationId) },
-          });
-        }
-      },
-    });
+    return addNotificationListeners({});
   }, []);
 
   if (!hydrated) return null;

@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, Alert, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { useSip } from '@/providers/sip-context';
-import { navigationRef } from '@/navigation/navigationRef';
+import { navigate } from '@/navigation/navigationRef';
 import { hapticImpact, hapticSelection } from '@/lib/haptics';
 import { useCallsStore } from '@/store/calls';
 import { usePermissions } from '@/hooks/usePermissions';
@@ -26,7 +26,7 @@ export default function AgentDial() {
   const { requestMic } = usePermissions();
 
   useEffect(() => {
-    if (activeCall) navigationRef.navigate('CallActive');
+    if (activeCall) navigate('CallActive');
   }, [activeCall]);
 
   function press(digit: string) {
@@ -47,7 +47,7 @@ export default function AgentDial() {
       return;
     }
     hapticImpact('medium');
-    makeCall(number.trim());
+    void makeCall(number.trim());
   }
 
   return (
@@ -88,6 +88,10 @@ export default function AgentDial() {
           </View>
         ))}
       </View>
+
+      <Text style={styles.hint}>
+        Dial <Text style={styles.hintStrong}>blinkone</Text> to ring the web agent desk
+      </Text>
 
       {/* Call button */}
       <View style={styles.callBtnContainer}>
@@ -157,9 +161,20 @@ const styles = StyleSheet.create({
     fontSize: 10,
     letterSpacing: 1.5,
   },
+  hint: {
+    textAlign: 'center',
+    color: C.textMute,
+    fontSize: 12,
+    marginTop: 8,
+    paddingHorizontal: 24,
+  },
+  hintStrong: {
+    color: C.brand,
+    fontWeight: '700',
+  },
   callBtnContainer: {
     alignItems: 'center',
-    marginTop: 32,
+    marginTop: 16,
   },
   callBtn: {
     width: 80,

@@ -1,6 +1,7 @@
 import { cwFetch } from './client';
 import type { CWConversation, CWInbox, CWMessage, ApiResponse } from '@/types';
 import { useAuthStore } from '@/store/auth';
+import { extractConversationMeta, parseConversationList } from '@/lib/utils/conversations';
 
 function accountId() {
   return useAuthStore.getState().user?.chatwootAccountId ?? 0;
@@ -25,7 +26,11 @@ export async function listConversations(
   if (filters.teamId) params.set('team_id', String(filters.teamId));
   if (filters.inboxId) params.set('inbox_id', String(filters.inboxId));
 
-  return cwFetch<ApiResponse<CWConversation[]>>(`/accounts/${accountId()}/conversations?${params}`);
+  const raw = await cwFetch<unknown>(`/accounts/${accountId()}/conversations?${params}`);
+  return {
+    data: parseConversationList(raw),
+    meta: extractConversationMeta(raw),
+  };
 }
 
 export async function getConversation(id: number): Promise<CWConversation> {

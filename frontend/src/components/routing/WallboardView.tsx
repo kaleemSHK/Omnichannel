@@ -302,7 +302,7 @@ export function WallboardView() {
         <WallboardTable
           agents={agents}
           filter={queueFilter}
-          queueKey={queues.find(q => q.id === queueFilter)?.queueKey}
+          queueKey={queues.find((q: QueueStatEntry) => q.id === queueFilter)?.queueKey}
           live={connected}
           darkMode={darkMode}
         />

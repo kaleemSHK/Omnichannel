@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, type ElementType } from 'react';
+import { useEffect, useMemo, useState, type ElementType } from 'react';
 import {
   Headphones,
   Mic,
@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { AgentStateSelector } from '@/components/calling/AgentStateSelector';
+import { CdrDetailPanel, SessionDetailPanel } from '@/components/calling/CallDetailPanel';
 import { CallSessionItem, CdrListItem } from '@/components/calling/CallListItem';
 import { CallTimer } from '@/components/calling/CallTimer';
 import { CallNotesModal } from '@/components/calling/CallNotesModal';
@@ -23,10 +24,10 @@ import { RecordingsPanel } from '@/components/calling/RecordingsPanel';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/Dialog';
 import { Input } from '@/components/ui/input';
-import { createSession, endCall, holdCall } from '@/lib/api/calls';
+import { answerCall, createSession, holdCall } from '@/lib/api/calls';
+import { unlockSipAudio } from '@/lib/telephony/sip-audio';
 import {
   useActiveSessions,
-  useAnswerCall,
   useCDR,
   useDeclineCall,
 } from '@/lib/hooks/useCalls';
@@ -34,9 +35,9 @@ import { useQueues } from '@/lib/hooks/useQueues';
 import { useAuthStore } from '@/lib/store/auth';
 import { useCallsStore } from '@/lib/store/calls';
 import { can } from '@/lib/rbac';
-import { resolveCallerName } from '@/lib/utils/calling';
+import { useAgents } from '@/lib/hooks/useAgentState';
+import { resolveCallerName, resolveCdrCallerName, transportLabel } from '@/lib/utils/calling';
 import { isDemoDataEnabled } from '@/lib/demo/config';
-import { demoCallerName } from '@/lib/demo/callingFixture';
 import { cn } from '@/lib/utils/cn';
 import type { CDRRecord } from '@/types';
 
@@ -76,7 +77,7 @@ function CtrlBtn({
 }
 
 export function CallingWorkspace() {
-  const [transport, setTransport] = useState<'pstn' | 'whatsapp'>('pstn');
+  const [transport, setTransport] = useState<'pstn' | 'whatsapp' | 'webrtc'>('pstn');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [transferOpen, setTransferOpen] = useState(false);
   const [transferTarget, setTransferTarget] = useState('');
@@ -97,32 +98,45 @@ export function CallingWorkspace() {
   const { data: sessions = [] } = useActiveSessions();
   const { data: cdrBatch = [], isFetching: cdrFetching } = useCDR({ limit: 20, page: cdrPage });
   const { data: queues = [] } = useQueues();
-  const answer = useAnswerCall();
+  const { data: routingAgents = [] } = useAgents();
   const decline = useDeclineCall();
   const makeCall = useCallsStore(s => s.makeCall);
   const sipControls = useCallsStore(s => s.sipControls);
 
   const filtered = sessions.filter(s => s.transport === transport);
+  const filteredCdr = useMemo(
+    () => cdrRows.filter(r => r.transport === transport),
+    [cdrRows, transport],
+  );
   const activeList = filtered.filter(
     s => s.status === 'connected' || s.status === 'ringing',
   );
-  const selected =
+  const selectedSession =
     filtered.find(s => s.id === selectedId) ??
     sessions.find(s => s.id === selectedId) ??
-    activeCall;
+    null;
+  const selectedCdr =
+    filteredCdr.find(r => r.callSessionId === selectedId || r.id === selectedId) ?? null;
 
-  const incomingRing = incoming[0];
+  const incomingRing = incoming.find(c => c.transport === transport) ?? null;
   const isSupervisor = can(user?.role, 'supervisorListen');
   const queueDisplay = queues.length > 0 ? queues : [];
-  const showEmptyCenter = !activeCall && !incomingRing && !selected;
+  const showEmptyCenter =
+    !activeCall && !incomingRing && !selectedSession && !selectedCdr;
   // Show "Sample" badge only when demo data is active
   const showSampleBadge = isDemoDataEnabled() && queueDisplay.length > 0;
 
   useEffect(() => {
-    if (!selectedId && filtered.length > 0) {
-      setSelectedId(filtered[0].id);
+    if (!selectedId) {
+      const pick = activeList[0]?.id ?? filteredCdr[0]?.callSessionId;
+      if (pick) setSelectedId(pick);
+      return;
     }
-  }, [filtered.length, selectedId]);
+    const stillVisible =
+      activeList.some(s => s.id === selectedId) ||
+      filteredCdr.some(r => r.callSessionId === selectedId || r.id === selectedId);
+    if (!stillVisible) setSelectedId(activeList[0]?.id ?? filteredCdr[0]?.callSessionId ?? null);
+  }, [transport, activeList, filteredCdr, selectedId]);
 
   useEffect(() => {
     if (cdrPage === 1) {
@@ -143,10 +157,13 @@ export function CallingWorkspace() {
       if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
       if (e.key === ' ' || e.key === 'Enter') {
         e.preventDefault();
+        void unlockSipAudio();
         sipControls?.answerCall();
         useCallsStore.getState().removeIncomingCall(incomingRing.id);
         setActiveCall(incomingRing);
-        answer.mutate(incomingRing.id, { onSuccess: c => setActiveCall(c) });
+        void answerCall(incomingRing.id, incomingRing.roomId)
+          .then(c => setActiveCall(c))
+          .catch(() => undefined);
       } else if (e.key === 'Escape') {
         e.preventDefault();
         decline.mutate(incomingRing.id);
@@ -155,7 +172,7 @@ export function CallingWorkspace() {
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [incomingRing, sipControls, answer, decline, setActiveCall]);
+  }, [incomingRing, sipControls, decline, setActiveCall]);
 
   // Keyboard shortcut — M = mute during active call
   useEffect(() => {
@@ -171,10 +188,6 @@ export function CallingWorkspace() {
 
   const handleHangup = () => {
     sipControls?.hangup();
-    if (activeCall && !isDemoDataEnabled()) {
-      void endCall(activeCall.id).catch(() => undefined);
-    }
-    setActiveCall(null);
   };
 
   const handleHold = () => {
@@ -200,13 +213,7 @@ export function CallingWorkspace() {
   };
 
   function cdrLabel(record: CDRRecord): string {
-    if (isDemoDataEnabled()) {
-      return (
-        contactCache.get(record.callSessionId) ??
-        demoCallerName({ id: record.callSessionId, customerPhone: record.callSessionId })
-      );
-    }
-    return contactCache.get(record.callSessionId) ?? record.callSessionId;
+    return resolveCdrCallerName(record, contactCache);
   }
 
   return (
@@ -245,22 +252,30 @@ export function CallingWorkspace() {
           </div>
         )}
 
-        {/* PSTN / WhatsApp tabs */}
+        {/* PSTN / WhatsApp / WebRTC tabs */}
         <div className="flex border-b border-gray-100">
-          {(['pstn', 'whatsapp'] as const).map(t => (
+          {(
+            [
+              { key: 'pstn' as const, label: 'PSTN' },
+              { key: 'whatsapp' as const, label: 'WhatsApp' },
+              { key: 'webrtc' as const, label: 'WebRTC' },
+            ] as const
+          ).map(({ key, label }) => (
             <button
-              key={t}
+              key={key}
               type="button"
-              aria-pressed={transport === t}
-              onClick={() => setTransport(t)}
+              aria-pressed={transport === key}
+              onClick={() => {
+                setTransport(key);
+              }}
               className={cn(
-                'flex-1 py-2 text-xs font-medium capitalize border-b-2 -mb-px transition-colors',
-                transport === t
+                'flex-1 py-2 text-xs font-medium border-b-2 -mb-px transition-colors',
+                transport === key
                   ? 'text-brand-primary border-brand-primary'
                   : 'text-gray-500 border-transparent hover:text-gray-700',
               )}
             >
-              {t}
+              {label}
             </button>
           ))}
         </div>
@@ -285,15 +300,15 @@ export function CallingWorkspace() {
           <p className="px-3 pt-3 pb-1 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">
             Recent
           </p>
-          {cdrRows.length === 0 ? (
+          {filteredCdr.length === 0 ? (
             <p className="px-3 py-2 text-xs text-muted-foreground">No recent calls</p>
           ) : (
-            cdrRows.map(r => (
+            filteredCdr.map(r => (
               <CdrListItem
                 key={r.id}
                 record={r}
                 label={cdrLabel(r)}
-                active={selectedId === r.callSessionId}
+                active={selectedId === r.callSessionId || selectedId === r.id}
                 onSelect={() => setSelectedId(r.callSessionId)}
               />
             ))
@@ -317,12 +332,22 @@ export function CallingWorkspace() {
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 shrink-0">
           <div className="min-w-0">
             <p className="text-sm font-semibold text-gray-900 truncate">
-              {selected ? resolveCallerName(selected, contactCache) : 'Call workspace'}
+              {activeCall
+                ? resolveCallerName(activeCall, contactCache)
+                : selectedSession
+                  ? resolveCallerName(selectedSession, contactCache)
+                  : selectedCdr
+                    ? cdrLabel(selectedCdr)
+                    : 'Call workspace'}
             </p>
             <p className="text-xs text-gray-500">
-              {selected
-                ? `${selected.transport === 'whatsapp' ? 'WhatsApp' : 'Voice'} · ${selected.customerPhone}`
-                : 'Select a call or dial from the keypad'}
+              {activeCall
+                ? `${transportLabel(activeCall.transport)} · ${activeCall.customerPhone || '—'}`
+                : selectedSession
+                  ? `${transportLabel(selectedSession.transport)} · ${selectedSession.customerPhone || '—'}`
+                  : selectedCdr
+                    ? `${transportLabel(selectedCdr.transport)} · ${selectedCdr.customerPhone || '—'}`
+                    : 'Select a call or dial from the keypad'}
             </p>
           </div>
           <AgentStateSelector />
@@ -341,7 +366,7 @@ export function CallingWorkspace() {
                 <span className="font-medium">Recent</span>, or enter a number in the dial pad and
                 press Call.
               </p>
-              {!sipRegistered && transport === 'pstn' && (
+              {!sipRegistered && (transport === 'pstn' || transport === 'webrtc') && (
                 <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 mt-4 max-w-sm">
                   PSTN dial-out requires a registered softphone. Try the WhatsApp tab for outbound
                   without SIP.
@@ -375,12 +400,13 @@ export function CallingWorkspace() {
                 aria-label="Answer call"
                 className="w-11 h-11 rounded-full bg-green-600 hover:bg-green-700 text-white flex items-center justify-center shadow-sm transition-colors"
                 onClick={() => {
+                  void unlockSipAudio();
                   sipControls?.answerCall();
                   useCallsStore.getState().removeIncomingCall(incomingRing.id);
                   setActiveCall(incomingRing);
-                  answer.mutate(incomingRing.id, {
-                    onSuccess: c => setActiveCall(c),
-                  });
+                  void answerCall(incomingRing.id, incomingRing.roomId)
+                    .then(c => setActiveCall(c))
+                    .catch(() => undefined);
                 }}
               >
                 <Phone size={18} />
@@ -397,6 +423,14 @@ export function CallingWorkspace() {
                 <PhoneOff size={18} />
               </button>
             </div>
+          )}
+
+          {/* Selected call details (list click) */}
+          {selectedSession && (!activeCall || activeCall.id !== selectedSession.id) && (
+            <SessionDetailPanel session={selectedSession} />
+          )}
+          {selectedCdr && (!selectedSession || selectedCdr.callSessionId !== selectedSession.id) && (
+            <CdrDetailPanel record={selectedCdr} agents={routingAgents} />
           )}
 
           {/* Active call controls */}
@@ -511,10 +545,12 @@ export function CallingWorkspace() {
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
                 Today
               </p>
-              <p className="text-3xl font-bold text-gray-900 tabular-nums">{cdrRows.length}</p>
-              <p className="text-sm text-gray-500 mt-0.5">calls in history</p>
+              <p className="text-3xl font-bold text-gray-900 tabular-nums">{filteredCdr.length}</p>
+              <p className="text-sm text-gray-500 mt-0.5">
+                {transportLabel(transport)} calls
+              </p>
               <p className="text-sm text-red-600 mt-2 font-medium">
-                {cdrRows.filter(r => r.outcome === 'missed').length} missed
+                {filteredCdr.filter(r => r.outcome === 'missed').length} missed
               </p>
             </div>
           </div>
@@ -522,7 +558,7 @@ export function CallingWorkspace() {
           <RecordingsPanel />
 
           {/* Supervisor controls */}
-          {isSupervisor && selected && (
+          {isSupervisor && (selectedSession || activeCall) && (
             <div className="rounded-xl border p-3 bg-white">
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
                 Supervisor
@@ -557,7 +593,7 @@ export function CallingWorkspace() {
           transport={transport}
           disabled={!user}
           onCall={async (number, t) => {
-            if (t === 'pstn') {
+            if (t === 'pstn' || t === 'webrtc') {
               if (!makeCall || !sipRegistered) {
                 toast.error('Softphone not connected — wait for "Softphone connected".');
                 return;

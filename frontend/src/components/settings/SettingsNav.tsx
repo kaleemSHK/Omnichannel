@@ -33,13 +33,15 @@ import {
   PhoneCall,
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store/auth';
-import { can } from '@/lib/rbac';
+import { can, canPermission } from '@/lib/rbac';
 
 const NAV_ITEMS = [
   { id: 'account', label: 'Account Settings', icon: Building2, group: 'Account' },
   { id: 'profile', label: 'Profile', icon: User, group: 'Account' },
   { id: 'notifications', label: 'Notifications', icon: Bell, group: 'Account' },
   { id: 'agents', label: 'Agents', icon: Users, group: 'Workspace' },
+  { id: 'roles', label: 'Roles & Permissions', icon: ShieldCheck, group: 'Workspace' },
+  { id: 'users', label: 'Users & Access', icon: Users, group: 'Workspace' },
   { id: 'teams', label: 'Teams', icon: Users, group: 'Workspace' },
   { id: 'inboxes', label: 'Inboxes', icon: Inbox, group: 'Workspace' },
   { id: 'labels', label: 'Labels', icon: Tag, group: 'Workspace' },
@@ -84,6 +86,8 @@ export function SettingsNav({ active, onChange }: Props) {
   const visible = NAV_ITEMS.filter(item => {
     if (item.id === 'account') return can(role, 'manageTeam');
     if (item.id === 'agents') return can(role, 'manageTeam');
+    if (item.id === 'roles') return canPermission('roles.view') || can(role, 'manageTeam');
+    if (item.id === 'users') return canPermission('users.view') || can(role, 'manageTeam');
     if (item.id === 'teams') return can(role, 'manageTeam');
     if (item.id === 'inboxes') return can(role, 'manageInboxes');
     if (item.id === 'labels') return can(role, 'manageInboxes');

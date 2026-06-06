@@ -7,6 +7,7 @@ import { MessageThread } from '@/components/conversations/MessageThread';
 import { AgentAssistPanel } from '@/components/conversations/AgentAssistPanel';
 import { useInboxStore } from '@/lib/store/inbox';
 import { getConversation } from '@/lib/api/conversations';
+import { useMarkConversationRead } from '@/lib/hooks/useConversations';
 import { isDemoDataEnabled } from '@/lib/demo/config';
 import { DEMO_CONVERSATIONS } from '@/lib/demo/conversationsFixture';
 import type { CWConversation } from '@/types';
@@ -30,13 +31,15 @@ function ConversationsContent() {
   const isWide = useIsMdScreen();
   const [assistOpen, setAssistOpen] = useState(isWide);
   const setStoreConversationId = useInboxStore(s => s.setSelectedConversationId);
+  const markRead = useMarkConversationRead();
 
   useEffect(() => {
     const convId = searchParams.get('conversation_id');
     if (convId && !isDemoDataEnabled()) {
       getConversation(Number(convId))
         .then(conv => {
-          setSelectedConversation(conv);
+          markRead.mutate(conv.id);
+          setSelectedConversation({ ...conv, unread_count: 0 });
           setStoreConversationId(conv.id);
         })
         .catch(() => {
@@ -54,7 +57,7 @@ function ConversationsContent() {
         setStoreConversationId(match.id);
       }
     }
-  }, [searchParams, setStoreConversationId]);
+  }, [searchParams, setStoreConversationId, markRead]);
 
   useEffect(() => {
     setAssistOpen(isWide);
@@ -62,10 +65,11 @@ function ConversationsContent() {
 
   const handleSelect = useCallback(
     (conv: CWConversation) => {
-      setSelectedConversation(conv);
+      markRead.mutate(conv.id);
+      setSelectedConversation({ ...conv, unread_count: 0 });
       setStoreConversationId(conv.id);
     },
-    [setStoreConversationId],
+    [setStoreConversationId, markRead],
   );
 
   return (

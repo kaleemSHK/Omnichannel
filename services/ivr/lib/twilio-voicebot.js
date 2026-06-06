@@ -3,6 +3,7 @@ import { createLogger } from './logger.js';
 import { resolveTenantId } from './tenant.js';
 import * as voicebot from './voicebot-client.js';
 import { notifyInboundCall } from './calls-notify.js';
+import { continueGraphIvr, hasGraphSession, tryStartGraphIvr } from './twilio-graph-ivr.js';
 
 const log = createLogger('ivr-twilio');
 
@@ -86,6 +87,11 @@ twilioVoicebotRouter.post('/v1/ivr/inbound', async (req, res) => {
     return res.type('text/xml').send(twiml);
   }
 
+  const graphTwiml = await tryStartGraphIvr(tenantId, CallSid, From, To);
+  if (graphTwiml) {
+    return res.type('text/xml').send(graphTwiml);
+  }
+
   try {
     const session = await voicebot.createVoiceSession(tenantId, {
       callId: CallSid,
@@ -126,8 +132,15 @@ twilioVoicebotRouter.post('/v1/ivr/inbound', async (req, res) => {
 twilioVoicebotRouter.post('/v1/ivr/respond/:callId', async (req, res) => {
   const callSid = req.params.callId || req.body?.CallSid;
   const speechResult = req.body?.SpeechResult || req.body?.UnstableSpeechResult;
+  const digits = req.body?.Digits || speechResult?.trim?.()?.charAt(0);
   const recordingUrl = req.body?.RecordingUrl;
   const tenantId = resolveTenantId(req);
+
+  if (hasGraphSession(callSid)) {
+    const graphTwiml = await continueGraphIvr(tenantId, callSid, digits);
+    if (graphTwiml) return res.type('text/xml').send(graphTwiml);
+  }
+
   const meta = (await resolveSession(tenantId, callSid)) ?? { tenantId };
 
   if (!meta?.sessionId) {

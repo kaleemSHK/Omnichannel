@@ -1,59 +1,114 @@
-# BlinkOne Mobile — Android development build
+# BlinkOne Mobile — bare React Native (no Expo)
 
-Expo Go cannot load `react-native-webrtc`. Use a **development build** (custom APK with `expo-dev-client`).
+Android app with **react-native-webrtc** + JsSIP. Build with Gradle; run Metro separately.
 
 ## Prerequisites
 
-1. [Expo account](https://expo.dev/signup) (free)
-2. `mobile/.env` — set your laptop WiFi IP (`192.168.1.x`) before building
-3. Phone and laptop on the **same WiFi**
+1. Node.js 20+
+2. Android Studio + SDK (API 36, build-tools 35)
+3. JDK 17
+4. Copy `.env.example` → `.env` and set your server URLs
 
-## Option A — EAS cloud build (recommended, no Android Studio)
+## Install
 
 ```powershell
 cd E:\BlinkOne\mobile
 npm install --legacy-peer-deps
-npx eas-cli login
-npx eas build --profile development --platform android
 ```
 
-When the build finishes, open the link, download the **APK**, install on your phone.
+## Run on device/emulator
 
-Start the dev server:
+Terminal 1 — Metro:
 
 ```powershell
-npx expo start --dev-client
+npm start
 ```
 
-Open the installed **BlinkOne** app (not Expo Go) and connect to `exp://192.168.1.9:8081`.
+Terminal 2 — install debug APK:
 
-## Option B — Local build (requires Android Studio + SDK)
+```powershell
+npm run android
+```
 
-Install [Android Studio](https://developer.android.com/studio) and set `ANDROID_HOME`.
+Or build **debug** APK (requires Metro when opening the app):
+
+```powershell
+.\build_apk.ps1
+```
+
+APK output: `android/app/build/outputs/apk/debug/app-debug.apk`
+
+## Incoming-call push (FCM)
+
+Server push is enabled on production (`PUSH_CALLS_ENABLED=1`, `FCM_SERVER_KEY` set).
+
+**Mobile setup (done in repo):**
+
+1. Firebase → Android app `ai.blinkone.app` → `android/app/google-services.json`
+2. `@react-native-firebase/app` + `@react-native-firebase/messaging` (installed)
+3. Rebuild APK — app registers a **real FCM token** on login
 
 ```powershell
 cd E:\BlinkOne\mobile
-npx expo prebuild --platform android --clean
-npx expo run:android --device
+npm install --legacy-peer-deps
+.\build_apk_release.ps1
 ```
 
-## After installing the dev APK
+Install `android/app/build/outputs/apk/release/app-release.apk`, log in as agent, allow notifications. Token syncs to gateway via `POST /api/devices/register`.
 
-1. Start Docker (Chatwoot `:3000`, nginx `:80`, Asterisk WSS `:8089`)
-2. Run `npx expo start --dev-client` on the laptop
-3. Open **BlinkOne** on the phone — it loads JS from your dev server
-4. Allow microphone permission when calling
+Verify on server: device row should **not** start with `dev-`.
 
-## Rebuild required when
+## Post-call transcription
 
-- Changing `app.json` plugins
-- Upgrading native modules (`react-native-webrtc`, etc.)
-- Changing `EXPO_PUBLIC_*` in `.env` (rebuild APK, then restart dev server)
+Set `AUTO_STT_ON_RECORDING=1` on the recording service (via root `.env`) to queue Whisper STT jobs when call audio lands in MinIO.
+
+### Customer Call Support (mobile)
+
+After code changes for queue / SIP dial, rebuild the release APK:
+
+```powershell
+cd mobile
+.\build_apk_release.ps1
+adb install -r android\app\build\outputs\apk\release\app-release.apk
+```
+
+Requires `.env` from `.env.production.example` (`SIP_WSS`, `AGENT_DESK_EXT=blinkone`, `GATEWAY_URL=https://app.blinksone.com`).
+
+## Production APK (no Metro — for real devices)
+
+Copy production URLs, bundle JS inside the APK, install standalone:
+
+```powershell
+.\build_apk_release.ps1
+```
+
+APK output: `android/app/build/outputs/apk/release/app-release.apk`
+
+Uses `.env.production.example` → `.env` (`https://app.blinksone.com`, `wss://sip.blinksone.com`, etc.).
+
+## Environment variables
+
+Configured via `react-native-config` in `.env`:
+
+| Variable | Purpose |
+|----------|---------|
+| `CHATWOOT_URL` | Chatwoot API base |
+| `GATEWAY_URL` | BlinkOne gateway |
+| `WS_URL` | Action Cable WebSocket |
+| `SIP_WSS` | Kamailio WSS URI |
+| `SIP_PASS` | Agent SIP password |
+
+After changing `.env`, rebuild the Android app.
 
 ## Troubleshooting
 
 | Issue | Fix |
 |-------|-----|
-| Cannot reach API | Update `mobile/.env` IP; rebuild APK |
-| Metro not connecting | Same WiFi; use `npx expo start --dev-client --lan` |
-| SIP / calls fail | Check `EXPO_PUBLIC_SIP_WSS` and Asterisk on `:8089` |
+| Cannot reach API | Check `.env` URLs; rebuild APK |
+| Red screen “Unable to load script” | You installed **debug** APK without Metro — use `.\build_apk_release.ps1` instead |
+| Metro not connecting | `adb reverse tcp:8081 tcp:8081` for USB device |
+| SIP / calls fail | Verify `SIP_WSS` and Kamailio WSS on server |
+| Crash right after agent login | Fixed: Chatwoot returns `data.payload` not `data[]` — pull latest mobile + reload Metro |
+| Mobile call, browser does not ring | Log in on **web** first (SIP user `blinkone`). On mobile dial pad enter **`blinkone`** (not a phone number). Mobile registers as your agent id so it does not steal the browser registration. |
+| Contacts empty | Fixed: Chatwoot uses `payload` not `data` — reload Metro; contacts load on open |
+| User queue / unified calling | See `docs/blinkone/UNIFIED_CALLING.md`; customer **Call Support** uses ACD when server deployed |

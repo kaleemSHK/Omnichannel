@@ -208,6 +208,26 @@ export async function patchAgent(tenantId, agentId, patch) {
     }
   }
 
+  const liveStatus = patch.status ?? patch.state;
+  if (liveStatus) {
+    const mapped = liveStatus === 'break' ? 'away' : liveStatus;
+    const skills =
+      patch.skills?.length ? patch.skills : existing.skills?.length ? existing.skills : ['support'];
+    const queueKeys =
+      patch.queueKeys?.length
+        ? patch.queueKeys
+        : existing.queueKeys?.length
+          ? existing.queueKeys
+          : ['support', 'default'];
+    await updateAgentLiveState(tenantId, agentId, {
+      status: mapped,
+      skills,
+      queueKeys,
+      currentCallId: patch.currentCallId,
+      occupancy: patch.occupancy,
+    });
+  }
+
   return getAgent(tenantId, agentId);
 }
 

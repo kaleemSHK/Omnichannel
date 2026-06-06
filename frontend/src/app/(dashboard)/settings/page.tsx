@@ -6,6 +6,8 @@ import { AccountSection } from '@/components/settings/AccountSection';
 import { ProfileSection } from '@/components/settings/ProfileSection';
 import { NotificationsSection } from '@/components/settings/NotificationsSection';
 import { AgentsSection } from '@/components/settings/AgentsSection';
+import { RolesSection } from '@/components/settings/RolesSection';
+import { UsersSection } from '@/components/settings/UsersSection';
 import { TeamsSection } from '@/components/settings/TeamsSection';
 import { InboxSection } from '@/components/settings/InboxSection';
 import { LabelsSection } from '@/components/settings/LabelsSection';
@@ -44,6 +46,8 @@ export default function SettingsPage() {
     profile: <ProfileSection />,
     notifications: <NotificationsSection />,
     agents: <AgentsSection />,
+    roles: <RolesSection />,
+    users: <UsersSection />,
     teams: <TeamsSection />,
     inboxes: <InboxSection />,
     labels: <LabelsSection />,

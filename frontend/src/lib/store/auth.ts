@@ -12,6 +12,7 @@ import {
   loadAuthSession,
   saveAuthSession,
 } from '@/lib/store/auth-persist';
+import { hydratePermissionsFromJwt, usePermissionsStore } from '@/lib/store/permissions';
 
 interface AuthState {
   user: BlinkoneUser | null;
@@ -33,6 +34,7 @@ function readSessionIntoState(): Pick<AuthState, 'user' | 'tokens' | 'hydrated'>
       stored.user.email,
     );
     resetGatewayAuthFailed();
+    hydratePermissionsFromJwt(stored.tokens.gatewayJwt);
     return {
       user: { ...stored.user, role },
       tokens: stored.tokens,
@@ -54,6 +56,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   setAuth: (user, tokens) => {
     resetGatewayAuthFailed();
+    hydratePermissionsFromJwt(tokens.gatewayJwt);
     const role = resolveRoleFromAuth(user.role, tokens.gatewayJwt, user.email);
     const nextUser = { ...user, role };
     set({ user: nextUser, tokens, hydrated: true });
@@ -62,6 +65,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   clearAuth: () => {
     clearAuthSession();
+    usePermissionsStore.getState().clear();
     set({ user: null, tokens: null, hydrated: true });
   },
 

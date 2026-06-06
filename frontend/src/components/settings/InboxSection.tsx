@@ -5,6 +5,8 @@ import { useQuery } from '@tanstack/react-query';
 import { listInboxes } from '@/lib/api/conversations';
 import { DEMO_INBOXES } from '@/lib/demo/inboxesFixture';
 import { isDemoDataEnabled } from '@/lib/demo/config';
+import { withDemoOnly } from '@/lib/demo/tenantSettingsQuery';
+import { useTenantAccountId } from '@/lib/hooks/useTenantAccountId';
 import { useAuthStore } from '@/lib/store/auth';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
@@ -28,6 +30,7 @@ function useInboxPermissions() {
 
 export function InboxSection() {
   const { canCreate, canEdit, canDelete } = useInboxPermissions();
+  const accountId = useTenantAccountId();
 
   const [search, setSearch] = useState('');
   const [filterType, setFilterType] = useState<string>('all');
@@ -35,16 +38,10 @@ export function InboxSection() {
   const [deletingInbox, setDeletingInbox] = useState<CWInbox | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
 
-  const { data: inboxes = [], isLoading } = useQuery({
-    queryKey: ['inboxes'],
-    queryFn: async () => {
-      try {
-        const data = await listInboxes();
-        return data.length ? data : isDemoDataEnabled() ? DEMO_INBOXES : [];
-      } catch {
-        return isDemoDataEnabled() ? DEMO_INBOXES : [];
-      }
-    },
+  const { data: inboxes = [], isLoading, isError, error } = useQuery({
+    queryKey: ['inboxes', accountId],
+    enabled: accountId > 0 || isDemoDataEnabled(),
+    queryFn: () => withDemoOnly(DEMO_INBOXES, () => listInboxes()),
     staleTime: 30_000,
   });
 

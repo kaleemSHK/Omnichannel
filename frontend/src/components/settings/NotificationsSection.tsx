@@ -6,6 +6,8 @@ import { toast } from 'sonner';
 import { getNotificationPreferences, updateNotificationPreferences } from '@/lib/api/settings';
 import { DEMO_NOTIFICATION_PREFS, settingsDemoDelay } from '@/lib/demo/settingsFixture';
 import { isDemoDataEnabled } from '@/lib/demo/config';
+import { withDemoOnly } from '@/lib/demo/tenantSettingsQuery';
+import { useTenantAccountId } from '@/lib/hooks/useTenantAccountId';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -28,12 +30,12 @@ const NOTIFICATION_TYPES = [
     description: 'When someone mentions you in a note',
   },
   {
-    key: 'assigned_conversation_creation',
+    key: 'assigned_conversation_new_message',
     label: 'New message',
     description: 'When your assigned conversation gets a new message',
   },
   {
-    key: 'participant_conversation_creation',
+    key: 'participating_conversation_new_message',
     label: 'Participant message',
     description: 'New message in a conversation you participate in',
   },
@@ -45,16 +47,11 @@ interface PrefsState {
 }
 
 export function NotificationsSection() {
-  const { data: prefs, isLoading } = useQuery({
-    queryKey: ['notification-prefs'],
-    queryFn: async () => {
-      if (isDemoDataEnabled()) return DEMO_NOTIFICATION_PREFS;
-      try {
-        return await getNotificationPreferences();
-      } catch {
-        return DEMO_NOTIFICATION_PREFS;
-      }
-    },
+  const accountId = useTenantAccountId();
+  const { data: prefs, isLoading, isError, error } = useQuery({
+    queryKey: ['notification-prefs', accountId],
+    enabled: accountId > 0,
+    queryFn: () => withDemoOnly(DEMO_NOTIFICATION_PREFS, () => getNotificationPreferences()),
   });
 
   const [state, setState] = useState<PrefsState>({ email: {}, push: {} });

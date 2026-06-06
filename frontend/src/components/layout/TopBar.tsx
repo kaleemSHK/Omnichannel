@@ -6,6 +6,8 @@ import { LogOut } from 'lucide-react';
 import { ROLE_META, type UserRole } from '@/lib/rbac';
 import { cn } from '@/lib/utils/cn';
 import { disconnectCable } from '@/lib/api/websocket';
+import { markAgentOffline } from '@/lib/store/availability';
+import { AvailabilitySelector } from '@/components/layout/AvailabilitySelector';
 
 const PAGE_TITLES: Record<string, string> = {
   '/conversations': 'Conversations',
@@ -34,15 +36,16 @@ export function TopBar() {
   const roleMeta = user?.role ? ROLE_META[user.role as UserRole] : null;
 
   function handleLogout() {
-    // Tear down realtime subscriptions so a new sign-in (or shared machine)
-    // doesn't inherit the previous user's Action Cable session/token.
-    try {
-      disconnectCable();
-    } catch {
-      /* non-fatal */
-    }
-    clearAuth();
-    router.push('/login');
+    void (async () => {
+      try {
+        await markAgentOffline();
+        disconnectCable();
+      } catch {
+        /* non-fatal */
+      }
+      clearAuth();
+      router.push('/login');
+    })();
   }
 
   return (
@@ -50,6 +53,7 @@ export function TopBar() {
       <h1 className="text-sm font-semibold text-gray-900 truncate">{pageTitle}</h1>
 
       <div className="flex items-center gap-2 shrink-0">
+        <AvailabilitySelector />
         {roleMeta && (
           <span
             className={cn(

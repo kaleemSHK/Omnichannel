@@ -23,6 +23,8 @@ import {
 } from '@/components/ui/select-radix';
 import { ShieldAlert, Pencil, Trash2, Clock } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
+import { isDemoDataEnabled } from '@/lib/demo/config';
+import { useAuthStore } from '@/lib/store/auth';
 
 // ─── Demo data ─────────────────────────────────────────────────────────────────
 
@@ -153,15 +155,17 @@ function PolicySheet({
 
 export function SLAPoliciesSection() {
   const qc = useQueryClient();
+  const tenantId = useAuthStore(s => s.user?.tenantId ?? '');
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<SLAPolicy | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<SLAPolicy | null>(null);
 
-  const { data: policies = [], isLoading } = useQuery({
-    queryKey: ['sla-policies'],
+  const { data: policies = [], isLoading, isError, error } = useQuery({
+    queryKey: ['sla-policies', tenantId],
+    enabled: Boolean(tenantId) || isDemoDataEnabled(),
     queryFn: async () => {
-      try { return await listPolicies(); }
-      catch { return DEMO_POLICIES; }
+      if (isDemoDataEnabled()) return DEMO_POLICIES;
+      return listPolicies();
     },
   });
 

@@ -1,3 +1,5 @@
+import { notifyIncomingCallPush } from './push-notify.js';
+
 const CHATWOOT_URL = (process.env.CHATWOOT_URL || 'http://chatwoot:3000').replace(/\/$/, '');
 const BROADCAST_TOKEN = (process.env.CHATWOOT_INTERNAL_TOKEN || process.env.CHATWOOT_BOT_TOKEN || '').trim();
 
@@ -30,11 +32,12 @@ export async function broadcastCallEvent(accountId, payload) {
 
 export async function broadcastCallRinging(session) {
   const accountId = session.chatwootAccountId ?? session.tenantId;
-  return broadcastCallEvent(accountId, {
+  await broadcastCallEvent(accountId, {
     type: 'incoming',
     callId: session.id,
     conversationId: session.conversationId,
     eventType: 'call.ringing',
     callSession: session,
   });
+  await notifyIncomingCallPush(session);
 }

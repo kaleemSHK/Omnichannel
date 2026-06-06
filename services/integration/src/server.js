@@ -13,6 +13,7 @@ import { loadAggregatedOpenApi, docsHtml } from '../lib/docs-portal.js';
 import { listConnectorTypes, getConnector } from '../lib/connectors/framework.js';
 import { mountMetrics } from '../_shared/lib/metrics-middleware.js';
 import { requireFeature } from '../_shared/lib/features.js';
+import { requireIntegrationRbac } from '../_shared/lib/rbac.js';
 import { forwardChatwootToSla } from '../lib/sla-forward.js';
 
 const log = createLogger('integration');
@@ -27,6 +28,7 @@ const legacyStore = createStore(process.env.DATA_DIR || './data', { webhooks: []
 const app = express();
 app.disable('x-powered-by');
 app.use(requestId);
+app.use(requireIntegrationRbac());
 healthRouter(app, 'integration');
 mountMetrics(app, 'integration');
 

@@ -6,6 +6,8 @@ import { toast } from 'sonner';
 import { getBusinessHours, updateBusinessHours, type BusinessHourEntry } from '@/lib/api/settings';
 import { DEMO_BUSINESS_HOURS, settingsDemoDelay } from '@/lib/demo/settingsFixture';
 import { isDemoDataEnabled } from '@/lib/demo/config';
+import { withDemoOnly } from '@/lib/demo/tenantSettingsQuery';
+import { useTenantAccountId } from '@/lib/hooks/useTenantAccountId';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -30,19 +32,13 @@ function parse(v: string): { h: number; m: number } {
 
 export function BusinessHoursSection() {
   const qc = useQueryClient();
+  const accountId = useTenantAccountId();
   const [hours, setHours] = useState<BusinessHourEntry[]>([]);
 
-  const { data, isLoading } = useQuery({
-    queryKey: ['business-hours'],
-    queryFn: async () => {
-      if (isDemoDataEnabled()) return DEMO_BUSINESS_HOURS;
-      try {
-        const list = await getBusinessHours();
-        return list.length ? list : DEMO_BUSINESS_HOURS;
-      } catch {
-        return DEMO_BUSINESS_HOURS;
-      }
-    },
+  const { data, isLoading, isError, error } = useQuery({
+    queryKey: ['business-hours', accountId],
+    enabled: accountId > 0,
+    queryFn: () => withDemoOnly(DEMO_BUSINESS_HOURS, () => getBusinessHours()),
   });
 
   useEffect(() => {
@@ -60,7 +56,7 @@ export function BusinessHoursSection() {
       await updateBusinessHours(hours);
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['business-hours'] });
+      qc.invalidateQueries({ queryKey: ['business-hours', accountId] });
       toast.success('Business hours saved');
     },
     onError: (e: Error) => toast.error(e.message),

@@ -12,7 +12,12 @@ export const SIP_WSS = cfg('SIP_WSS', '');
 export const SIP_DOMAIN = cfg('SIP_DOMAIN', 'blinkone.local');
 export const SIP_PASS = cfg('SIP_PASS', '');
 export const STUN = cfg('STUN', 'stun:stun.l.google.com:19302');
-export const SUPPORT_EXT = cfg('SUPPORT_EXT', '5000');
+export const TURN_SERVER = cfg('TURN_SERVER', '');
+export const TURN_USER = cfg('TURN_USER', '');
+export const TURN_PASS = cfg('TURN_PASS', '');
+/** After ACD assign, dial browser desk SIP user (Kamailio usrloc). Not numeric ext 5000. */
+export const SUPPORT_EXT = cfg('SUPPORT_EXT', 'blinkone');
+export const AGENT_DESK_EXT = cfg('AGENT_DESK_EXT', 'blinkone');
 export const SUPPORT_QUEUE = cfg('SUPPORT_QUEUE', 'support');
 export const DEFAULT_LANG = cfg('DEFAULT_LANG', 'en');
 

@@ -5,27 +5,34 @@
  */
 
 const PERMISSIONS = {
-  'billing:read': ['admin', 'supervisor', 'viewer'],
-  'billing:write': ['admin'],
-  'routing:read': ['admin', 'supervisor', 'agent', 'viewer'],
-  'routing:write': ['admin', 'supervisor'],
-  'sla:read': ['admin', 'supervisor', 'agent', 'viewer'],
-  'sla:write': ['admin', 'supervisor'],
-  'escalation:read': ['admin', 'supervisor', 'viewer'],
-  'escalation:write': ['admin', 'supervisor'],
-  'ai:read': ['admin', 'supervisor', 'agent', 'viewer'],
-  'ai:write': ['admin', 'supervisor', 'agent'],
-  'integration:read': ['admin', 'supervisor'],
-  'integration:write': ['admin'],
-  'branding:read': ['admin', 'supervisor', 'agent', 'viewer'],
-  'branding:write': ['admin'],
-  'audit:read': ['admin', 'supervisor'],
-  'audit:write': ['admin', 'supervisor'],
-  'calls:read': ['admin', 'supervisor', 'agent', 'viewer'],
-  'calls:write': ['admin', 'supervisor', 'agent'],
-  'sso:read': ['admin'],
-  'sso:write': ['admin'],
+  'integrations.view': ['admin', 'supervisor', 'viewer'],
+  'integrations.configure': ['admin'],
+  'settings.view': ['admin', 'supervisor', 'agent', 'viewer'],
+  'settings.edit': ['admin', 'supervisor'],
+  'audit.view': ['admin', 'supervisor'],
+  'billing.view': ['admin', 'supervisor', 'viewer'],
+  'billing.edit': ['admin'],
+  'queues.view': ['admin', 'supervisor', 'agent', 'viewer'],
+  'queues.edit': ['admin', 'supervisor'],
+  'reports.view': ['admin', 'supervisor', 'agent', 'viewer'],
+  'workflows.view': ['admin', 'supervisor', 'viewer'],
+  'workflows.edit': ['admin', 'supervisor'],
+  'ai.view': ['admin', 'supervisor', 'agent', 'viewer'],
+  'ai.use': ['admin', 'supervisor', 'agent'],
+  'calling.view': ['admin', 'supervisor', 'agent', 'viewer'],
+  'calling.make_call': ['admin', 'supervisor', 'agent'],
+  'calling.transfer_call': ['admin', 'supervisor', 'agent'],
+  'calling.record_call': ['admin', 'supervisor'],
+  'calling.monitor_call': ['admin', 'supervisor'],
+  'ivr.view': ['admin', 'supervisor', 'viewer'],
+  'ivr.edit': ['admin', 'supervisor'],
+  'ivr.publish': ['admin'],
+  'roles.view': ['admin', 'supervisor'],
+  'users.view': ['admin', 'supervisor'],
+  'users.edit': ['admin'],
 };
+
+const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 const PLATFORM_ROLES = new Set(['platform_admin', 'platform_support', 'platform_billing']);
 
@@ -35,7 +42,15 @@ export function parseRoles(req) {
   return raw.split(',').map((r) => r.trim()).filter(Boolean);
 }
 
-export function hasPermission(roles, permission) {
+export function parsePermissions(req) {
+  const raw = req.headers['x-blinkone-permissions'];
+  if (!raw || typeof raw !== 'string') return [];
+  return raw.split(',').map((p) => p.trim()).filter(Boolean);
+}
+
+export function hasPermission(roles, permission, req = null) {
+  const dynamic = req ? parsePermissions(req) : [];
+  if (dynamic.length) return dynamic.includes(permission);
   if (!roles?.length) return true;
   if (roles.some((r) => PLATFORM_ROLES.has(r))) return true;
   const allowed = PERMISSIONS[permission];
@@ -54,8 +69,8 @@ export function mapChatwootRole(role) {
 export function requireRbac(permission) {
   return (req, res, next) => {
     const roles = parseRoles(req);
-    if (!roles.length) return next();
-    if (!hasPermission(roles, permission)) {
+    if (!roles.length && !parsePermissions(req).length) return next();
+    if (!hasPermission(roles, permission, req)) {
       return res.status(403).json({
         error: { code: 'FORBIDDEN', message: `Missing permission: ${permission}` },
       });
@@ -69,20 +84,82 @@ export function integrationPermission(method, path) {
   const p = path.split('?')[0];
   if (p.startsWith('/v1/sso')) {
     if (p === '/v1/sso/login' || p === '/v1/sso/callback') return null;
-    return method === 'GET' || method === 'HEAD' ? 'sso:read' : 'sso:write';
+    return method === 'GET' || method === 'HEAD' ? 'settings.view' : 'settings.edit';
   }
   if (p.startsWith('/v1/audit')) {
-    return method === 'GET' || method === 'HEAD' ? 'audit:read' : 'audit:write';
+    return method === 'GET' || method === 'HEAD' ? 'audit.view' : 'settings.edit';
   }
   if (p.startsWith('/v1/connectors') || p.startsWith('/v1/webhooks') || p.startsWith('/v1/api-keys')) {
-    return method === 'GET' || method === 'HEAD' ? 'integration:read' : 'integration:write';
+    return method === 'GET' || method === 'HEAD' ? 'integrations.view' : 'integrations.configure';
   }
-  return method === 'GET' || method === 'HEAD' ? 'integration:read' : 'integration:write';
+  return method === 'GET' || method === 'HEAD' ? 'integrations.view' : 'integrations.configure';
 }
 
 export function requireIntegrationRbac() {
   return (req, res, next) => {
     const perm = integrationPermission(req.method, req.path);
+    if (!perm) return next();
+    return requireRbac(perm)(req, res, next);
+  };
+}
+
+function readOrWrite(method, readPerm, writePerm) {
+  return READ_METHODS.has(method) ? readPerm : writePerm;
+}
+
+/** Calls service: map path + method → permission (null = skip) */
+export function callsPermission(method, path) {
+  const p = path.split('?')[0];
+  if (p.startsWith('/v1/internal/')) return null;
+  if (p === '/v1/cdr') return null;
+  if (p.includes('/recording/pause') || p.includes('/recording/resume') || p.includes('/recording-link')) {
+    return 'calling.record_call';
+  }
+  if (p.includes('/transfer')) return 'calling.transfer_call';
+  if (p.startsWith('/v1/campaigns')) return readOrWrite(method, 'calling.view', 'calling.make_call');
+  return readOrWrite(method, 'calling.view', 'calling.make_call');
+}
+
+export function requireCallsRbac() {
+  return (req, res, next) => {
+    const perm = callsPermission(req.method, req.path);
+    if (!perm) return next();
+    return requireRbac(perm)(req, res, next);
+  };
+}
+
+/** IVR service: map path + method → permission (null = skip) */
+export function ivrPermission(method, path) {
+  const p = path.split('?')[0];
+  if (
+    p.startsWith('/v1/inbound/') ||
+    p.startsWith('/v1/ivr/') ||
+    /\/surveys\/[^/]+\/respond$/.test(p)
+  ) {
+    return null;
+  }
+  if (p.includes('/publish')) return 'ivr.publish';
+  return readOrWrite(method, 'ivr.view', 'ivr.edit');
+}
+
+export function requireIvrRbac() {
+  return (req, res, next) => {
+    const perm = ivrPermission(req.method, req.path);
+    if (!perm) return next();
+    return requireRbac(perm)(req, res, next);
+  };
+}
+
+/** SLA service: map path + method → permission (null = skip) */
+export function slaPermission(method, path) {
+  const p = path.split('?')[0];
+  if (p === '/v1/events') return null;
+  return readOrWrite(method, 'reports.view', 'settings.edit');
+}
+
+export function requireSlaRbac() {
+  return (req, res, next) => {
+    const perm = slaPermission(req.method, req.path);
     if (!perm) return next();
     return requireRbac(perm)(req, res, next);
   };

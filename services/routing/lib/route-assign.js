@@ -4,6 +4,8 @@ import { selectAgent } from './selection.js';
 import { dequeueCall, setAgentState, peekNextCall, claimAgent, releaseAgentClaim } from './redis-state.js';
 import { setCallMeta, getCallMeta } from './call-meta.js';
 import { notifyBridge } from './ari-notify.js';
+import { notifyCallsAgentRing } from './notify-calls-ring.js';
+import { agentDeskDialTarget } from './dial-target.js';
 
 /**
  * Reserve agent and dequeue call from queue.
@@ -71,13 +73,16 @@ export async function assignCall(tenantId, { callId, queueKey, agentId, queueId 
   await dequeueCall(tenantId, queue.queueKey, cid);
 
   const sessionId = `cs-${tenantId}-${cid}`;
+  const dialTarget = agentDeskDialTarget(agent.agentId);
+  const meta = (await getCallMeta(tenantId, cid)) ?? {};
   await setCallMeta(tenantId, cid, {
+    ...meta,
     queueKey: queue.queueKey,
     queueId: queue.id,
     agentId: agent.agentId,
+    dialTarget,
     sessionId,
     assignedAt: new Date().toISOString(),
-    callerId: (await getCallMeta(tenantId, cid))?.callerId,
   });
 
   await queueRepo.recordDecision({
@@ -91,10 +96,24 @@ export async function assignCall(tenantId, { callId, queueKey, agentId, queueId 
 
   await notifyBridge({ tenantId, callId: cid, agentId: agent.agentId, queueKey: queue.queueKey });
 
+  await notifyCallsAgentRing({
+    tenantId,
+    callId: cid,
+    agentId: agent.agentId,
+    agentLabel: agent.displayName || agent.agentId,
+    queueKey: queue.queueKey,
+    callerId: meta.callerPhone ?? meta.callerId,
+    callerName: meta?.callerName ?? null,
+    callerPhone: meta?.callerPhone ?? null,
+    contactId: meta?.contactId ?? null,
+    sessionId,
+  });
+
   return {
     status: 'assigned',
     callId: cid,
     agentId: agent.agentId,
+    dialTarget: agentDeskDialTarget(agent.agentId),
     queueKey: queue.queueKey,
     sessionId,
   };

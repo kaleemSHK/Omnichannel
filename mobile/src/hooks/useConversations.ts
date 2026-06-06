@@ -7,7 +7,7 @@ export function useConversations(filters: ConversationFilters = {}) {
     queryKey: ['conversations', filters],
     queryFn: ({ pageParam = 1 }) => listConversations({ ...filters, page: pageParam }),
     initialPageParam: 1,
-    getNextPageParam: (lastPage, _pages, lastPageParam) => {
+    getNextPageParam: (lastPage) => {
       const meta = lastPage.meta;
       if (meta?.next_page) return meta.next_page;
       if (meta?.current_page && meta?.total_pages && meta.current_page < meta.total_pages) {

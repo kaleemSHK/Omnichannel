@@ -1,7 +1,7 @@
 import { createContext, useContext, type ReactNode } from 'react';
 
 export interface SipActions {
-  makeCall: (destination: string) => void;
+  makeCall: (destination: string) => Promise<boolean>;
   makePeerCall: (targetAgentId: string) => void;
   answerCall: () => void;
   hangup: () => void;
@@ -17,7 +17,7 @@ const noop = () => {};
 const noopAsync = async () => {};
 
 const defaultActions: SipActions = {
-  makeCall: noop,
+  makeCall: async () => false,
   makePeerCall: noop,
   answerCall: noop,
   hangup: noop,

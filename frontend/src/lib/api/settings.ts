@@ -522,15 +522,39 @@ export async function getNotificationPreferences(): Promise<{
   selected_email_flags: string[];
   selected_push_flags: string[];
 }> {
-  return cwFetch('/profile/notifications');
+  const res = await cwFetch<{
+    selected_email_flags?: string[];
+    selected_push_flags?: string[];
+  }>(`/accounts/${aid()}/notification_settings`);
+
+  const stripPrefix = (flags: string[], prefix: string) =>
+    flags
+      .filter(f => f.startsWith(prefix))
+      .map(f => f.slice(prefix.length));
+
+  return {
+    selected_email_flags: stripPrefix(res.selected_email_flags ?? [], 'email_'),
+    selected_push_flags: stripPrefix(res.selected_push_flags ?? [], 'push_'),
+  };
 }
 
 export async function updateNotificationPreferences(data: {
   notifications: { notification_type: string; email: boolean; push: boolean }[];
 }): Promise<void> {
-  return cwFetch('/profile/notifications', {
+  const selected_email_flags = data.notifications
+    .filter(n => n.email)
+    .map(n => `email_${n.notification_type}`);
+  const selected_push_flags = data.notifications
+    .filter(n => n.push)
+    .map(n => `push_${n.notification_type}`);
+  await cwFetch(`/accounts/${aid()}/notification_settings`, {
     method: 'PUT',
-    body: JSON.stringify(data),
+    body: JSON.stringify({
+      notification_settings: {
+        selected_email_flags,
+        selected_push_flags,
+      },
+    }),
   });
 }
 

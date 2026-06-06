@@ -25,6 +25,24 @@ async function cwApi(path, init = {}) {
   return body;
 }
 
+async function findContactByEmail(accountId, email) {
+  if (!email) return null;
+  const q = encodeURIComponent(email.trim());
+  const result = await cwApi(`/accounts/${accountId}/contacts/search?q=${q}&page=1`);
+  const list = result?.payload ?? result ?? [];
+  const needle = email.trim().toLowerCase();
+  const hit = list.find((c) => String(c?.email || '').toLowerCase() === needle);
+  return hit?.id ?? null;
+}
+
+async function findOrCreateContact(accountId, { name, email, phone }) {
+  const created = await cwApi(`/accounts/${accountId}/contacts`, {
+    method: 'POST',
+    body: JSON.stringify({ name, email, phone_number: phone }),
+  });
+  return created?.payload?.contact?.id ?? created?.id ?? null;
+}
+
 function issueCustomerJwt(payload, secret, expiresIn = 30 * 24 * 60 * 60) {
   return jwt.sign(payload, secret, { expiresIn, issuer: 'blinkone-gateway' });
 }
@@ -68,11 +86,18 @@ export function mountCustomerRoutes(app, { JWT_SECRET, log, U, TOKENS }) {
     try {
       let contactId = existingContactId;
       if (!contactId) {
-        const created = await cwApi(`/accounts/${accountId}/contacts`, {
-          method: 'POST',
-          body: JSON.stringify({ name, email, phone_number: phone }),
-        });
-        contactId = created?.payload?.contact?.id ?? created?.id;
+        contactId = await findContactByEmail(accountId, email);
+      }
+      if (!contactId) {
+        try {
+          contactId = await findOrCreateContact(accountId, { name, email, phone });
+        } catch (e) {
+          const msg = String(e?.message || e);
+          if (email && /already been taken|has already been taken/i.test(msg)) {
+            contactId = await findContactByEmail(accountId, email);
+          }
+          if (!contactId) throw e;
+        }
       }
       if (!contactId) throw new Error('Failed to create contact');
 
@@ -110,8 +135,9 @@ export function mountCustomerRoutes(app, { JWT_SECRET, log, U, TOKENS }) {
         name,
       });
     } catch (e) {
-      log.error({ err: e.message }, 'customer session');
-      return res.status(502).json({ error: { code: 'SESSION_FAILED', message: e.message } });
+      const message = String(e?.message || e);
+      log.error({ err: message }, 'customer session');
+      return res.status(502).json({ error: { code: 'SESSION_FAILED', message } });
     }
   });
 
@@ -209,6 +235,164 @@ export function mountCustomerRoutes(app, { JWT_SECRET, log, U, TOKENS }) {
     try {
       const data = await cwApi(`/accounts/${accountId}/conversations/${req.params.id}`);
       return res.json(data);
+    } catch (e) {
+      return res.status(502).json({ error: { code: 'BAD_GATEWAY', message: e.message } });
+    }
+  });
+
+  async function serviceJson(upstream, path, token, opts = {}) {
+    if (!upstream || !token) throw new Error('Service not configured');
+    const { method = 'GET', tenantId = '', body, headers = {} } = opts;
+    const res = await fetch(`${upstream.replace(/\/$/, '')}${path}`, {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+        'X-Blinkone-Tenant-Id': String(tenantId),
+        ...headers,
+      },
+      ...(body != null ? { body } : {}),
+    });
+    const parsed = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const msg = parsed?.error?.message ?? parsed?.message ?? `Upstream ${res.status}`;
+      const err = new Error(msg);
+      err.status = res.status;
+      throw err;
+    }
+    return parsed;
+  }
+
+  /** User mobile — enqueue or assign via ACD, then start SIP leg client-side */
+  app.post('/api/customer/call/request', customerAuth, express.json(), async (req, res) => {
+    const tenantId = String(req.customerAuth.tenant_id ?? req.customerAuth.account_id ?? '1');
+    const queueKey = String(req.body?.queueKey ?? process.env.SUPPORT_QUEUE ?? 'support').trim();
+    const callId = String(req.body?.callId ?? `cust-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`);
+    let callerName = String(req.body?.callerName ?? req.customerAuth.name ?? '').trim();
+    const callerPhone = String(req.body?.callerPhone ?? req.body?.callerId ?? '').trim();
+    const contactId = req.body?.contactId ?? req.customerAuth.contact_id ?? null;
+
+    if (!callerName && contactId && CW_TOKEN()) {
+      try {
+        const contact = await cwApi(`/accounts/${tenantId}/contacts/${contactId}`);
+        callerName =
+          contact?.payload?.name?.trim?.() ??
+          contact?.name?.trim?.() ??
+          callerName;
+      } catch {
+        /* optional */
+      }
+    }
+    if (!callerName) callerName = 'Mobile Customer';
+
+    const callerId = callerPhone || callerName || String(req.body?.callerId ?? req.customerAuth.sub ?? 'customer');
+    const displayPhone = callerName || callerPhone || callerId;
+
+    let welcomeMessage =
+      'Welcome to BlinkOne support. Please wait while we connect you to an agent.';
+    if (U.ivr && TOKENS.ivr) {
+      try {
+        const welcome = await serviceJson(U.ivr, '/v1/flows/welcome', TOKENS.ivr, {
+          method: 'GET',
+          tenantId,
+        });
+        welcomeMessage = welcome?.data?.message ?? welcome?.message ?? welcomeMessage;
+      } catch (welcomeErr) {
+        log.warn({ err: welcomeErr.message, tenantId }, 'ivr welcome skipped');
+      }
+    }
+
+    if (!U.routing || !TOKENS.routing) {
+      return res.status(503).json({ error: { code: 'NOT_CONFIGURED', message: 'Routing service unavailable' } });
+    }
+
+    try {
+      let sessionId = null;
+      if (U.calls && TOKENS.calls) {
+        try {
+          const created = await serviceJson(U.calls, '/v1/calls', TOKENS.calls, {
+            method: 'POST',
+            tenantId,
+            body: JSON.stringify({
+              chatwootAccountId: Number(tenantId),
+              roomId: callId,
+              customerPhone: displayPhone,
+              contactId: contactId ? String(contactId) : undefined,
+              direction: 'inbound',
+              transport: 'webrtc',
+              queueKey,
+              metadata: {
+                externalCallId: callId,
+                callerName: callerName || undefined,
+                callerPhone: callerPhone || undefined,
+                contactId: contactId ? String(contactId) : undefined,
+              },
+            }),
+          });
+          sessionId = created?.data?.id ?? null;
+        } catch (callErr) {
+          log.warn({ err: callErr.message, tenantId, callId }, 'customer call session create skipped');
+        }
+      }
+
+      const route = await serviceJson(U.routing, '/v1/route/request', TOKENS.routing, {
+        method: 'POST',
+        tenantId,
+        body: JSON.stringify({
+          callId,
+          queueKey,
+          callerId,
+          callerName: callerName || undefined,
+          callerPhone: callerPhone || undefined,
+          contactId: contactId ? String(contactId) : undefined,
+        }),
+      });
+
+      const data = route?.data ?? route;
+      return res.status(202).json({
+        callId,
+        sessionId,
+        welcomeMessage,
+        eventType: data?.status === 'queued' ? 'call:queued' : 'call:ringing',
+        ...data,
+      });
+    } catch (e) {
+      const status = e.status === 503 ? 503 : 502;
+      return res.status(status).json({ error: { code: 'CALL_REQUEST_FAILED', message: e.message } });
+    }
+  });
+
+  app.post('/api/customer/call/:callId/cancel', customerAuth, express.json(), async (req, res) => {
+    const tenantId = String(req.customerAuth.tenant_id ?? req.customerAuth.account_id ?? '1');
+    if (!U.routing || !TOKENS.routing) {
+      return res.status(503).json({ error: { code: 'NOT_CONFIGURED', message: 'Routing unavailable' } });
+    }
+    try {
+      const route = await serviceJson(
+        U.routing,
+        `/v1/route/calls/${encodeURIComponent(req.params.callId)}/abandon`,
+        TOKENS.routing,
+        { method: 'POST', tenantId, body: JSON.stringify({ reason: 'caller_cancel' }) },
+      );
+      return res.json(route?.data ?? route);
+    } catch (e) {
+      return res.status(502).json({ error: { code: 'BAD_GATEWAY', message: e.message } });
+    }
+  });
+
+  app.get('/api/customer/call/:callId/status', customerAuth, async (req, res) => {
+    const tenantId = String(req.customerAuth.tenant_id ?? req.customerAuth.account_id ?? '1');
+    if (!U.routing || !TOKENS.routing) {
+      return res.status(503).json({ error: { code: 'NOT_CONFIGURED', message: 'Routing unavailable' } });
+    }
+    try {
+      const route = await serviceJson(
+        U.routing,
+        `/v1/route/calls/${encodeURIComponent(req.params.callId)}/status`,
+        TOKENS.routing,
+        { tenantId },
+      );
+      return res.json(route?.data ?? route);
     } catch (e) {
       return res.status(502).json({ error: { code: 'BAD_GATEWAY', message: e.message } });
     }

@@ -37,7 +37,7 @@ export function CallNotesModal() {
     setSaving(true);
     try {
       if (!isDemoDataEnabled()) {
-        await addCallNotes(acwCall.id, { outcome: disposition, notes });
+        await addCallNotes(acwCall.id, { outcome: disposition, notes }, acwCall.roomId);
       }
       toast.success('Call notes saved');
     } catch {

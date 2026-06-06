@@ -72,7 +72,7 @@ export default function AgentConversationDetail() {
             inverted
             keyExtractor={(item) => String(item.id)}
             renderItem={({ item }) => (
-              <MessageBubble message={item} isOwn={item.message_type === 1} />
+              <MessageBubble message={item} viewer="agent" />
             )}
             contentContainerStyle={{ padding: 16 }}
             onRefresh={refetch}

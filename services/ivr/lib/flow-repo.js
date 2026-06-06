@@ -290,4 +290,19 @@ export async function getActiveGraph(tenantId, flowId = null) {
   return { graph: rows[0].graph, flowId: rows[0].id, flowName: rows[0].name };
 }
 
+/** First prompt from the tenant default IVR flow (mobile queue welcome). */
+export async function getWelcomeMessage(tenantId) {
+  const { graph, flowId, flowName } = await getActiveGraph(tenantId);
+  const { nodeById } = await import('./graph.js');
+  const entry = nodeById(graph, graph.entry);
+  const text = String(entry?.text ?? entry?.label ?? '').trim();
+  return {
+    message:
+      text ||
+      'Welcome to BlinkOne support. Please wait while we connect you to an agent.',
+    flowId,
+    flowName,
+  };
+}
+
 export { DEFAULT_GRAPH };

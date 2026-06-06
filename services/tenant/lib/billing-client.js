@@ -28,3 +28,17 @@ export async function fetchTenantUsage(tenantId) {
   const json = await res.json();
   return json.data ?? json;
 }
+
+/** Seat allowance from active billing plan (included_agents). */
+export async function fetchSeatAllowance(tenantId) {
+  try {
+    const usage = await fetchTenantUsage(tenantId);
+    const limit = usage?.subscription?.included?.agents;
+    return {
+      limit: limit != null ? Number(limit) : null,
+      planName: usage?.subscription?.planName ?? null,
+    };
+  } catch {
+    return { limit: null, planName: null };
+  }
+}

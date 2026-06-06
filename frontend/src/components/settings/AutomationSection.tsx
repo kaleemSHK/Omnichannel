@@ -14,6 +14,7 @@ import {
 } from '@/lib/api/settings';
 import { DEMO_AUTOMATIONS, settingsDemoDelay } from '@/lib/demo/settingsFixture';
 import { isDemoDataEnabled } from '@/lib/demo/config';
+import { useTenantAccountId } from '@/lib/hooks/useTenantAccountId';
 import { useAuthStore } from '@/lib/store/auth';
 import { can } from '@/lib/rbac';
 import { SectionHeader } from './shared/SectionHeader';
@@ -91,10 +92,12 @@ function actionNeedsParam(name: string): boolean {
 export function AutomationSection() {
   const qc = useQueryClient();
   const role = useAuthStore(s => s.user?.role);
+  const accountId = useTenantAccountId();
   const canManage = can(role, 'manageInboxes');
 
   const { data: rules = [], isLoading, isError } = useQuery({
-    queryKey: ['automations', isDemoDataEnabled()],
+    queryKey: ['automations', accountId, isDemoDataEnabled()],
+    enabled: accountId > 0 || isDemoDataEnabled(),
     queryFn: async () => {
       if (isDemoDataEnabled()) return DEMO_AUTOMATIONS;
       const res = await listAutomations();

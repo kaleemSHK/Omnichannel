@@ -9,7 +9,10 @@ interface CallsState {
   isMuted: boolean;
   isOnHold: boolean;
   callDurationSec: number;
+  /** ACD call id while customer is on queue / connecting (for cancel on SIP fail). */
+  customerQueueCallId: string | null;
   setActiveCall: (call: CallSession | null) => void;
+  setCustomerQueueCallId: (callId: string | null) => void;
   addIncomingCall: (call: IncomingCallInfo) => void;
   removeIncomingCall: (callId: string) => void;
   setAgentState: (state: AgentState) => void;
@@ -27,6 +30,7 @@ export const useCallsStore = create<CallsState>((set) => ({
   isMuted: false,
   isOnHold: false,
   callDurationSec: 0,
+  customerQueueCallId: null,
 
   setActiveCall: (call) =>
     set({ activeCall: call, isMuted: false, isOnHold: false, callDurationSec: 0 }),
@@ -38,4 +42,5 @@ export const useCallsStore = create<CallsState>((set) => ({
   setMuted: (v) => set({ isMuted: v }),
   setOnHold: (v) => set({ isOnHold: v }),
   setCallDuration: (sec) => set({ callDurationSec: sec }),
+  setCustomerQueueCallId: (callId) => set({ customerQueueCallId: callId }),
 }));

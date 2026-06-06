@@ -8,7 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '@/store/auth';
 import { useCallsStore } from '@/store/calls';
-import { setAgentState as apiSetAgentState } from '@/api/routing';
+import { useRoutingPresence } from '@/hooks/useRoutingPresence';
 import { listConversations } from '@/api/conversations';
 import { Avatar } from '@/components/layout/Avatar';
 import { C } from '@/lib/ui';
@@ -32,7 +32,7 @@ export default function AgentDashboard() {
   const navigation = useNavigation<AgentNav>();
   const user = useAuthStore((s) => s.user);
   const agentState = useCallsStore((s) => s.agentState);
-  const setAgentState = useCallsStore((s) => s.setAgentState);
+  const { publishState } = useRoutingPresence();
   const [refreshing, setRefreshing] = useState(false);
   const stateInfo = STATES.find((s) => s.key === agentState) ?? STATES[3];
 
@@ -53,8 +53,11 @@ export default function AgentDashboard() {
 
   async function changeState(state: AgentState) {
     hapticSelection();
-    setAgentState(state);
-    try { if (user) await apiSetAgentState(String(user.id), state); } catch {}
+    try {
+      await publishState(state);
+    } catch {
+      /* routing unavailable */
+    }
   }
 
   async function onRefresh() { setRefreshing(true); await refetch(); setRefreshing(false); }

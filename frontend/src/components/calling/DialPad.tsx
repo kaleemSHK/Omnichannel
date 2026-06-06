@@ -23,15 +23,15 @@ function sanitizePhone(raw: string): string {
 }
 
 interface Props {
-  transport?: 'pstn' | 'whatsapp';
-  onCall?: (number: string, transport: 'pstn' | 'whatsapp') => void;
+  transport?: 'pstn' | 'whatsapp' | 'webrtc';
+  onCall?: (number: string, transport: 'pstn' | 'whatsapp' | 'webrtc') => void;
   disabled?: boolean;
   className?: string;
 }
 
 export function DialPad({ transport: transportProp, onCall, disabled, className }: Props) {
   const [number, setNumber] = useState('');
-  const [tab, setTab] = useState<'pstn' | 'whatsapp'>('pstn');
+  const [tab, setTab] = useState<'pstn' | 'whatsapp' | 'webrtc'>('pstn');
   const [calling, setCalling] = useState(false);
   const [dtmfFlash, setDtmfFlash] = useState<string | null>(null);
   const dtmfTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -48,7 +48,7 @@ export function DialPad({ transport: transportProp, onCall, disabled, className 
 
   const pressKey = useCallback(
     (key: string) => {
-      if (isInCall && transport === 'pstn') {
+      if (isInCall && (transport === 'pstn' || transport === 'webrtc')) {
         sipControls?.sendDTMF(key);
         // Visual flash feedback
         if (dtmfTimer.current) clearTimeout(dtmfTimer.current);
@@ -76,7 +76,7 @@ export function DialPad({ transport: transportProp, onCall, disabled, className 
 
     setCalling(true);
     try {
-      if (transport === 'pstn') {
+      if (transport === 'pstn' || transport === 'webrtc') {
         if (!makeCall || !sipRegistered) {
           toast.error('Softphone not connected — wait for the green "Softphone connected" status.');
           return;
@@ -142,25 +142,31 @@ export function DialPad({ transport: transportProp, onCall, disabled, className 
 
   const callDisabled =
     !number.trim() || disabled || calling || isInCall ||
-    (transport === 'pstn' && !sipRegistered);
+    ((transport === 'pstn' || transport === 'webrtc') && !sipRegistered);
 
   return (
     <div className={cn('p-4 space-y-3 h-full flex flex-col min-h-0', className)}>
       {/* Transport tab (only when not controlled by parent) */}
       {!transportProp && (
         <div className="flex border border-gray-200 rounded-md overflow-hidden text-xs">
-          {(['pstn', 'whatsapp'] as const).map(t => (
+          {(
+            [
+              { key: 'pstn' as const, label: 'PSTN' },
+              { key: 'whatsapp' as const, label: 'WhatsApp' },
+              { key: 'webrtc' as const, label: 'WebRTC' },
+            ] as const
+          ).map(({ key, label }) => (
             <button
-              key={t}
+              key={key}
               type="button"
-              aria-pressed={tab === t}
-              onClick={() => setTab(t)}
+              aria-pressed={tab === key}
+              onClick={() => setTab(key)}
               className={cn(
-                'flex-1 py-1.5 capitalize font-medium transition-colors',
-                tab === t ? 'bg-blue-50 text-brand-primary' : 'text-gray-500 hover:bg-gray-50',
+                'flex-1 py-1.5 font-medium transition-colors',
+                tab === key ? 'bg-blue-50 text-brand-primary' : 'text-gray-500 hover:bg-gray-50',
               )}
             >
-              {t}
+              {label}
             </button>
           ))}
         </div>
@@ -196,7 +202,7 @@ export function DialPad({ transport: transportProp, onCall, disabled, className 
       )}
 
       {/* Keypad grid */}
-      <div className="grid grid-cols-3 gap-2 flex-1">
+      <div className="grid grid-cols-3 gap-2 flex-1 content-start">
         {KEYPAD_ROWS.flat().map(key => (
           <button
             key={key}
@@ -229,7 +235,7 @@ export function DialPad({ transport: transportProp, onCall, disabled, className 
       </Button>
 
       {/* Hint when SIP not connected */}
-      {transport === 'pstn' && !sipRegistered && !isInCall && (
+      {(transport === 'pstn' || transport === 'webrtc') && !sipRegistered && !isInCall && (
         <p className="text-center text-[11px] text-amber-700">
           Waiting for softphone registration…
         </p>

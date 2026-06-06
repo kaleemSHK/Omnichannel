@@ -1,6 +1,8 @@
 'use client';
 
+import { useState } from 'react';
 import { FeatureToggle } from '@/components/platform/FeatureToggle';
+import { TenantEditSheet } from '@/components/platform/TenantEditSheet';
 import {
   PLATFORM_FEATURE_FLAGS,
   avatarColor,
@@ -18,6 +20,7 @@ interface Props {
 
 export function TenantCard({ tenant }: Props) {
   const impersonate = useImpersonateTenant();
+  const [editOpen, setEditOpen] = useState(false);
   const pill = statusPill(tenant.status);
   const suspended = tenant.status === 'suspended';
 
@@ -56,7 +59,7 @@ export function TenantCard({ tenant }: Props) {
           </span>
           <p className="text-xs text-gray-500">{planLabel(tenant.plan)}</p>
           <div className="flex items-center justify-end gap-2 text-xs">
-            <button type="button" className="text-[#0B5FFF] hover:underline">
+            <button type="button" className="text-[#0B5FFF] hover:underline" onClick={() => setEditOpen(true)}>
               Edit
             </button>
             <button
@@ -86,6 +89,7 @@ export function TenantCard({ tenant }: Props) {
           ))}
         </div>
       </div>
+      <TenantEditSheet tenant={tenant} open={editOpen} onClose={() => setEditOpen(false)} />
     </article>
   );
 }

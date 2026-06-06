@@ -10,6 +10,8 @@ import {
 } from '@/lib/demo/settingsFixture';
 import { DEMO_INBOXES } from '@/lib/demo/inboxesFixture';
 import { isDemoDataEnabled } from '@/lib/demo/config';
+import { withDemoOnly } from '@/lib/demo/tenantSettingsQuery';
+import { useTenantAccountId } from '@/lib/hooks/useTenantAccountId';
 import type { CWInbox } from '@/types';
 
 export const AUTOMATION_EVENTS = [
@@ -117,57 +119,37 @@ export function actionLabel(name: string): string {
 
 export function useAutomationLookups() {
   const demo = isDemoDataEnabled();
+  const accountId = useTenantAccountId();
 
   const agents = useQuery({
-    queryKey: ['automation-agents', demo],
-    queryFn: async () => {
-      if (demo) return DEMO_AGENTS;
-      try {
-        return await listAgents();
-      } catch {
-        return DEMO_AGENTS;
-      }
-    },
+    queryKey: ['automation-agents', accountId, demo],
+    enabled: accountId > 0 || demo,
+    queryFn: () => withDemoOnly(DEMO_AGENTS, () => listAgents()),
     staleTime: 60_000,
   });
 
   const teams = useQuery({
-    queryKey: ['automation-teams', demo],
-    queryFn: async () => {
-      if (demo) return DEMO_TEAMS;
-      try {
-        return await listTeams();
-      } catch {
-        return DEMO_TEAMS;
-      }
-    },
+    queryKey: ['automation-teams', accountId, demo],
+    enabled: accountId > 0 || demo,
+    queryFn: () => withDemoOnly(DEMO_TEAMS, () => listTeams()),
     staleTime: 60_000,
   });
 
   const labels = useQuery({
-    queryKey: ['automation-labels', demo],
-    queryFn: async () => {
-      if (demo) return DEMO_LABELS;
-      try {
+    queryKey: ['automation-labels', accountId, demo],
+    enabled: accountId > 0 || demo,
+    queryFn: () =>
+      withDemoOnly(DEMO_LABELS, async () => {
         const res = await listLabels();
         return res.payload;
-      } catch {
-        return DEMO_LABELS;
-      }
-    },
+      }),
     staleTime: 60_000,
   });
 
   const inboxes = useQuery({
-    queryKey: ['automation-inboxes', demo],
-    queryFn: async (): Promise<CWInbox[]> => {
-      if (demo) return DEMO_INBOXES as CWInbox[];
-      try {
-        return await listInboxes();
-      } catch {
-        return DEMO_INBOXES as CWInbox[];
-      }
-    },
+    queryKey: ['automation-inboxes', accountId, demo],
+    enabled: accountId > 0 || demo,
+    queryFn: () => withDemoOnly(DEMO_INBOXES as CWInbox[], () => listInboxes()),
     staleTime: 60_000,
   });
 

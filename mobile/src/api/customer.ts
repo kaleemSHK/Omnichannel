@@ -39,7 +39,8 @@ async function customerFetch<T>(path: string, init: RequestInit = {}): Promise<T
     throw new CustomerApiError(msg, res.status);
   }
   if (res.status === 204) return undefined as T;
-  return res.json() as Promise<T>;
+  const json = (await res.json()) as T & { data?: T };
+  return (json?.data ?? json) as T;
 }
 
 export interface CustomerSessionResponse {
@@ -126,4 +127,44 @@ export async function sendCustomerMessage(conversationId: number, content: strin
 
 export async function getCustomerConversation(conversationId: number): Promise<{ id: number }> {
   return customerFetch<{ id: number }>(`/api/customer/conversations/${conversationId}`);
+}
+
+export type CustomerCallRouteStatus = {
+  callId: string;
+  status: 'queued' | 'assigned' | 'routing' | 'pending' | 'unknown';
+  eventType?: string;
+  position?: number;
+  depth?: number;
+  queueKey?: string;
+  agentId?: string;
+  /** SIP user to dial when assigned (e.g. blinkone for web desk) */
+  dialTarget?: string;
+  sessionId?: string | null;
+  /** IVR entry prompt — shown while waiting in queue */
+  welcomeMessage?: string;
+};
+
+export async function requestCustomerCall(body: {
+  queueKey?: string;
+  callId?: string;
+  callerId?: string;
+  callerName?: string;
+  callerPhone?: string;
+  contactId?: number;
+}): Promise<CustomerCallRouteStatus & { sessionId?: string | null }> {
+  return customerFetch(`/api/customer/call/request`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
+export async function getCustomerCallStatus(callId: string): Promise<CustomerCallRouteStatus> {
+  return customerFetch(`/api/customer/call/${encodeURIComponent(callId)}/status`);
+}
+
+export async function cancelCustomerCall(callId: string): Promise<{ callId: string; status: string }> {
+  return customerFetch(`/api/customer/call/${encodeURIComponent(callId)}/cancel`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
 }

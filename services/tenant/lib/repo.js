@@ -19,9 +19,36 @@ function tenantRow(r) {
 /** Platform list — bypasses RLS via superuser connection (no tenant context). */
 export async function listTenantsPlatform() {
   const { rows } = await getPool().query(
-    'SELECT * FROM tenants ORDER BY created_at DESC LIMIT 500',
+    `SELECT t.*,
+            COALESCE(
+              json_object_agg(tf.feature_key, tf.enabled)
+                FILTER (WHERE tf.feature_key IS NOT NULL),
+              '{}'
+            ) AS feature_flags
+     FROM tenants t
+     LEFT JOIN tenant_features tf ON tf.tenant_id = t.id
+     GROUP BY t.id
+     ORDER BY t.created_at DESC
+     LIMIT 500`,
   );
-  return rows.map(tenantRow);
+  return rows.map((r) => {
+    const base = tenantRow(r);
+    const flags = r.feature_flags && typeof r.feature_flags === 'object' ? r.feature_flags : {};
+    return {
+      ...base,
+      plan: uiPlanFromRow(r),
+      features: flags,
+      agentCount: 0,
+    };
+  });
+}
+
+function uiPlanFromRow(row) {
+  if (row.status === 'trial') return 'trial';
+  const id = String(row.billing_plan_id || 'starter').toLowerCase();
+  if (id === 'enterprise') return 'enterprise';
+  if (id === 'pro' || id === 'professional') return 'pro';
+  return 'starter';
 }
 
 export async function getTenantPlatform(id) {

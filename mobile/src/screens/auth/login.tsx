@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, ActivityIndicator, StyleSheet } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, CommonActions } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { loginWithPassword } from '@/api/auth';
+import { savePrefs } from '@/lib/storage';
 import { useAuthStore } from '@/store/auth';
 import { C } from '@/lib/ui';
 import type { RootStackParamList } from '@/navigation/types';
@@ -21,8 +22,13 @@ export default function LoginScreen() {
     setLoading(true); setError('');
     try {
       const { user, tokens } = await loginWithPassword(email.trim(), password);
+      await savePrefs({ role: 'agent' });
       await setAuth(user, tokens);
-      navigation.reset({ index: 0, routes: [{ name: 'Agent' }] });
+      try {
+        navigation.dispatch(CommonActions.reset({ index: 0, routes: [{ name: 'Agent' }] }));
+      } catch (navErr) {
+        console.error('[Login] navigation reset failed', navErr);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Login failed. Please try again.');
     } finally { setLoading(false); }

@@ -80,7 +80,7 @@ export interface CWInbox {
 
 // ─── Calls sidecar ─────────────────────────────────────────────────────────────
 export type CallStatus = 'ringing' | 'connected' | 'on_hold' | 'ended' | 'missed' | 'failed';
-export type CallTransport = 'pstn' | 'whatsapp';
+export type CallTransport = 'pstn' | 'whatsapp' | 'webrtc';
 export type CallDirection = 'inbound' | 'outbound';
 
 /** PCI DSS §3.2 audit trail — each pause window during card collection */
@@ -112,6 +112,7 @@ export interface CallSession {
   recordingPaused?: boolean;
   /** Audit trail of all pause windows for this call */
   pciPauseSegments?: PciPauseSegment[];
+  metadata?: Record<string, unknown>;
 }
 
 export interface CDRRecord {
@@ -122,6 +123,8 @@ export interface CDRRecord {
   agentLabel?: string;
   customerId?: string;
   customerPhone?: string;
+  /** Display name from mobile/CRM when customer_phone is an id or number */
+  callerDisplayName?: string;
   direction: CallDirection;
   transport: CallTransport;
   duration: number;
@@ -190,6 +193,25 @@ export interface QueueStats {
   busy: number;
   avgWaitSec: number;
   slaPercent: number;
+}
+
+/** Live wallboard queue row (routing Redis + Postgres). */
+export interface QueueStatEntry {
+  id: string;
+  queueKey?: string;
+  name: string;
+  waiting: number;
+  active: number;
+  longestWait: number;
+}
+
+export interface RealtimeDashboard {
+  agents: RoutingAgent[];
+  queues: QueueStatEntry[];
+  handledToday: number;
+  missedToday: number;
+  totalToday: number;
+  updatedAt: string;
 }
 
 // ─── SLA sidecar ──────────────────────────────────────────────────────────────

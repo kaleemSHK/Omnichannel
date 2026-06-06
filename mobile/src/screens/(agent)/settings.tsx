@@ -7,7 +7,7 @@ import i18n, { applyRTL } from '@/lib/i18n';
 import { savePrefs } from '@/lib/storage';
 import { useAuthStore } from '@/store/auth';
 import { useCallsStore } from '@/store/calls';
-import { setAgentState as apiSetAgentState } from '@/api/routing';
+import { useRoutingPresence } from '@/hooks/useRoutingPresence';
 import { Avatar } from '@/components/layout/Avatar';
 import { AppHeader } from '@/components/layout/AppHeader';
 import type { AgentState } from '@/types';
@@ -23,7 +23,7 @@ export default function AgentSettings() {
   const user = useAuthStore((s) => s.user);
   const clearAuth = useAuthStore((s) => s.clearAuth);
   const agentState = useCallsStore((s) => s.agentState);
-  const setAgentState = useCallsStore((s) => s.setAgentState);
+  const { publishState } = useRoutingPresence();
   const sipRegistered = useCallsStore((s) => s.sipRegistered);
 
   async function changeLang(lang: 'ar' | 'en') {
@@ -38,13 +38,10 @@ export default function AgentSettings() {
   }
 
   async function handleStateChange(state: AgentState) {
-    setAgentState(state);
-    if (user) {
-      try {
-        await apiSetAgentState(String(user.id), state);
-      } catch {
-        /* ignore */
-      }
+    try {
+      await publishState(state);
+    } catch {
+      /* routing unavailable */
     }
   }
 

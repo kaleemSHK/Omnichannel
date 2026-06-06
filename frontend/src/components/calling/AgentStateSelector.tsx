@@ -1,9 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuthStore } from '@/lib/store/auth';
 import { useCallsStore } from '@/lib/store/calls';
 import { useAgents, useSetAgentState } from '@/lib/hooks/useAgentState';
+import { useRoutingPresence } from '@/lib/hooks/useRoutingPresence';
 import { cn } from '@/lib/utils/cn';
 import type { AgentState } from '@/types';
 
@@ -20,10 +21,18 @@ export function AgentStateSelector() {
   const localState = useCallsStore(s => s.agentState);
   const setLocalState = useCallsStore(s => s.setAgentState);
   const { data: agents = [] } = useAgents();
+  const { agent: meFromRouting } = useRoutingPresence();
   const mutation = useSetAgentState();
   const [state, setState] = useState<AgentState>(localState);
 
-  const me = agents.find(a => a.agentId === String(user?.id)) ?? agents[0];
+  const me =
+    meFromRouting ??
+    agents.find(a => a.agentId === String(user?.id)) ??
+    agents[0];
+
+  useEffect(() => {
+    if (me?.state) setState(me.state);
+  }, [me?.state]);
 
   function handleChange(newState: AgentState) {
     setState(newState);

@@ -49,8 +49,12 @@ export function resolveRoleFromAuth(
   chatwootRole: string | undefined,
   gatewayJwt?: string,
   email?: string,
+  chatwootUserType?: string,
 ): UserRole {
   const candidates: UserRole[] = [normalizeRole(chatwootRole)];
+  if (String(chatwootUserType ?? '').trim() === 'SuperAdmin') {
+    candidates.push('platform_admin');
+  }
 
   if (gatewayJwt) {
     const payload = decodeJwtPayload(gatewayJwt);

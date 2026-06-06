@@ -30,7 +30,7 @@ import {
   listChatwootAgents,
   updateConversationStatus,
 } from '@/lib/api/conversations';
-import { useMessages } from '@/lib/hooks/useConversations';
+import { useMarkConversationRead, useMessages } from '@/lib/hooks/useConversations';
 import { useAssignTeam, useTeams } from '@/lib/hooks/useChatwootExtras';
 import { subscribeToConversation } from '@/lib/api/websocket';
 import {
@@ -206,9 +206,11 @@ interface Props {
 
 export function MessageThread({ conversation, onToggleAssist, assistOpen }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null);
+  const markedReadRef = useRef<number | null>(null);
   const user = useAuthStore(s => s.user);
   const role = user?.role;
   const qc = useQueryClient();
+  const markRead = useMarkConversationRead();
   const { data: messages = [], isLoading, isError, error } = useMessages(conversation?.id ?? null);
 
   const { data: agents = [] } = useQuery({
@@ -247,13 +249,20 @@ export function MessageThread({ conversation, onToggleAssist, assistOpen }: Prop
   }, [messages, conversation?.id]);
 
   useEffect(() => {
+    if (!conversation?.id) return;
+    if (markedReadRef.current === conversation.id) return;
+    markedReadRef.current = conversation.id;
+    markRead.mutate(conversation.id);
+  }, [conversation?.id, markRead]);
+
+  useEffect(() => {
     if (!conversation || !user?.chatwootAccountId) return;
     let unsubscribe: (() => void) | undefined;
     try {
       unsubscribe = subscribeToConversation(user.chatwootAccountId, conversation.id, {
         onMessage: () => {
           qc.invalidateQueries({ queryKey: ['messages', conversation.id] });
-          qc.invalidateQueries({ queryKey: ['conversations'] });
+          markRead.mutate(conversation.id);
         },
         onStatusChange: () => qc.invalidateQueries({ queryKey: ['conversations'] }),
       });
@@ -261,7 +270,7 @@ export function MessageThread({ conversation, onToggleAssist, assistOpen }: Prop
       console.warn('[MessageThread] subscribeToConversation failed', err);
     }
     return () => unsubscribe?.();
-  }, [conversation?.id, user?.chatwootAccountId, qc]);
+  }, [conversation?.id, user?.chatwootAccountId, qc, markRead]);
 
   if (!conversation) return <EmptyState />;
 

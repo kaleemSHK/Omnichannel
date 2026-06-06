@@ -20,6 +20,8 @@ import { getMosHistory, type MosHistory } from '@/lib/api/calls';
 import { fetchRecordingAudioBlob } from '@/lib/api/recording';
 import { useCallsStore } from '@/lib/store/calls';
 import { cn } from '@/lib/utils/cn';
+import { resolveCdrAgentName, resolveCdrCallerName } from '@/lib/utils/calling';
+import { useAgents } from '@/lib/hooks/useAgentState';
 import type { CDRRecord } from '@/types';
 
 const PAGE_SIZE = 25;
@@ -81,6 +83,53 @@ function isMissed(outcome: string): boolean {
   return o === 'missed' || o === 'timeout' || o === 'no_answer' || o === 'declined' || o === 'rejected' || o === 'failed';
 }
 
+/** Collapse duplicate CDR rows from gateway + ACD + orphan SIP teardown (same caller within ~2 min). */
+function dedupeHistoryRows(rows: CDRRecord[]): CDRRecord[] {
+  const out: CDRRecord[] = [];
+  const score = (r: CDRRecord) =>
+    (r.callerDisplayName ? 8 : 0) +
+    (r.agentId && r.agentId !== '—' ? 4 : 0) +
+    (r.duration || 0) * 2 +
+    (r.recordingId ? 2 : 0);
+
+  const displayKey = (r: CDRRecord) =>
+    (r.callerDisplayName || r.customerPhone || '').trim().toLowerCase();
+
+  for (const r of rows) {
+    const t = new Date(r.startedAt).getTime();
+    const dupIdx = out.findIndex(prev => {
+      const dt = Math.abs(new Date(prev.startedAt).getTime() - t);
+      if (dt > 120_000) return false;
+      const a = displayKey(prev);
+      const b = displayKey(r);
+      if (a && b) return a === b;
+      // WebRTC: one row has CRM name, sibling orphan has duration only
+      return Boolean(a || b);
+    });
+    if (dupIdx >= 0) {
+      const prev = out[dupIdx];
+      const winner = score(r) > score(prev) ? r : prev;
+      const loser = winner === r ? prev : r;
+      out[dupIdx] = {
+        ...winner,
+        callerDisplayName: winner.callerDisplayName || loser.callerDisplayName,
+        customerPhone:
+          winner.callerDisplayName ||
+          winner.customerPhone ||
+          loser.callerDisplayName ||
+          loser.customerPhone,
+        duration: Math.max(winner.duration || 0, loser.duration || 0),
+        recordingId: winner.recordingId || loser.recordingId,
+        agentId: winner.agentId || loser.agentId,
+        agentLabel: winner.agentLabel || loser.agentLabel,
+      };
+    } else {
+      out.push(r);
+    }
+  }
+  return out;
+}
+
 export function CallHistoryView() {
   const [range, setRange] = useState<RangeKey>('7d');
   const [dir, setDir] = useState<DirFilter>('all');
@@ -91,7 +140,12 @@ export function CallHistoryView() {
   const [selected, setSelected] = useState<CDRRecord | null>(null);
 
   const contactCache = useCallsStore(s => s.contactCache);
+  const { data: routingAgents = [] } = useAgents();
   const from = useMemo(() => rangeToFrom(range), [range]);
+
+  function agentNameFor(r: CDRRecord): string {
+    return resolveCdrAgentName(r, routingAgents);
+  }
 
   const { data: batch = [], isFetching, isError, refetch } = useCDR({
     page,
@@ -117,12 +171,13 @@ export function CallHistoryView() {
   }, [batch, page]);
 
   function labelFor(r: CDRRecord): string {
-    return contactCache.get(r.callSessionId) || r.customerPhone || 'Unknown number';
+    return resolveCdrCallerName(r, contactCache);
   }
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return rows.filter(r => {
+    const deduped = dedupeHistoryRows(rows);
+    return deduped.filter(r => {
       if (dir !== 'all' && r.direction !== dir) return false;
       if (outcome !== 'all') {
         if (outcome === 'completed' && isMissed(r.outcome)) return false;
@@ -130,13 +185,13 @@ export function CallHistoryView() {
         if (outcome === 'failed' && (r.outcome || '').toLowerCase() !== 'failed') return false;
       }
       if (q) {
-        const hay = `${labelFor(r)} ${r.customerPhone ?? ''} ${r.agentLabel ?? ''}`.toLowerCase();
+        const hay = `${labelFor(r)} ${r.customerPhone ?? ''} ${agentNameFor(r)}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, dir, outcome, search, contactCache]);
+  }, [rows, dir, outcome, search, contactCache, routingAgents]);
 
   const stats = useMemo(() => {
     const total = filtered.length;
@@ -153,7 +208,7 @@ export function CallHistoryView() {
         r.direction,
         labelFor(r),
         r.customerPhone ?? '',
-        r.agentLabel ?? r.agentId ?? '',
+        agentNameFor(r),
         r.startedAt,
         String(r.duration ?? 0),
         r.outcome ?? '',
@@ -290,6 +345,7 @@ export function CallHistoryView() {
                     key={r.id}
                     record={r}
                     label={labelFor(r)}
+                    agentName={agentNameFor(r)}
                     onOpen={() => setSelected(r)}
                     selected={selected?.id === r.id}
                   />
@@ -317,7 +373,12 @@ export function CallHistoryView() {
 
       {/* Detail drawer */}
       {selected && (
-        <CallDetailDrawer record={selected} label={labelFor(selected)} onClose={() => setSelected(null)} />
+        <CallDetailDrawer
+          record={selected}
+          label={labelFor(selected)}
+          agentName={agentNameFor(selected)}
+          onClose={() => setSelected(null)}
+        />
       )}
     </div>
   );
@@ -370,11 +431,13 @@ function DirectionBadge({ direction, missed }: { direction: string; missed: bool
 function HistoryRow({
   record,
   label,
+  agentName,
   onOpen,
   selected,
 }: {
   record: CDRRecord;
   label: string;
+  agentName: string;
   onOpen: () => void;
   selected: boolean;
 }) {
@@ -396,7 +459,7 @@ function HistoryRow({
         )}
       </td>
       <td className="px-2 py-2.5 hidden md:table-cell text-gray-600 truncate max-w-[140px]">
-        {record.agentLabel || record.agentId || '—'}
+        {agentName}
       </td>
       <td className="px-2 py-2.5 text-gray-600 whitespace-nowrap">
         <span className="text-gray-900">{when.date}</span> <span className="text-gray-400">{when.time}</span>
@@ -466,10 +529,12 @@ function InlineRecordingButton({ recordingId }: { recordingId: string }) {
 function CallDetailDrawer({
   record,
   label,
+  agentName,
   onClose,
 }: {
   record: CDRRecord;
   label: string;
+  agentName: string;
   onClose: () => void;
 }) {
   const when = formatWhen(record.startedAt);
@@ -527,7 +592,7 @@ function CallDetailDrawer({
 
           <dl className="grid grid-cols-2 gap-3 text-sm">
             <DetailField label="Number" value={record.customerPhone || '—'} />
-            <DetailField label="Agent" value={record.agentLabel || record.agentId || '—'} />
+            <DetailField label="Agent" value={agentName} />
             <DetailField label="Date" value={`${when.date}, ${when.time}`} />
             <DetailField label="Duration" value={formatDuration(record.duration)} />
           </dl>

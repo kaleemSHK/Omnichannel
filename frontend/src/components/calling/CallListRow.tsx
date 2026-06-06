@@ -14,7 +14,8 @@ function initials(name: string): string {
 function avatarClass(transport: string) {
   if (transport === 'whatsapp') return 'bg-[#e1f5ee] text-[#0f6e56]';
   if (transport === 'pstn') return 'bg-[#faeeda] text-[#854f0b]';
-  return 'bg-[#e6f1fb] text-[#185fa5]';
+  if (transport === 'webrtc') return 'bg-[#e6f1fb] text-[#185fa5]';
+  return 'bg-gray-100 text-gray-600';
 }
 
 interface Props {

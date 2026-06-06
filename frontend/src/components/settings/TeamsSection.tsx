@@ -21,6 +21,7 @@ import {
   settingsDemoDelay,
 } from '@/lib/demo/settingsFixture';
 import { isDemoDataEnabled } from '@/lib/demo/config';
+import { useTenantAccountId } from '@/lib/hooks/useTenantAccountId';
 import { useAuthStore } from '@/lib/store/auth';
 import { can } from '@/lib/rbac';
 import { SectionHeader } from './shared/SectionHeader';
@@ -38,30 +39,24 @@ import { Users, Pencil, Trash2, Search, Check } from 'lucide-react';
 export function TeamsSection() {
   const qc = useQueryClient();
   const role = useAuthStore(s => s.user?.role);
+  const accountId = useTenantAccountId();
   const canManage = can(role, 'manageTeam');
 
-  const { data: teams = [], isLoading } = useQuery({
-    queryKey: ['teams'],
+  const { data: teams = [], isLoading, isError, error } = useQuery({
+    queryKey: ['teams', accountId],
+    enabled: accountId != null && accountId > 0,
     queryFn: async () => {
       if (isDemoDataEnabled()) return DEMO_TEAMS;
-      try {
-        const list = await listTeams();
-        return list.length ? list : DEMO_TEAMS;
-      } catch {
-        return DEMO_TEAMS;
-      }
+      return listTeams();
     },
   });
 
   const { data: allAgents = [] } = useQuery({
-    queryKey: ['agents'],
+    queryKey: ['agents', accountId],
+    enabled: accountId != null && accountId > 0,
     queryFn: async () => {
       if (isDemoDataEnabled()) return DEMO_AGENTS;
-      try {
-        return await listAgents();
-      } catch {
-        return DEMO_AGENTS;
-      }
+      return listAgents();
     },
   });
 
@@ -79,7 +74,7 @@ export function TeamsSection() {
       return createTeam(payload);
     },
     onSuccess: team => {
-      qc.setQueryData<Team[]>(['teams'], prev => [...(prev ?? []), team]);
+      qc.setQueryData<Team[]>(['teams', accountId], prev => [...(prev ?? []), team]);
       toast.success('Team created');
       setCreateOpen(false);
       setNewName('');
@@ -128,7 +123,7 @@ export function TeamsSection() {
       await updateTeamAgents(editTeam!.id, Array.from(selectedAgents));
     },
     onSuccess: () => {
-      qc.setQueryData<Team[]>(['teams'], prev =>
+      qc.setQueryData<Team[]>(['teams', accountId], prev =>
         (prev ?? []).map(t =>
           t.id === editTeam?.id
             ? { ...t, name: editName, description: editDesc, agents_count: selectedAgents.size }
@@ -152,7 +147,7 @@ export function TeamsSection() {
       await deleteTeam(deleteTarget!.id);
     },
     onSuccess: () => {
-      qc.setQueryData<Team[]>(['teams'], prev => (prev ?? []).filter(t => t.id !== deleteTarget?.id));
+      qc.setQueryData<Team[]>(['teams', accountId], prev => (prev ?? []).filter(t => t.id !== deleteTarget?.id));
       toast.success('Team deleted');
       setDeleteTarget(null);
     },
@@ -183,6 +178,12 @@ export function TeamsSection() {
         onAction={() => setCreateOpen(true)}
         canAction={canManage}
       />
+
+      {isError && (
+        <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+          {error instanceof Error ? error.message : 'Failed to load teams'}
+        </div>
+      )}
 
       {isLoading ? (
         <div className="space-y-2">

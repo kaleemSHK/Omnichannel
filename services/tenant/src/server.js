@@ -7,6 +7,8 @@ import * as repo from '../lib/repo.js';
 import { provisionTenant } from '../lib/provision.js';
 import { resolveHost } from '../lib/resolve-host.js';
 import { startAcmeWorker } from '../lib/acme.js';
+import { mountRbacRoutes } from '../lib/rbac-routes.js';
+import { ensureRbacCatalog, seedTenantRoles } from '../lib/rbac-repo.js';
 import { randomUUID } from 'node:crypto';
 
 const log = createLogger('tenant');
@@ -156,11 +158,14 @@ app.get('/v1/tenants/:id/usage', auth, async (req, res) => {
   return ok(res, await repo.getUsageSnapshot(req.params.id));
 });
 
+mountRbacRoutes(app, auth);
+
 app.use(errorHandler(log));
 
 async function boot() {
   if (dbEnabled()) {
     await runMigrations(log);
+    await ensureRbacCatalog();
     log.info('tenant Postgres migrations applied');
     startAcmeWorker(120_000, log);
   } else {

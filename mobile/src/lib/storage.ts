@@ -8,6 +8,7 @@ const CUSTOMER_SESSION_KEY = 'blinkone_customer_session';
 export interface StoredTokens {
   accessToken: string;
   gatewayJwt: string;
+  pubsubToken?: string;
 }
 
 export interface StoredPrefs {

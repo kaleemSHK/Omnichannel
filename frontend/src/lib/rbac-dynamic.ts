@@ -1,0 +1,22 @@
+/** Maps legacy frontend feature keys → dynamic permission keys (mirrors tenant rbac-engine). */
+export const FEATURE_TO_PERMISSION: Record<string, string> = {
+  sendPrivateNote: 'chat.send',
+  assignConversation: 'tickets.assign',
+  assignTeam: 'teams.edit',
+  manageAgentScripts: 'settings.edit',
+  resolveConversation: 'tickets.close',
+  viewReports: 'reports.view',
+  manageBilling: 'billing.edit',
+  manageWebhooks: 'integrations.configure',
+  manageInboxes: 'settings.edit',
+  manageTeam: 'users.edit',
+  supervisorListen: 'calling.monitor_call',
+  supervisorWhisper: 'calling.monitor_call',
+  supervisorBarge: 'calling.monitor_call',
+  viewWallboard: 'queues.view',
+  manageEscalation: 'workflows.edit',
+  manageSLA: 'settings.edit',
+  manageIVR: 'ivr.edit',
+  impersonateTenant: 'settings.view',
+  viewAgentAssist: 'ai.use',
+};

@@ -9,6 +9,7 @@ import CustomerTickets from '@/screens/(customer)/tickets/index';
 import ChatDetail from '@/screens/(customer)/chat/[id]';
 import TicketDetail from '@/screens/(customer)/tickets/[id]';
 import NewTicket from '@/screens/(customer)/tickets/new';
+import CustomerCallQueue from '@/screens/(customer)/queue';
 import CustomerWelcome from '@/screens/(customer)/welcome';
 
 const Tab = createBottomTabNavigator<CustomerTabParamList>();
@@ -68,6 +69,7 @@ export function CustomerNavigator() {
       <Stack.Screen name="ChatDetail" component={ChatDetail} />
       <Stack.Screen name="TicketDetail" component={TicketDetail} />
       <Stack.Screen name="NewTicket" component={NewTicket} />
+      <Stack.Screen name="CallQueue" component={CustomerCallQueue} />
     </Stack.Navigator>
   );
 }

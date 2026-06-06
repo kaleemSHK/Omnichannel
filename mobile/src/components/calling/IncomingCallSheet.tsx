@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { useCallsStore } from '@/store/calls';
 import { useSip } from '@/providers/sip-context';
 import { usePermissions } from '@/hooks/usePermissions';
-import { navigationRef } from '@/navigation/navigationRef';
+import { navigate } from '@/navigation/navigationRef';
 import { hapticImpact } from '@/lib/haptics';
 import { C } from '@/lib/ui';
 
@@ -32,7 +32,7 @@ export function IncomingCallSheet() {
     const granted = await requestMic();
     if (!granted) return;
     answerCall();
-    navigationRef.navigate('CallActive');
+    navigate('CallActive');
   }
 
   function handleDecline() {

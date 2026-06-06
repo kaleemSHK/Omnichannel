@@ -3,9 +3,9 @@ import { View, Text, FlatList, TextInput, TouchableOpacity, Alert, RefreshContro
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
-import { navigationRef } from '@/navigation/navigationRef';
+import { navigate } from '@/navigation/navigationRef';
 import { hapticImpact } from '@/lib/haptics';
-import { searchContacts } from '@/api/contacts';
+import { searchContacts, listContacts } from '@/api/contacts';
 import { AppHeader } from '@/components/layout/AppHeader';
 import { Avatar } from '@/components/layout/Avatar';
 import { Skeleton } from '@/components/ui/Skeleton';
@@ -27,7 +27,7 @@ export default function AgentContacts() {
   const { requestMic } = usePermissions();
 
   useEffect(() => {
-    if (activeCall) navigationRef.navigate('CallActive');
+    if (activeCall) navigate('CallActive');
   }, [activeCall]);
 
   function onSearchChange(text: string) {
@@ -38,7 +38,10 @@ export default function AgentContacts() {
 
   const { data, isLoading, refetch, isRefetching } = useQuery({
     queryKey: ['contacts', debouncedSearch],
-    queryFn: () => searchContacts(debouncedSearch || 'a'),
+    queryFn: () =>
+      debouncedSearch.trim()
+        ? searchContacts(debouncedSearch.trim())
+        : listContacts(1),
     staleTime: 30_000,
   });
 
@@ -51,7 +54,7 @@ export default function AgentContacts() {
       return;
     }
     hapticImpact('medium');
-    makeCall(phone);
+    void makeCall(phone);
   }
 
   const renderItem = useCallback(({ item }: { item: CWContact }) => (
@@ -73,7 +76,7 @@ export default function AgentContacts() {
           </TouchableOpacity>
         )}
         <TouchableOpacity
-          onPress={() => navigationRef.navigate('Agent', { screen: 'AgentTabs', params: { screen: 'Conversations' } })}
+          onPress={() => navigate('Agent', { screen: 'AgentTabs', params: { screen: 'Conversations' } })}
           style={[styles.actionBtn, { backgroundColor: C.brandLight }]}
         >
           <Text style={styles.actionBtnIcon}>💬</Text>
@@ -100,7 +103,7 @@ export default function AgentContacts() {
           {[1, 2, 3, 4].map((i) => <Skeleton key={i} style={{ height: 64, borderRadius: 14 }} />)}
         </View>
       ) : contacts.length === 0 ? (
-        <EmptyState icon="👤" message={debouncedSearch ? 'No contacts found' : 'Search for contacts'} />
+        <EmptyState icon="👤" message={debouncedSearch ? 'No contacts found' : 'No contacts in this account'} />
       ) : (
         <FlatList
           data={contacts}

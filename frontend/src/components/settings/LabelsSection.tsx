@@ -13,6 +13,7 @@ import {
 import { DEMO_LABELS, settingsDemoDelay } from '@/lib/demo/settingsFixture';
 import { isDemoDataEnabled } from '@/lib/demo/config';
 import { DEFAULT_LABEL_COLOR, normalizeLabelList } from '@/lib/labels/normalize';
+import { useTenantAccountId } from '@/lib/hooks/useTenantAccountId';
 import { useAuthStore } from '@/lib/store/auth';
 import { can } from '@/lib/rbac';
 import { SectionHeader } from './shared/SectionHeader';
@@ -45,10 +46,12 @@ const COLOR_PRESETS = [
 export function LabelsSection() {
   const qc = useQueryClient();
   const role = useAuthStore(s => s.user?.role);
+  const accountId = useTenantAccountId();
   const canManage = can(role, 'manageInboxes');
 
   const { data: labels = [], isLoading } = useQuery({
-    queryKey: ['settings', 'labels'],
+    queryKey: ['settings', 'labels', accountId],
+    enabled: accountId > 0 || isDemoDataEnabled(),
     queryFn: async () => {
       if (isDemoDataEnabled()) return DEMO_LABELS;
       const res = await listLabels();

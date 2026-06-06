@@ -9,6 +9,8 @@ import { toast } from 'sonner';
 import { getProfile, updateProfile } from '@/lib/api/settings';
 import { DEMO_PROFILE, settingsDemoDelay } from '@/lib/demo/settingsFixture';
 import { isDemoDataEnabled } from '@/lib/demo/config';
+import { withDemoOnly } from '@/lib/demo/tenantSettingsQuery';
+import { useTenantAccountId } from '@/lib/hooks/useTenantAccountId';
 import { useAuthStore } from '@/lib/store/auth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -51,16 +53,10 @@ export function ProfileSection() {
 
   const passwordForm = useForm<PasswordForm>({ resolver: zodResolver(passwordSchema) });
 
-  const { data: profile, isLoading } = useQuery({
-    queryKey: ['profile'],
-    queryFn: async () => {
-      if (isDemoDataEnabled()) return DEMO_PROFILE;
-      try {
-        return await getProfile();
-      } catch {
-        return DEMO_PROFILE;
-      }
-    },
+  const accountId = useTenantAccountId();
+  const { data: profile, isLoading, isError, error } = useQuery({
+    queryKey: ['profile', accountId],
+    queryFn: () => withDemoOnly(DEMO_PROFILE, () => getProfile()),
   });
 
   const { mutate: saveProfile, isPending: savingProfile } = useMutation({

@@ -1,5 +1,7 @@
 import type { BlinkoneUser } from '@/types';
 import { normalizeRole, type UserRole } from '@/lib/roles';
+import { usePermissionsStore } from '@/lib/store/permissions';
+import { FEATURE_TO_PERMISSION } from '@/lib/rbac-dynamic';
 
 export type { UserRole };
 
@@ -11,9 +13,9 @@ export const ROLE_PERMISSIONS = {
     '/calling/wallboard': ['supervisor', 'admin', 'platform_admin'],
     '/calling/ivr': ['admin', 'platform_admin'],
     '/contacts': ['agent', 'supervisor', 'admin', 'platform_admin'],
+    '/ai': ['agent', 'supervisor', 'admin', 'platform_admin'],
     '/sla': ['supervisor', 'admin', 'platform_admin'],
     '/escalation': ['supervisor', 'admin', 'platform_admin'],
-    '/ai': ['agent', 'supervisor', 'admin', 'platform_admin'],
     '/billing': ['admin', 'platform_admin'],
     '/platform': ['platform_admin'],
     '/tickets': ['agent', 'supervisor', 'admin', 'platform_admin'],
@@ -48,11 +50,43 @@ export function can(
   role: UserRole | string | undefined,
   feature: keyof typeof ROLE_PERMISSIONS.features,
 ): boolean {
+  const dynamicKey = FEATURE_TO_PERMISSION[feature];
+  const dynamic = usePermissionsStore.getState();
   const normalized = normalizeRole(role);
-  return (ROLE_PERMISSIONS.features[feature] as UserRole[]).includes(normalized);
+  const roleAllowed = (ROLE_PERMISSIONS.features[feature] as UserRole[]).includes(normalized);
+
+  if (dynamic.effective?.permissions?.length && dynamicKey) {
+    if (dynamic.hasPermission(dynamicKey)) return true;
+    // Chatwoot administrator before RBAC row exists, or stale JWT permissions
+    return roleAllowed;
+  }
+  return roleAllowed;
+}
+
+export function canPermission(permissionKey: string, role?: UserRole | string): boolean {
+  const dynamic = usePermissionsStore.getState();
+  if (dynamic.effective?.permissions?.length) {
+    if (dynamic.hasPermission(permissionKey)) return true;
+  } else {
+    return false;
+  }
+
+  const normalized = normalizeRole(role);
+  if (normalized === 'admin' || normalized === 'platform_admin') {
+    if (permissionKey.startsWith('roles.') || permissionKey.startsWith('users.')) return true;
+  }
+  return false;
 }
 
 export function canAccessRoute(role: UserRole | string | undefined, pathname: string): boolean {
+  // Platform admin panel is cross-tenant; JWT platform_admin role is required (not RBAC page.platform).
+  if (pathname.startsWith('/platform')) {
+    return normalizeRole(role) === 'platform_admin';
+  }
+  const dynamic = usePermissionsStore.getState();
+  if (dynamic.effective?.pages?.length) {
+    return dynamic.canAccessPath(pathname);
+  }
   const normalized = normalizeRole(role);
   const match = Object.entries(ROLE_PERMISSIONS.routes)
     .filter(([route]) => pathname.startsWith(route))
@@ -62,6 +96,20 @@ export function canAccessRoute(role: UserRole | string | undefined, pathname: st
 }
 
 export function defaultRouteForRole(role: UserRole | string): string {
+  const dynamic = usePermissionsStore.getState();
+  if (dynamic.effective?.pages?.length) {
+    const order = [
+      '/conversations',
+      '/calling',
+      '/contacts',
+      '/tickets',
+      '/reports',
+      '/settings',
+    ];
+    for (const route of order) {
+      if (dynamic.canAccessPath(route)) return route;
+    }
+  }
   const normalized = normalizeRole(role);
   if (normalized === 'platform_admin') return '/platform';
   return '/conversations';
