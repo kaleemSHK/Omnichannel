@@ -10,6 +10,7 @@
 import { CHATWOOT_URL, GATEWAY_URL } from '@/lib/env';
 import { resolveRoleFromAuth } from '@/lib/roles';
 import { hydratePermissionsFromLogin, hydratePermissionsFromJwt } from '@/lib/store/permissions';
+import { hydrateFeaturesFromLogin } from '@/lib/store/features';
 import type { BlinkoneUser, AuthTokens } from '@/types';
 
 export interface LoginPayload {
@@ -38,6 +39,7 @@ export interface GatewayTokenResponse {
   permissions?: string[];
   pages?: string[];
   rbacRoles?: { id?: string; name: string; roleType: string }[];
+  features?: Record<string, unknown>;
 }
 
 /** Returned by the gateway when the user has MFA enabled — login is not yet complete. */
@@ -133,6 +135,7 @@ export async function loginWithPassword(payload: LoginPayload): Promise<
   const gw = gwBody as GatewayTokenResponse;
   hydratePermissionsFromLogin(gw);
   hydratePermissionsFromJwt(gw.token);
+  if (gw.features) hydrateFeaturesFromLogin(gw.features);
 
   const user: BlinkoneUser = {
     id: cw.data.id,

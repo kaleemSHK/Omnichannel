@@ -8,7 +8,14 @@ import {
   normalizeMessages,
   unwrapMessageResponse,
 } from '@/lib/utils/messages';
-import type { CWConversation, CWInbox, CWMessage, ApiResponse } from '@/types';
+import { normalizeConversation } from '@/lib/utils/conversations';
+import type {
+  ConversationPriority,
+  CWConversation,
+  CWInbox,
+  CWMessage,
+  ApiResponse,
+} from '@/types';
 import { useAuthStore } from '@/lib/store/auth';
 
 function accountId() {
@@ -51,7 +58,10 @@ export async function listConversations(
 }
 
 export async function getConversation(id: number): Promise<CWConversation> {
-  return cwFetch<CWConversation>(`/accounts/${accountId()}/conversations/${id}`);
+  const res = await cwFetch<unknown>(`/accounts/${accountId()}/conversations/${id}`);
+  const conv = normalizeConversation(res);
+  if (!conv) throw new Error('Invalid conversation response');
+  return conv;
 }
 
 export async function getMessages(conversationId: number): Promise<{ payload: CWMessage[] }> {
@@ -116,6 +126,16 @@ export async function updateConversationStatus(
   return cwFetch<CWConversation>(
     `/accounts/${accountId()}/conversations/${conversationId}/toggle_status`,
     { method: 'POST', body: JSON.stringify({ status }) },
+  );
+}
+
+export async function updateConversationPriority(
+  conversationId: number,
+  priority: ConversationPriority,
+): Promise<void> {
+  await cwFetch<void>(
+    `/accounts/${accountId()}/conversations/${conversationId}/toggle_priority`,
+    { method: 'POST', body: JSON.stringify({ priority }) },
   );
 }
 

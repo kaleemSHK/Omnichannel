@@ -13,6 +13,71 @@ export function parseContactsList(response: unknown): CWContact[] {
   return [];
 }
 
+/** Chatwoot GET /contacts/:id returns `{ payload: contact }` or a flat contact. */
+export function parseContactDetail(response: unknown): CWContact {
+  if (!response || typeof response !== 'object') {
+    throw new Error('Invalid contact response');
+  }
+  const root = response as Record<string, unknown>;
+  if (typeof root.id === 'number') return root as unknown as CWContact;
+
+  const payload = root.payload;
+  if (payload && typeof payload === 'object') {
+    const p = payload as Record<string, unknown>;
+    if (p.contact && typeof p.contact === 'object' && typeof (p.contact as CWContact).id === 'number') {
+      return p.contact as CWContact;
+    }
+    if (typeof p.id === 'number') return p as unknown as CWContact;
+  }
+
+  const data = root.data;
+  if (data && typeof data === 'object') {
+    const d = data as Record<string, unknown>;
+    if (d.contact && typeof d.contact === 'object') return d.contact as CWContact;
+    if (typeof d.id === 'number') return d as unknown as CWContact;
+  }
+
+  throw new Error('Contact not found');
+}
+
+function looksLikePhone(value?: string | null): boolean {
+  if (!value?.trim()) return false;
+  const digits = value.replace(/\D/g, '');
+  return digits.length >= 7 && /^[\d+\s().-]+$/.test(value.trim());
+}
+
+/** E.164-ish digits for outbound dial (phone_number, then identifier fallback). */
+export function resolveContactDialNumber(
+  contact: Pick<CWContact, 'phone_number' | 'name' | 'email'> & {
+    identifier?: string;
+    additional_attributes?: Record<string, unknown>;
+    custom_attributes?: Record<string, string>;
+  },
+): string {
+  const fromAttr = (obj: Record<string, unknown> | undefined, key: string): string => {
+    const v = obj?.[key];
+    return typeof v === 'string' ? v.trim() : '';
+  };
+
+  const candidates = [
+    contact.phone_number,
+    contact.identifier,
+    fromAttr(contact.additional_attributes, 'phone_number'),
+    fromAttr(contact.additional_attributes, 'phone'),
+    contact.custom_attributes?.phone_number,
+    contact.custom_attributes?.phone,
+    looksLikePhone(contact.name) ? contact.name : '',
+  ];
+
+  for (const raw of candidates) {
+    const trimmed = (raw ?? '').trim();
+    if (!trimmed) continue;
+    const digits = trimmed.replace(/[^\d+]/g, '');
+    if (digits.replace(/\D/g, '').length >= 7) return digits;
+  }
+  return '';
+}
+
 /** Fallback label when Chatwoot omits `name` (phone/email-only contacts). */
 export function contactDisplayName(
   contact: Pick<CWContact, 'name' | 'email' | 'phone_number'> & { identifier?: string },

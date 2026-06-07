@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Alert, StyleSheet } from 'react-native';
+import { View, Text, ScrollView, Alert, StyleSheet, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { useSip } from '@/providers/sip-context';
@@ -9,6 +9,8 @@ import { usePermissions } from '@/hooks/usePermissions';
 import { ActiveCallBar } from '@/components/calling/ActiveCallBar';
 import { IncomingCallSheet } from '@/components/calling/IncomingCallSheet';
 import { OfflineBanner } from '@/components/layout/OfflineBanner';
+import { Five9Header } from '@/components/layout/Five9Header';
+import { ActionTile } from '@/components/ui/ActionTile';
 import { navigationRef, navigate } from '@/navigation/navigationRef';
 import { hapticImpact } from '@/lib/haptics';
 import { loadCustomerSession } from '@/lib/storage';
@@ -27,10 +29,11 @@ export default function CustomerHome() {
   const [calling, setCalling] = useState(false);
 
   async function handleCallSupport() {
-    console.log('[CALL] Button tapped, sipRegistered=', sipRegistered, 'desk=', AGENT_DESK_EXT);
     const granted = await requestMic();
-    console.log('[CALL] Mic granted=', granted);
-    if (!granted) { Alert.alert('Microphone Required', 'Please grant microphone permission.'); return; }
+    if (!granted) {
+      Alert.alert('Microphone Required', 'Please grant microphone permission to call support.');
+      return;
+    }
     hapticImpact('medium');
     setCalling(true);
     try {
@@ -46,20 +49,10 @@ export default function CustomerHome() {
           callId,
           queueKey: SUPPORT_QUEUE,
           callerName: session.name?.trim() || undefined,
-          callerPhone: session.phone?.trim() || undefined,
           contactId: session.contactId,
-          callerId: session.phone?.trim() || (session.contactId ? String(session.contactId) : undefined),
+          callerId: session.contactId ? String(session.contactId) : undefined,
         });
-        console.log('[CALL] route response', route.status, route.dialTarget, route.agentId);
-        if (route.status === 'queued') {
-          setCalling(false);
-          navigate('Customer', {
-            screen: 'CallQueue',
-            params: { callId, welcomeMessage: route.welcomeMessage },
-          });
-          return;
-        }
-        if (route.status === 'assigned') {
+        if (route.status === 'queued' || route.status === 'assigned') {
           setCalling(false);
           navigate('Customer', {
             screen: 'CallQueue',
@@ -82,71 +75,143 @@ export default function CustomerHome() {
     else setCalling(false);
   }, [activeCall]);
 
-  // Safety reset: if sipRegistered drops and comes back, reset calling state
   useEffect(() => {
     if (!sipRegistered) setCalling(false);
   }, [sipRegistered]);
 
+  const callReady = sipRegistered && !calling;
+
   return (
-    <SafeAreaView style={s.screen}>
+    <View style={s.screen}>
       <OfflineBanner />
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 32, paddingBottom: 40 }}>
-        <View style={{ marginBottom: 32 }}>
-          <Text style={s.brand}>BlinkOne</Text>
-          <Text style={s.sub}>How can we help you today?</Text>
+      <Five9Header
+        title="BlinkOne Support"
+        subtitle="How can we help you today?"
+        right={
+          sipRegistered ? (
+            <View style={s.onlinePill}>
+              <View style={s.onlineDot} />
+              <Text style={s.onlineText}>Ready</Text>
+            </View>
+          ) : (
+            <ActivityIndicator color="#fff" size="small" />
+          )
+        }
+      />
+
+      <ScrollView
+        style={s.scroll}
+        contentContainerStyle={s.content}
+        showsVerticalScrollIndicator={false}
+      >
+        <Text style={s.section}>GET SUPPORT</Text>
+
+        <ActionTile
+          variant="primary"
+          icon="call"
+          title={calling ? t('customer.calling') : t('customer.call_support')}
+          subtitle={
+            calling
+              ? 'Connecting you to the next available agent…'
+              : callReady
+                ? 'Tap to speak with an agent now'
+                : 'Connecting to phone system…'
+          }
+          onPress={handleCallSupport}
+          disabled={calling || !sipRegistered}
+        />
+
+        <Text style={s.section}>OTHER OPTIONS</Text>
+
+        <ActionTile
+          icon="chatbubbles"
+          iconColor={C.brand}
+          iconBg={C.bgBlue}
+          title={t('customer.start_chat')}
+          subtitle="Send a message — we reply during business hours"
+          onPress={() =>
+            navigationRef.navigate('Customer', { screen: 'ChatDetail', params: { id: 'new' } })
+          }
+        />
+
+        <ActionTile
+          icon="document-text"
+          iconColor={C.purple}
+          iconBg={C.purpleBg}
+          title={t('customer.my_tickets')}
+          subtitle="Track and manage your support requests"
+          onPress={() =>
+            navigationRef.navigate('Customer', {
+              screen: 'CustomerTabs',
+              params: { screen: 'Tickets' },
+            })
+          }
+        />
+
+        <View style={s.infoCard}>
+          <Text style={s.infoTitle}>Estimated response</Text>
+          <Text style={s.infoBody}>
+            Voice calls are routed to the next available agent. Chat and tickets are answered in
+            queue order.
+          </Text>
         </View>
-
-        {/* Call Support */}
-        <TouchableOpacity onPress={handleCallSupport} disabled={calling} activeOpacity={0.85}
-          style={[s.card, { backgroundColor: sipRegistered ? C.green : '#94A3B8', borderColor: 'transparent', marginBottom: 12 }]}>
-          <Text style={{ fontSize: 40, marginBottom: 8 }}>📞</Text>
-          <Text style={[s.cardTitle, { color: '#fff' }]}>
-            {calling ? t('customer.calling') : t('customer.call_support')}
-          </Text>
-          <Text style={[s.cardSub, { color: 'rgba(255,255,255,0.85)' }]}>
-            {calling ? 'Connecting you to an agent…' : sipRegistered ? 'Talk to us right now' : 'Connecting to phone system…'}
-          </Text>
-        </TouchableOpacity>
-
-        {/* Chat */}
-        <TouchableOpacity
-          onPress={() => navigationRef.navigate('Customer', { screen: 'ChatDetail', params: { id: 'new' } })}
-          activeOpacity={0.85} style={[s.card, s.cardRow, { marginBottom: 12 }]}>
-          <Text style={{ fontSize: 32, marginRight: 14 }}>💬</Text>
-          <View style={{ flex: 1 }}>
-            <Text style={s.cardRowTitle}>{t('customer.start_chat')}</Text>
-            <Text style={s.cardRowSub}>Send us a message anytime</Text>
-          </View>
-          <Text style={{ color: C.textMute, fontSize: 20 }}>›</Text>
-        </TouchableOpacity>
-
-        {/* Tickets */}
-        <TouchableOpacity
-          onPress={() => navigationRef.navigate('Customer', { screen: 'CustomerTabs', params: { screen: 'Tickets' } })}
-          activeOpacity={0.85} style={[s.card, s.cardRow]}>
-          <Text style={{ fontSize: 32, marginRight: 14 }}>🎫</Text>
-          <View style={{ flex: 1 }}>
-            <Text style={s.cardRowTitle}>{t('customer.my_tickets')}</Text>
-            <Text style={s.cardRowSub}>Track your support requests</Text>
-          </View>
-          <Text style={{ color: C.textMute, fontSize: 20 }}>›</Text>
-        </TouchableOpacity>
       </ScrollView>
 
       {activeCall ? <ActiveCallBar /> : null}
       {incomingCalls.length > 0 ? <IncomingCallSheet /> : null}
-    </SafeAreaView>
+    </View>
   );
 }
 
 const s = StyleSheet.create({
-  screen:      { flex: 1, backgroundColor: C.bg },
-  brand:       { fontSize: 28, fontWeight: '800', color: C.brand, marginBottom: 4 },
-  sub:         { fontSize: 14, color: C.textSub },
-  card:        { backgroundColor: C.bgCard, borderRadius: 20, padding: 20, borderWidth: 1, borderColor: C.border, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 3 },
-  cardRow:     { flexDirection: 'row', alignItems: 'center' },
-  cardTitle:   { fontSize: 18, fontWeight: '700', color: C.text, marginBottom: 4 },
-  cardSub:     { fontSize: 13, color: C.textSub },
-  cardRowTitle:{ fontSize: 16, fontWeight: '700', color: C.text, marginBottom: 2 },
-  cardRowSub:  { fontSize: 13, color: C.textSub },
+  screen: { flex: 1, backgroundColor: C.bg },
+  scroll: { flex: 1 },
+  content: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 40 },
+  section: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: C.textMute,
+    letterSpacing: 1,
+    marginBottom: 12,
+    marginTop: 4,
+  },
+  onlinePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(14,159,110,0.25)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+  },
+  onlineDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: C.green,
+  },
+  onlineText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  infoCard: {
+    marginTop: 8,
+    backgroundColor: C.bgCard,
+    borderRadius: C.r.lg,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  infoTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: C.text,
+    marginBottom: 6,
+  },
+  infoBody: {
+    fontSize: 13,
+    color: C.textSub,
+    lineHeight: 19,
+  },
 });

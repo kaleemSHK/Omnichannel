@@ -53,7 +53,16 @@ function uiPlanFromRow(row) {
 
 export async function getTenantPlatform(id) {
   const { rows } = await getPool().query('SELECT * FROM tenants WHERE id = $1', [id]);
-  return rows.length ? tenantRow(rows[0]) : null;
+  if (rows.length) return tenantRow(rows[0]);
+  const num = Number(id);
+  if (Number.isFinite(num) && num > 0) {
+    const byAccount = await getPool().query(
+      'SELECT * FROM tenants WHERE chatwoot_account_id = $1 LIMIT 1',
+      [num],
+    );
+    if (byAccount.rows.length) return tenantRow(byAccount.rows[0]);
+  }
+  return null;
 }
 
 export async function getTenantBySlug(slug) {
@@ -191,27 +200,33 @@ export async function listDomains(tenantId) {
 }
 
 export async function listFeatures(tenantId) {
+  const tenant = await getTenantPlatform(tenantId);
+  const key = tenant?.id ?? tenantId;
   const { rows } = await tenantQuery(
     getPool(),
-    tenantId,
+    key,
     'SELECT feature_key, enabled, config FROM tenant_features WHERE tenant_id = $1',
-    [tenantId],
+    [key],
   );
   return Object.fromEntries(rows.map((r) => [r.feature_key, { enabled: r.enabled, config: r.config }]));
 }
 
 export async function getBranding(tenantId) {
+  const tenant = await getTenantPlatform(tenantId);
+  const key = tenant?.id ?? tenantId;
   const { rows } = await getPool().query(
     'SELECT brand, subdomain FROM tenant_branding WHERE tenant_id = $1',
-    [tenantId],
+    [key],
   );
   if (!rows.length) return { brand: {}, subdomain: null };
   return { brand: rows[0].brand ?? {}, subdomain: rows[0].subdomain };
 }
 
 export async function patchBranding(tenantId, brand, subdomain) {
-  await upsertBranding(tenantId, brand, subdomain);
-  return getBranding(tenantId);
+  const tenant = await getTenantPlatform(tenantId);
+  const key = tenant?.id ?? tenantId;
+  await upsertBranding(key, brand, subdomain);
+  return getBranding(key);
 }
 
 export async function getUsageSnapshot(tenantId) {

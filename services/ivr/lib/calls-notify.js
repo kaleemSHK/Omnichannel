@@ -28,3 +28,24 @@ export async function notifyInboundCall(tenantId, { callId, from, to, transport 
     return null;
   }
 }
+
+/** Twilio status callback — end CDR when PSTN leg completes/cancels */
+export async function notifyCallEnded(tenantId, { callId, status, from, to }) {
+  if (!CALLS_TOKEN || !callId) return null;
+  const terminal = new Set(['completed', 'canceled', 'cancelled', 'busy', 'failed', 'no-answer']);
+  if (!terminal.has(String(status || '').toLowerCase())) return null;
+  try {
+    const res = await fetch(`${CALLS_URL}/v1/internal/calls/end`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${CALLS_TOKEN}`,
+        'X-Blinkone-Tenant-Id': String(tenantId),
+      },
+      body: JSON.stringify({ callId, status, customerPhone: from, metadata: { twilioTo: to, source: 'twilio_status' } }),
+    });
+    return res.ok;
+  } catch {
+    return null;
+  }
+}

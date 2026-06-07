@@ -46,12 +46,21 @@ function toRuntimeType(type: IVRNodeType): string {
 }
 
 /** Convert visual builder nodes/edges into the runtime graph the IVR engine executes. */
-export function builderToGraph(flow: Pick<IVRFlow, 'nodes' | 'edges'>): RuntimeGraph {
+export function builderToGraph(flow: Pick<IVRFlow, 'nodes' | 'edges' | 'entry'>): RuntimeGraph {
   const nodes = flow.nodes ?? [];
   const edges = flow.edges ?? [];
   if (!nodes.length) return DEFAULT_NEW_FLOW_GRAPH;
 
-  const entry = nodes[0]?.id ?? 'welcome';
+  const nodeIds = new Set(nodes.map(n => n.id));
+  const incoming = new Map<string, number>();
+  for (const e of edges) {
+    incoming.set(e.target, (incoming.get(e.target) ?? 0) + 1);
+  }
+
+  const entry =
+    flow.entry && nodeIds.has(flow.entry)
+      ? flow.entry
+      : nodes.find(n => !incoming.has(n.id))?.id ?? nodes[0]?.id ?? 'welcome';
 
   const runtimeNodes: RuntimeGraphNode[] = nodes.map(n => {
     const out = edges.filter(e => e.source === n.id);
@@ -66,6 +75,7 @@ export function builderToGraph(flow: Pick<IVRFlow, 'nodes' | 'edges'>): RuntimeG
 
     if (cfg.media) row.media = String(cfg.media);
     if (cfg.queueKey) row.queueKey = String(cfg.queueKey);
+    if (cfg.queue) row.queue = String(cfg.queue);
     if (cfg.url) row.url = cfg.url;
     if (cfg.method) row.method = cfg.method;
     if (cfg.body) row.body = cfg.body;
@@ -87,6 +97,9 @@ export function builderToGraph(flow: Pick<IVRFlow, 'nodes' | 'edges'>): RuntimeG
     if (cfg.maxTurns) row.maxTurns = cfg.maxTurns;
     if (cfg.maxRetries) row.maxRetries = cfg.maxRetries;
     if (cfg.prompt) row.prompt = cfg.prompt;
+    if (cfg.timeoutSec != null) row.timeoutSec = cfg.timeoutSec;
+    if (cfg.defaultDigit != null) row.defaultDigit = cfg.defaultDigit;
+    if (cfg.collectDigits != null) row.collectDigits = cfg.collectDigits;
 
     if (Array.isArray(cfg.skillRequirements)) {
       row.skillRequirements = cfg.skillRequirements as RuntimeGraphNode['skillRequirements'];
@@ -100,10 +113,16 @@ export function builderToGraph(flow: Pick<IVRFlow, 'nodes' | 'edges'>): RuntimeG
           label: e.label,
         }));
       } else {
-        // condition / schedule: store as labeled branches
         row.branches = out.map(e => ({ label: e.label ?? 'default', next: e.target }));
       }
       const defaultNext = out.find(e => !e.label || e.label === 'default' || e.label === 'open');
+      if (defaultNext) row.next = defaultNext.target;
+    } else if (n.type === 'play' && out.length > 1) {
+      row.collectDigits = true;
+      row.routes = Object.fromEntries(
+        out.map(e => [String(e.label ?? '1'), e.target]),
+      );
+      const defaultNext = out.find(e => e.label === 'default') ?? out[0];
       if (defaultNext) row.next = defaultNext.target;
     } else if (n.type !== 'hangup') {
       const next = out[0]?.target ?? (cfg.next ? String(cfg.next) : undefined);
@@ -120,7 +139,9 @@ export function defaultNewFlowGraph(): RuntimeGraph {
   return structuredClone(DEFAULT_NEW_FLOW_GRAPH);
 }
 
-export function graphToBuilderNodes(graph: RuntimeGraph): { nodes: IVRNode[]; edges: IVREdge[] } {
+export function graphToBuilderNodes(
+  graph: RuntimeGraph,
+): { nodes: IVRNode[]; edges: IVREdge[]; entry?: string } {
   const rawNodes = graph.nodes ?? [];
 
   const fromRuntimeType = (type: string): IVRNodeType => {
@@ -170,7 +191,19 @@ export function graphToBuilderNodes(graph: RuntimeGraph): { nodes: IVRNode[]; ed
         });
       }
     }
+    if (n.routes && typeof n.routes === 'object') {
+      for (const [digit, target] of Object.entries(n.routes)) {
+        if (target && ids.has(String(target))) {
+          edges.push({
+            id: `${src}-${target}-${digit}`,
+            source: src,
+            target: String(target),
+            label: digit,
+          });
+        }
+      }
+    }
   }
 
-  return { nodes, edges };
+  return { nodes, edges, entry: graph.entry };
 }

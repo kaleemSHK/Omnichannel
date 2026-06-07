@@ -382,6 +382,16 @@ export async function deleteMacro(id: number): Promise<void> {
   return cwFetch(`/accounts/${aid()}/macros/${id}`, { method: 'DELETE' });
 }
 
+export async function executeMacro(
+  macroId: number,
+  conversationIds: number[],
+): Promise<void> {
+  await cwFetch<void>(`/accounts/${aid()}/macros/${macroId}/execute`, {
+    method: 'POST',
+    body: JSON.stringify({ conversation_ids: conversationIds }),
+  });
+}
+
 // ─── Canned Responses ────────────────────────────────────────────────────────
 export interface CannedResponse {
   id: number;

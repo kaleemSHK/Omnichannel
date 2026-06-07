@@ -2,7 +2,7 @@ import express from 'express';
 import { createLogger } from './logger.js';
 import { resolveTenantId } from './tenant.js';
 import * as voicebot from './voicebot-client.js';
-import { notifyInboundCall } from './calls-notify.js';
+import { notifyInboundCall, notifyCallEnded } from './calls-notify.js';
 import { continueGraphIvr, hasGraphSession, tryStartGraphIvr } from './twilio-graph-ivr.js';
 
 const log = createLogger('ivr-twilio');
@@ -127,6 +127,23 @@ twilioVoicebotRouter.post('/v1/ivr/inbound', async (req, res) => {
 </Response>`;
     return res.type('text/xml').send(twiml);
   }
+});
+
+/** Twilio "Call status changes" webhook — paste in Phone Number → Voice config */
+twilioVoicebotRouter.post('/v1/ivr/status', async (req, res) => {
+  const { CallSid, CallStatus, From, To, Direction } = req.body ?? {};
+  if (!CallSid) {
+    return res.status(400).type('text/plain').send('Missing CallSid');
+  }
+  const tenantId = resolveTenantId(req);
+  log.info({ CallSid, CallStatus, From, To, Direction }, 'twilio status callback');
+  void notifyCallEnded(tenantId, {
+    callId: CallSid,
+    status: CallStatus,
+    from: From,
+    to: To,
+  }).catch((e) => log.warn({ err: e.message, CallSid }, 'status → calls end failed'));
+  return res.type('text/plain').send('OK');
 });
 
 twilioVoicebotRouter.post('/v1/ivr/respond/:callId', async (req, res) => {

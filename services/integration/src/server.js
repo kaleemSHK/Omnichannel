@@ -14,7 +14,8 @@ import { listConnectorTypes, getConnector } from '../lib/connectors/framework.js
 import { mountMetrics } from '../_shared/lib/metrics-middleware.js';
 import { requireFeature } from '../_shared/lib/features.js';
 import { requireIntegrationRbac } from '../_shared/lib/rbac.js';
-import { forwardChatwootToSla } from '../lib/sla-forward.js';
+import { forwardChatwootToSla, forwardChatwootToEscalationWatch } from '../lib/sla-forward.js';
+import { requireTenantId, resolveTenantIdFromReq } from '../_shared/lib/tenant-id.js';
 
 const log = createLogger('integration');
 const PORT = parseInt(process.env.PORT || '8800', 10);
@@ -33,9 +34,11 @@ healthRouter(app, 'integration');
 mountMetrics(app, 'integration');
 
 function tenantId(req) {
-  return String(
-    req.headers['x-blinkone-tenant-id'] || req.query.tenant_id || req.body?.tenantId || req.body?.tenant_id || 'default',
-  );
+  try {
+    return requireTenantId(req, { allowQuery: true, allowBody: true });
+  } catch {
+    return resolveTenantIdFromReq(req, { allowQuery: true, allowBody: true }) || 'default';
+  }
 }
 
 function actorId(req) {
@@ -61,6 +64,7 @@ app.post('/webhooks/chatwoot', express.json({ limit: '1mb' }), async (req, res) 
     const norm = await repo.normalizeChatwootWebhook(req.body);
     await repo.dispatchBusEvent(norm);
     await forwardChatwootToSla(norm.tenantId, norm.type, req.body);
+    await forwardChatwootToEscalationWatch(norm.tenantId, norm.type, req.body);
   } catch (e) {
     log.warn({ err: e.message }, 'chatwoot webhook');
   }

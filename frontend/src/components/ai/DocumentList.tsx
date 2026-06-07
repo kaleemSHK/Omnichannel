@@ -4,7 +4,9 @@ import { Loader2, Search, Upload } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { DocumentListItem } from '@/components/ai/DocumentListItem';
 import { UploadDocumentModal } from '@/components/ai/UploadDocumentModal';
-import { useRagDocuments } from '@/lib/hooks/useAiKnowledge';
+import { ConfirmDialog } from '@/components/settings/shared/ConfirmDialog';
+import { useDeleteRagDocument, useRagDocuments } from '@/lib/hooks/useAiKnowledge';
+import type { RagDocument } from '@/lib/utils/ai';
 
 interface Props {
   collectionId: string | null;
@@ -13,9 +15,11 @@ interface Props {
 
 export function DocumentList({ collectionId, collectionName }: Props) {
   const { data: documents = [], isLoading } = useRagDocuments(collectionId);
+  const deleteDoc = useDeleteRagDocument(collectionId);
   const [search, setSearch] = useState('');
   const [uploadOpen, setUploadOpen] = useState(false);
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<RagDocument | null>(null);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -67,9 +71,31 @@ export function DocumentList({ collectionId, collectionName }: Props) {
               document={doc}
               selected={selectedDocId === doc.id}
               onSelect={() => setSelectedDocId(doc.id)}
+              onDelete={() => setPendingDelete(doc)}
+              deletePending={deleteDoc.isPending && pendingDelete?.id === doc.id}
             />
           ))}
       </div>
+
+      <ConfirmDialog
+        open={!!pendingDelete}
+        title="Delete document"
+        description={
+          pendingDelete
+            ? `Remove "${pendingDelete.name}" from this collection? Its indexed chunks will be deleted. You can upload it again afterward.`
+            : ''
+        }
+        confirmLabel="Delete"
+        isPending={deleteDoc.isPending}
+        onCancel={() => setPendingDelete(null)}
+        onConfirm={() => {
+          if (!pendingDelete) return;
+          void deleteDoc.mutateAsync(pendingDelete.id).then(() => {
+            setPendingDelete(null);
+            if (selectedDocId === pendingDelete.id) setSelectedDocId(null);
+          });
+        }}
+      />
 
       <UploadDocumentModal
         open={uploadOpen}

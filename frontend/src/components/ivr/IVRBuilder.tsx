@@ -20,16 +20,18 @@ import {
   saveFlowDraft,
   publishFlow,
   createNewFlow,
+  deleteFlow,
 } from '@/lib/api/ivr';
+import { BlinkoneApiError } from '@/lib/api/client';
 import { DEMO_IVR_FLOW } from '@/lib/demo/callingFixture';
+import { isDemoDataEnabled, isGatewayQueryEnabled } from '@/lib/demo/config';
+import { useAuthStore } from '@/lib/store/auth';
 import { IVRFlowCanvas } from './IVRFlowCanvas';
 import { IVRNodePalette } from './IVRNodePalette';
 import { IVRPropertiesPanel } from './IVRPropertiesPanel';
 import { NODE_META } from './IVRNodeCard';
 import type { IVRFlow, IVRNode, IVREdge, IVRNodeType } from '@/types';
 import { cn } from '@/lib/utils/cn';
-
-// ─── Helpers ───────────────────────────────────────────────────────────────────
 
 function makeId() {
   return `node-${Date.now().toString(36)}`;
@@ -39,7 +41,25 @@ function defaultLabelFor(type: IVRNodeType): string {
   return NODE_META[type]?.label ?? type;
 }
 
-// ─── Save-status indicator ─────────────────────────────────────────────────────
+function defaultConfigFor(type: IVRNodeType): Record<string, unknown> {
+  switch (type) {
+    case 'transfer':
+    case 'enqueue':
+      return { queueKey: 'support' };
+    case 'dtmf':
+      return { maxRetries: 3, timeoutSec: 8 };
+    case 'voicemail':
+      return { maxSeconds: 120 };
+    case 'sms':
+      return { message: 'Thank you for calling.' };
+    case 'webhook':
+      return { method: 'POST' };
+    case 'schedule':
+      return { timezone: 'Asia/Muscat' };
+    default:
+      return {};
+  }
+}
 
 type SaveStatus = 'saved' | 'saving' | 'dirty' | 'idle';
 
@@ -68,14 +88,14 @@ function SaveStatusBadge({ status }: { status: SaveStatus }) {
   return null;
 }
 
-// ─── Inline rename ─────────────────────────────────────────────────────────────
-
 function FlowName({ name, onRename }: { name: string; onRename: (n: string) => void }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(name);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => { if (editing) inputRef.current?.select(); }, [editing]);
+  useEffect(() => {
+    if (editing) inputRef.current?.select();
+  }, [editing]);
 
   const commit = () => {
     const trimmed = draft.trim();
@@ -110,7 +130,10 @@ function FlowName({ name, onRename }: { name: string; onRename: (n: string) => v
   return (
     <button
       type="button"
-      onClick={() => { setDraft(name); setEditing(true); }}
+      onClick={() => {
+        setDraft(name);
+        setEditing(true);
+      }}
       className="flex items-center gap-1.5 group"
     >
       <span className="text-sm font-semibold text-gray-900 truncate max-w-[200px]">{name}</span>
@@ -119,27 +142,87 @@ function FlowName({ name, onRename }: { name: string; onRename: (n: string) => v
   );
 }
 
-// ─── Main component ────────────────────────────────────────────────────────────
+function CreateFlowDialog({
+  open,
+  name,
+  onNameChange,
+  onCancel,
+  onCreate,
+  creating,
+}: {
+  open: boolean;
+  name: string;
+  onNameChange: (v: string) => void;
+  onCancel: () => void;
+  onCreate: () => void;
+  creating: boolean;
+}) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
+      <div className="w-full max-w-sm rounded-xl bg-white shadow-xl border border-gray-100 p-4">
+        <h3 className="text-sm font-semibold text-gray-900 mb-1">New IVR flow</h3>
+        <p className="text-xs text-muted-foreground mb-3">
+          Flows are saved for your tenant only.
+        </p>
+        <input
+          value={name}
+          onChange={e => onNameChange(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === 'Enter') onCreate();
+            if (e.key === 'Escape') onCancel();
+          }}
+          placeholder="Flow name"
+          className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-primary/30"
+          autoFocus
+        />
+        <div className="flex justify-end gap-2 mt-4">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="px-3 py-1.5 text-xs rounded-lg border border-gray-200 hover:bg-gray-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={creating || !name.trim()}
+            onClick={onCreate}
+            className="px-3 py-1.5 text-xs rounded-lg bg-brand-primary text-white hover:bg-brand-primary/90 disabled:opacity-50"
+          >
+            {creating ? 'Creating…' : 'Create flow'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export function IVRBuilder() {
   const qc = useQueryClient();
+  const tenantId = String(useAuthStore(s => s.user?.chatwootAccountId ?? s.user?.tenantId ?? '1'));
+  const demoMode = isDemoDataEnabled();
+  const gatewayEnabled = isGatewayQueryEnabled();
+
   const [flowId, setFlowId] = useState<string | null>(null);
   const [localFlow, setLocalFlow] = useState<IVRFlow | null>(null);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [label, setLabel] = useState('');
   const [draftConfig, setDraftConfig] = useState<Record<string, unknown>>({});
   const [creating, setCreating] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [newFlowName, setNewFlowName] = useState('My IVR flow');
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
   const [publishing, setPublishing] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const canvasRef = useRef<HTMLDivElement>(null);
 
-  // ── Queries ──
-  const { data: flows = [] } = useQuery({
-    queryKey: ['ivr-flows'],
+  const { data: flows = [], isError: flowsError } = useQuery({
+    queryKey: ['ivr-flows', tenantId],
+    enabled: gatewayEnabled || demoMode,
     queryFn: async () => {
-      try { return await listFlows(); }
-      catch { return [DEMO_IVR_FLOW]; }
+      if (demoMode) return [DEMO_IVR_FLOW];
+      return listFlows();
     },
   });
 
@@ -147,92 +230,99 @@ export function IVRBuilder() {
     if (!flowId && flows.length) setFlowId(flows[0].id);
   }, [flows, flowId]);
 
-  const { data: loadedFlow } = useQuery({
-    queryKey: ['ivr-flow', flowId],
-    enabled: !!flowId,
+  const { data: loadedFlow, isLoading: flowLoading } = useQuery({
+    queryKey: ['ivr-flow', tenantId, flowId],
+    enabled: !!flowId && (gatewayEnabled || demoMode),
     queryFn: async () => {
-      try { return await getFlow(flowId as string); }
-      catch { return DEMO_IVR_FLOW; }
+      if (demoMode) return DEMO_IVR_FLOW;
+      return getFlow(flowId as string);
     },
   });
 
   useEffect(() => {
-    if (loadedFlow) { setLocalFlow(loadedFlow); setSaveStatus('idle'); }
+    if (loadedFlow) {
+      setLocalFlow(loadedFlow);
+      setSaveStatus('idle');
+    }
   }, [loadedFlow]);
 
-  const flow = localFlow ?? loadedFlow ?? DEMO_IVR_FLOW;
+  const flow = localFlow ?? loadedFlow ?? (demoMode ? DEMO_IVR_FLOW : null);
 
-  // ── Select node ──
-  const handleSelectNode = useCallback((id: string | null) => {
-    setSelectedNodeId(id);
-    if (!id) return;
-    const node = (flow.nodes ?? []).find(n => n.id === id);
-    setLabel(node?.label ?? '');
-    setDraftConfig({ ...(node?.config ?? {}) });
-  }, [flow.nodes]);
+  const handleSelectNode = useCallback(
+    (id: string | null) => {
+      setSelectedNodeId(id);
+      if (!id || !flow) return;
+      const node = (flow.nodes ?? []).find(n => n.id === id);
+      setLabel(node?.label ?? '');
+      setDraftConfig({ ...(node?.config ?? {}) });
+    },
+    [flow],
+  );
 
-  // ── Auto-save after canvas change ──
-  const scheduleAutoSave = useCallback((updated: IVRFlow) => {
-    setSaveStatus('dirty');
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(async () => {
-      if (!updated.id) return;
-      setSaveStatus('saving');
-      try {
-        const saved = await saveFlowDraft(updated, 'Auto-save');
-        setLocalFlow(saved);
-        setSaveStatus('saved');
-        setTimeout(() => setSaveStatus('idle'), 3000);
-      } catch {
-        setSaveStatus('dirty');
-      }
-    }, 1500);
-  }, []);
+  const scheduleAutoSave = useCallback(
+    (updated: IVRFlow) => {
+      if (demoMode || !updated.id || updated.id === DEMO_IVR_FLOW.id) return;
+      setSaveStatus('dirty');
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      saveTimer.current = setTimeout(async () => {
+        setSaveStatus('saving');
+        try {
+          const saved = await saveFlowDraft(updated, 'Auto-save');
+          setLocalFlow(prev =>
+            prev
+              ? {
+                  ...prev,
+                  version: saved.version,
+                  isActive: saved.isActive,
+                }
+              : saved,
+          );
+          setSaveStatus('saved');
+          setTimeout(() => setSaveStatus('idle'), 3000);
+        } catch (e) {
+          setSaveStatus('dirty');
+          if (e instanceof BlinkoneApiError) toast.error(e.message);
+        }
+      }, 1500);
+    },
+    [demoMode],
+  );
 
-  // ── Canvas change callback ──
-  const handleFlowChange = useCallback((nodes: IVRNode[], edges: IVREdge[]) => {
-    setLocalFlow(prev => {
-      if (!prev) return prev;
-      const updated = { ...prev, nodes, edges };
-      scheduleAutoSave(updated);
-      return updated;
-    });
-  }, [scheduleAutoSave]);
+  const handleFlowChange = useCallback(
+    (nodes: IVRNode[], edges: IVREdge[]) => {
+      setLocalFlow(prev => {
+        if (!prev) return prev;
+        const updated = { ...prev, nodes, edges };
+        scheduleAutoSave(updated);
+        return updated;
+      });
+    },
+    [scheduleAutoSave],
+  );
 
-  // ── Add node (from palette click or drop) ──
-  const handleAddNode = useCallback((type: IVRNodeType, position?: { x: number; y: number }) => {
-    const newNode: IVRNode = {
-      id: makeId(),
-      type,
-      label: defaultLabelFor(type),
-      config: {},
-      position: position ?? {
-        x: 160 + Math.random() * 300,
-        y: 80 + Math.random() * 200,
-      },
-    };
-    setLocalFlow(prev => {
-      if (!prev) return prev;
-      const updated = { ...prev, nodes: [...(prev.nodes ?? []), newNode] };
-      scheduleAutoSave(updated);
-      return updated;
-    });
-    handleSelectNode(newNode.id);
-  }, [scheduleAutoSave, handleSelectNode]);
+  const handleAddNode = useCallback(
+    (type: IVRNodeType, position?: { x: number; y: number }) => {
+      const newNode: IVRNode = {
+        id: makeId(),
+        type,
+        label: defaultLabelFor(type),
+        config: defaultConfigFor(type),
+        position: position ?? {
+          x: 160 + Math.random() * 300,
+          y: 80 + Math.random() * 200,
+        },
+      };
+      setLocalFlow(prev => {
+        if (!prev) return prev;
+        const updated = { ...prev, nodes: [...(prev.nodes ?? []), newNode] };
+        scheduleAutoSave(updated);
+        return updated;
+      });
+      handleSelectNode(newNode.id);
+    },
+    [scheduleAutoSave, handleSelectNode],
+  );
 
-  // ── Canvas drop ──
-  const handleDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    const type = e.dataTransfer.getData('application/ivr-node-type') as IVRNodeType;
-    if (!type || !NODE_META[type]) return;
-    const rect = canvasRef.current?.getBoundingClientRect();
-    const position = rect
-      ? { x: e.clientX - rect.left - 90, y: e.clientY - rect.top - 40 }
-      : undefined;
-    handleAddNode(type, position);
-  }, [handleAddNode]);
-
-  // ── Save node properties ──
   const saveNode = useCallback(() => {
     if (!selectedNodeId || !label.trim()) return;
     setLocalFlow(prev => {
@@ -249,7 +339,6 @@ export function IVRBuilder() {
     toast.success('Node saved');
   }, [selectedNodeId, label, draftConfig, scheduleAutoSave]);
 
-  // ── Delete selected node ──
   const deleteNode = useCallback(() => {
     if (!selectedNodeId) return;
     setLocalFlow(prev => {
@@ -266,42 +355,66 @@ export function IVRBuilder() {
     toast.success('Node deleted');
   }, [selectedNodeId, scheduleAutoSave]);
 
-  // ── Publish ──
   const handlePublish = useCallback(async () => {
-    if (!flow?.id) return;
+    if (!flow?.id || demoMode) return;
     setPublishing(true);
     try {
       const saved = await publishFlow(flow.id, flow);
       setLocalFlow(saved);
-      void qc.invalidateQueries({ queryKey: ['ivr-flow', flow.id] });
+      void qc.invalidateQueries({ queryKey: ['ivr-flow', tenantId, flow.id] });
+      void qc.invalidateQueries({ queryKey: ['ivr-flows', tenantId] });
       toast.success('Flow published — live!');
-    } catch {
-      toast.error('Publish failed');
+    } catch (e) {
+      toast.error(e instanceof BlinkoneApiError ? e.message : 'Publish failed');
     } finally {
       setPublishing(false);
     }
-  }, [flow, qc]);
+  }, [flow, demoMode, qc, tenantId]);
 
-  // ── Create flow ──
   const handleCreateFlow = useCallback(async () => {
-    const name = window.prompt('Name for the new IVR flow', 'My IVR flow');
-    if (!name?.trim()) return;
+    const name = newFlowName.trim();
+    if (!name) return;
     setCreating(true);
     try {
-      const created = await createNewFlow(name.trim());
+      const created = await createNewFlow(name);
+      setCreateOpen(false);
       setFlowId(created.id);
       setLocalFlow(created);
       setSelectedNodeId(null);
-      void qc.invalidateQueries({ queryKey: ['ivr-flows'] });
-      toast.success(`Created "${name.trim()}"`);
-    } catch {
-      toast.error('Could not create flow');
+      void qc.invalidateQueries({ queryKey: ['ivr-flows', tenantId] });
+      toast.success(`Created "${name}"`);
+    } catch (e) {
+      toast.error(e instanceof BlinkoneApiError ? e.message : 'Could not create flow');
     } finally {
       setCreating(false);
     }
-  }, [qc]);
+  }, [newFlowName, qc, tenantId]);
 
-  // ── Switch flow ──
+  const handleDeleteFlow = useCallback(
+    async (id: string) => {
+      const target = flows.find(f => f.id === id);
+      if (!target || demoMode) return;
+      if (!window.confirm(`Delete "${target.name}"? This cannot be undone.`)) return;
+      setDeletingId(id);
+      try {
+        await deleteFlow(id);
+        void qc.invalidateQueries({ queryKey: ['ivr-flows', tenantId] });
+        if (flowId === id) {
+          const remaining = flows.filter(f => f.id !== id);
+          setFlowId(remaining[0]?.id ?? null);
+          setLocalFlow(null);
+          setSelectedNodeId(null);
+        }
+        toast.success('Flow deleted');
+      } catch (e) {
+        toast.error(e instanceof BlinkoneApiError ? e.message : 'Could not delete flow');
+      } finally {
+        setDeletingId(null);
+      }
+    },
+    [flows, flowId, demoMode, qc, tenantId],
+  );
+
   const switchFlow = useCallback((id: string) => {
     setFlowId(id);
     setLocalFlow(null);
@@ -310,8 +423,44 @@ export function IVRBuilder() {
     setSaveStatus('idle');
   }, []);
 
+  if (!flow && !flowLoading && !demoMode) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full min-h-[calc(100vh-3rem)] bg-gray-50 p-8 text-center">
+        <p className="text-sm font-semibold text-gray-900 mb-1">No IVR flows yet</p>
+        <p className="text-xs text-muted-foreground mb-4 max-w-sm">
+          {flowsError
+            ? 'Could not load flows from the server. Check your connection and try again.'
+            : 'Create your first tenant-scoped IVR flow to route inbound calls.'}
+        </p>
+        <button
+          type="button"
+          onClick={() => setCreateOpen(true)}
+          className="px-4 py-2 text-sm rounded-lg bg-brand-primary text-white hover:bg-brand-primary/90"
+        >
+          Create first flow
+        </button>
+        <CreateFlowDialog
+          open={createOpen}
+          name={newFlowName}
+          onNameChange={setNewFlowName}
+          onCancel={() => setCreateOpen(false)}
+          onCreate={() => void handleCreateFlow()}
+          creating={creating}
+        />
+      </div>
+    );
+  }
+
+  if (!flow) {
+    return (
+      <div className="flex items-center justify-center h-full min-h-[calc(100vh-3rem)]">
+        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
   const selected = (flow.nodes ?? []).find(n => n.id === selectedNodeId) ?? null;
-  const flowList = (flows.length ? flows : [DEMO_IVR_FLOW]).map(f => ({
+  const flowList = flows.map(f => ({
     id: f.id,
     name: f.name,
     isActive: f.isActive,
@@ -319,32 +468,41 @@ export function IVRBuilder() {
 
   return (
     <div className="flex h-full min-h-[calc(100vh-3rem)] overflow-hidden bg-gray-50">
-      {/* Left palette */}
+      <CreateFlowDialog
+        open={createOpen}
+        name={newFlowName}
+        onNameChange={setNewFlowName}
+        onCancel={() => setCreateOpen(false)}
+        onCreate={() => void handleCreateFlow()}
+        creating={creating}
+      />
+
       <IVRNodePalette
         flows={flowList}
         activeFlowId={flowId ?? ''}
         onSelectFlow={switchFlow}
         onAddNode={handleAddNode}
-        onCreateFlow={handleCreateFlow}
+        onCreateFlow={() => setCreateOpen(true)}
+        onDeleteFlow={demoMode ? undefined : handleDeleteFlow}
+        deletingFlowId={deletingId}
         creating={creating}
+        tenantLabel={tenantId ? `Tenant ${tenantId}` : undefined}
       />
 
-      {/* Main canvas area */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Toolbar */}
         <div className="h-11 bg-white border-b border-gray-200 flex items-center px-3 gap-3 shrink-0">
           <LayoutDashboard className="w-4 h-4 text-muted-foreground" />
           <FlowName
             name={flow.name}
             onRename={async name => {
-              if (!flow.id) return;
+              if (!flow.id || demoMode) return;
               const { updateFlow } = await import('@/lib/api/ivr');
               try {
                 const updated = await updateFlow(flow.id, { name });
                 setLocalFlow(updated);
-                void qc.invalidateQueries({ queryKey: ['ivr-flows'] });
-              } catch {
-                toast.error('Could not rename flow');
+                void qc.invalidateQueries({ queryKey: ['ivr-flows', tenantId] });
+              } catch (e) {
+                toast.error(e instanceof BlinkoneApiError ? e.message : 'Could not rename flow');
               }
             }}
           />
@@ -378,8 +536,8 @@ export function IVRBuilder() {
 
           <button
             type="button"
-            disabled={publishing}
-            onClick={handlePublish}
+            disabled={publishing || demoMode}
+            onClick={() => void handlePublish()}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-brand-primary text-white hover:bg-brand-primary/90 disabled:opacity-60 transition-colors"
           >
             {publishing ? (
@@ -391,24 +549,16 @@ export function IVRBuilder() {
           </button>
         </div>
 
-        {/* Canvas with drag-drop */}
-        <div
-          ref={canvasRef}
-          className="flex-1 min-h-0 p-3 flex flex-col"
-          onDrop={handleDrop}
-          onDragOver={e => e.preventDefault()}
-        >
+        <div className="flex-1 min-h-0 p-3 flex flex-col">
           <IVRFlowCanvas
-            key={flow.id}
             flow={flow}
             onFlowChange={handleFlowChange}
             onSelectNode={handleSelectNode}
-            selectedId={selectedNodeId}
+            onAddNode={handleAddNode}
           />
         </div>
       </div>
 
-      {/* Right properties */}
       <IVRPropertiesPanel
         selected={selected}
         label={label || selected?.label || ''}

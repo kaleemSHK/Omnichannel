@@ -29,7 +29,7 @@ Fill **Implementation** and **Status** as each prompt lands. Source TRD document
 | TR-21 | CRM / contact model | `core-chatwoot` | PENDING DESIGN |
 | TR-22 | Knowledge base (help center) | `core-chatwoot` portal | PENDING DESIGN |
 | TR-23 | SLA policies | `services/sla` (Prompt 6) — **not** Chatwoot Enterprise | PENDING DESIGN |
-| TR-24 | Escalation rules | `services/escalation` (Prompt 6) | PENDING DESIGN |
+| TR-24 | Escalation rules | `services/escalation` (Prompt 6) | IN PROGRESS — see [TR-24-ESCALATION-GAP-ANALYSIS.md](./TR-24-ESCALATION-GAP-ANALYSIS.md) |
 | TR-25 | Workflow automation (baseline) | `core-chatwoot` | PENDING DESIGN |
 | TR-26 | Campaigns / outbound | PENDING DESIGN | PENDING DESIGN |
 | TR-27 | Reporting (baseline) | `core-chatwoot` | PENDING DESIGN |

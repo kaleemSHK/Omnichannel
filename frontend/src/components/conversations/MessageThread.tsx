@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ChevronLeft,
@@ -21,6 +21,8 @@ import { ConversationIncomingCallBanner } from '@/components/conversations/Conve
 import { MessageBubble } from '@/components/conversations/MessageBubble';
 import { ReplyBox } from '@/components/conversations/ReplyBox';
 import { LabelPicker } from '@/components/conversations/LabelPicker';
+import { MacroPicker } from '@/components/conversations/MacroPicker';
+import { PriorityPicker } from '@/components/conversations/PriorityPicker';
 import { SnoozeButton } from '@/components/conversations/SnoozeButton';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -30,7 +32,7 @@ import {
   listChatwootAgents,
   updateConversationStatus,
 } from '@/lib/api/conversations';
-import { useMarkConversationRead, useMessages } from '@/lib/hooks/useConversations';
+import { useMarkConversationRead, useMessages, useConversationDetail } from '@/lib/hooks/useConversations';
 import { useAssignTeam, useTeams } from '@/lib/hooks/useChatwootExtras';
 import { subscribeToConversation } from '@/lib/api/websocket';
 import {
@@ -43,21 +45,33 @@ import { can } from '@/lib/rbac';
 import { DEMO_AGENTS } from '@/lib/demo/callingFixture';
 import { isDemoDataEnabled } from '@/lib/demo/config';
 import { cn } from '@/lib/utils/cn';
-import type { CWConversation } from '@/types';
+import type { ConversationPriority, CWConversation } from '@/types';
+
+const PRIORITY_HEADER: Record<ConversationPriority, string> = {
+  none: '',
+  low: 'bg-blue-100 text-blue-700',
+  medium: 'bg-amber-100 text-amber-700',
+  high: 'bg-orange-100 text-orange-700',
+  urgent: 'bg-red-100 text-red-700',
+};
 
 // ─── Assign dropdown (agent / team) ────────────────────────────────────────────
 
 function AssignDropdown({
   label,
+  placeholder,
   icon: Icon,
   currentName,
+  currentId,
   options,
   onSelect,
   disabled,
 }: {
   label: string;
+  placeholder: string;
   icon: React.ElementType;
   currentName?: string;
+  currentId?: string;
   options: { id: string; name: string }[];
   onSelect: (id: string) => void;
   disabled?: boolean;
@@ -65,6 +79,7 @@ function AssignDropdown({
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const filtered = options.filter(o => o.name.toLowerCase().includes(search.toLowerCase()));
+  const display = currentName ?? placeholder;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -72,19 +87,20 @@ function AssignDropdown({
         <button
           type="button"
           disabled={disabled}
-          title={label}
+          title={currentName ? `${label}: ${currentName}` : placeholder}
           className={cn(
-            'flex items-center gap-1 px-2 py-1 rounded-md text-xs border transition-colors max-w-[120px]',
+            'flex items-center gap-1 px-2 py-1 rounded-md text-xs border transition-colors max-w-[160px]',
             currentName
               ? 'border-brand-primary/30 bg-blue-50 text-brand-primary font-medium'
               : 'border-gray-200 text-muted-foreground hover:bg-gray-50',
           )}
         >
           <Icon className="w-3 h-3 shrink-0" />
-          <span className="truncate">{currentName ?? label}</span>
+          <span className="truncate">{display}</span>
         </button>
       </PopoverTrigger>
       <PopoverContent className="w-52 p-1.5" align="start">
+        <p className="text-[10px] font-semibold text-muted-foreground px-2 pb-1">{label}</p>
         <input
           value={search}
           onChange={e => setSearch(e.target.value)}
@@ -96,21 +112,31 @@ function AssignDropdown({
           <button
             type="button"
             onClick={() => { onSelect(''); setOpen(false); setSearch(''); }}
-            className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs text-muted-foreground hover:bg-gray-50"
+            className={cn(
+              'w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs hover:bg-gray-50',
+              !currentId ? 'bg-muted/60 font-medium text-foreground' : 'text-muted-foreground',
+            )}
           >
-            Unassign
+            Unassigned
+            {!currentId && <span className="ms-auto text-brand-primary">✓</span>}
           </button>
           {filtered.map(o => (
             <button
               key={o.id}
               type="button"
               onClick={() => { onSelect(o.id); setOpen(false); setSearch(''); }}
-              className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs hover:bg-gray-50 text-start"
+              className={cn(
+                'w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs hover:bg-gray-50 text-start',
+                currentId === o.id && 'bg-muted/60 font-medium',
+              )}
             >
               <div className="w-5 h-5 rounded-full bg-blue-100 text-blue-700 text-[9px] font-bold flex items-center justify-center shrink-0">
                 {initials(o.name)}
               </div>
               <span className="truncate">{o.name}</span>
+              {currentId === o.id && (
+                <span className="ms-auto text-brand-primary">✓</span>
+              )}
             </button>
           ))}
           {filtered.length === 0 && (
@@ -210,8 +236,16 @@ export function MessageThread({ conversation, onToggleAssist, assistOpen }: Prop
   const user = useAuthStore(s => s.user);
   const role = user?.role;
   const qc = useQueryClient();
+  const conversationId = conversation?.id ?? null;
+  const { data: detail } = useConversationDetail(conversationId);
+  const conv = detail ?? conversation;
   const markRead = useMarkConversationRead();
-  const { data: messages = [], isLoading, isError, error } = useMessages(conversation?.id ?? null);
+  const { data: messages = [], isLoading, isError, error } = useMessages(conversationId);
+
+  const refreshConversation = useCallback(() => {
+    qc.invalidateQueries({ queryKey: ['conversations'] });
+    if (conversationId) qc.invalidateQueries({ queryKey: ['conversation', conversationId] });
+  }, [qc, conversationId]);
 
   const { data: agents = [] } = useQuery({
     queryKey: ['cw-agents', isDemoDataEnabled()],
@@ -226,22 +260,22 @@ export function MessageThread({ conversation, onToggleAssist, assistOpen }: Prop
   });
 
   const { data: teams = [] } = useTeams();
-  const teamMutation = useAssignTeam(conversation?.id ?? 0, conversation?.meta?.assignee?.id);
+  const teamMutation = useAssignTeam(conversationId ?? 0, conv?.meta?.assignee?.id);
 
   const statusMutation = useMutation({
     mutationFn: (status: 'open' | 'resolved' | 'pending') =>
-      updateConversationStatus(conversation!.id, status),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['conversations'] }),
+      updateConversationStatus(conv!.id, status),
+    onSuccess: refreshConversation,
   });
 
   const assignMutation = useMutation({
     mutationFn: (assigneeId: string) =>
       assignConversation(
-        conversation!.id,
+        conv!.id,
         assigneeId ? Number(assigneeId) : null,
-        conversation!.meta?.team?.id ?? null,
+        conv!.meta?.team?.id ?? null,
       ),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['conversations'] }),
+    onSuccess: refreshConversation,
   });
 
   useEffect(() => {
@@ -249,40 +283,44 @@ export function MessageThread({ conversation, onToggleAssist, assistOpen }: Prop
   }, [messages, conversation?.id]);
 
   useEffect(() => {
-    if (!conversation?.id) return;
-    if (markedReadRef.current === conversation.id) return;
-    markedReadRef.current = conversation.id;
-    markRead.mutate(conversation.id);
-  }, [conversation?.id, markRead]);
+    if (!conversationId) return;
+    if (markedReadRef.current === conversationId) return;
+    markedReadRef.current = conversationId;
+    markRead.mutate(conversationId);
+  }, [conversationId, markRead]);
 
   useEffect(() => {
-    if (!conversation || !user?.chatwootAccountId) return;
+    if (!conversationId || !user?.chatwootAccountId) return;
     let unsubscribe: (() => void) | undefined;
     try {
-      unsubscribe = subscribeToConversation(user.chatwootAccountId, conversation.id, {
+      unsubscribe = subscribeToConversation(user.chatwootAccountId, conversationId, {
         onMessage: () => {
-          qc.invalidateQueries({ queryKey: ['messages', conversation.id] });
-          markRead.mutate(conversation.id);
+          qc.invalidateQueries({ queryKey: ['messages', conversationId] });
+          qc.invalidateQueries({ queryKey: ['conversation', conversationId] });
+          markRead.mutate(conversationId);
         },
-        onStatusChange: () => qc.invalidateQueries({ queryKey: ['conversations'] }),
+        onStatusChange: refreshConversation,
       });
     } catch (err) {
       console.warn('[MessageThread] subscribeToConversation failed', err);
     }
     return () => unsubscribe?.();
-  }, [conversation?.id, user?.chatwootAccountId, qc, markRead]);
+  }, [conversationId, user?.chatwootAccountId, qc, markRead, refreshConversation]);
 
-  if (!conversation) return <EmptyState />;
+  if (!conv) return <EmptyState />;
 
-  const contactName = conversationContactName(conversation);
-  const channel = inboxLabel(conversation.channel);
+  const contactName = conversationContactName(conv);
+  const channel = inboxLabel(conv.channel);
   const contactInitials = initials(contactName);
-  const assigneeName = conversation.meta?.assignee?.name;
-  const teamName = conversation.meta?.team?.name;
-  const status = conversation.status ?? 'open';
+  const assigneeName = conv.meta?.assignee?.name;
+  const assigneeId = conv.meta?.assignee?.id ? String(conv.meta.assignee.id) : undefined;
+  const teamName = conv.meta?.team?.name;
+  const teamId = conv.meta?.team?.id ? String(conv.meta.team.id) : undefined;
+  const status = conv.status ?? 'open';
+  const priority = conv.priority && conv.priority !== 'none' ? conv.priority : null;
 
   const agentOptions = agents.map(a => ({ id: String(a.id), name: a.name }));
-  const teamOptions = [{ id: '', name: 'No team' }, ...teams.map(t => ({ id: String(t.id), name: t.name }))];
+  const teamOptions = teams.map(t => ({ id: String(t.id), name: t.name }));
 
   return (
     <div className="flex flex-col flex-1 h-full overflow-hidden bg-white min-w-0">
@@ -305,8 +343,16 @@ export function MessageThread({ conversation, onToggleAssist, assistOpen }: Prop
             )}>
               {status}
             </span>
+            {priority && (
+              <span className={cn(
+                'text-[10px] px-1.5 py-0.5 rounded-full font-semibold capitalize shrink-0',
+                PRIORITY_HEADER[priority],
+              )}>
+                {priority}
+              </span>
+            )}
             <span className="text-[10px] text-muted-foreground font-mono shrink-0">
-              #{conversation.id}
+              #{conv.id}
             </span>
           </div>
         </div>
@@ -314,14 +360,25 @@ export function MessageThread({ conversation, onToggleAssist, assistOpen }: Prop
         {/* Action row */}
         <div className="flex items-center gap-2 px-4 pb-2 flex-wrap">
           {/* Labels */}
-          <LabelPicker conversationId={conversation.id} currentLabels={conversation.labels ?? []} />
+          <LabelPicker conversationId={conv.id} currentLabels={conv.labels ?? []} />
+
+          {/* Priority */}
+          <PriorityPicker
+            conversationId={conv.id}
+            currentPriority={conv.priority}
+          />
+
+          {/* Macros */}
+          <MacroPicker conversationId={conv.id} />
 
           {/* Assign agent */}
           {can(role, 'assignConversation') && (
             <AssignDropdown
-              label="Assign"
+              label="Agent"
+              placeholder="Assign agent"
               icon={UserCheck}
               currentName={assigneeName}
+              currentId={assigneeId}
               options={agentOptions}
               onSelect={id => assignMutation.mutate(id)}
               disabled={assignMutation.isPending}
@@ -332,8 +389,10 @@ export function MessageThread({ conversation, onToggleAssist, assistOpen }: Prop
           {can(role, 'assignTeam') && (
             <AssignDropdown
               label="Team"
+              placeholder="Assign team"
               icon={Users}
               currentName={teamName}
+              currentId={teamId}
               options={teamOptions}
               onSelect={id => teamMutation.mutate(id)}
               disabled={teamMutation.isPending}
@@ -341,7 +400,7 @@ export function MessageThread({ conversation, onToggleAssist, assistOpen }: Prop
           )}
 
           {/* Snooze */}
-          <SnoozeButton conversationId={conversation.id} />
+          <SnoozeButton conversationId={conv.id} />
 
           {/* Spacer */}
           <div className="flex-1" />
@@ -375,7 +434,7 @@ export function MessageThread({ conversation, onToggleAssist, assistOpen }: Prop
           )}
 
           {/* More actions */}
-          <MoreActions conversation={conversation} />
+          <MoreActions conversation={conv} />
 
           {/* Toggle assist panel */}
           <button
@@ -389,8 +448,8 @@ export function MessageThread({ conversation, onToggleAssist, assistOpen }: Prop
         </div>
       </div>
 
-      <ConversationTicketBar conversation={conversation} />
-      <ConversationIncomingCallBanner conversation={conversation} />
+      <ConversationTicketBar conversation={conv} />
+      <ConversationIncomingCallBanner conversation={conv} />
 
       {/* ── Messages ── */}
       <div className="flex-1 overflow-y-auto flex flex-col gap-2 px-4 py-4 min-h-0 bg-gray-50/30">
@@ -412,7 +471,7 @@ export function MessageThread({ conversation, onToggleAssist, assistOpen }: Prop
         <div ref={bottomRef} />
       </div>
 
-      <ReplyBox conversationId={conversation.id} />
+      <ReplyBox conversationId={conv.id} />
     </div>
   );
 }

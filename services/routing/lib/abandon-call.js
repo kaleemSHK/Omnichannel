@@ -1,6 +1,7 @@
 import { dequeueCall, setAgentState, getAgentState } from './redis-state.js';
 import { getCallMeta, setCallMeta } from './call-meta.js';
 import * as queueRepo from './queue-repo.js';
+import { notifyCallAbandoned } from './escalation-events.js';
 
 /**
  * Caller left queue (Cancel) or session ended without connect — remove from Redis queue.
@@ -30,6 +31,8 @@ export async function abandonCall(tenantId, callId, { reason = 'abandoned' } = {
     ...meta,
     abandonedAt: new Date().toISOString(),
     abandonReason: reason,
+    agentId: null,
+    assignedAt: null,
   });
 
   if (meta.queueId) {
@@ -40,6 +43,10 @@ export async function abandonCall(tenantId, callId, { reason = 'abandoned' } = {
       decision: 'abandoned',
       metadata: { queueKey: meta.queueKey, reason },
     });
+  }
+
+  if (meta.queueKey && !meta.assignedAt) {
+    await notifyCallAbandoned(tenantId, meta, { callId, reason });
   }
 
   return { callId, status: 'abandoned', queueKey: meta.queueKey ?? null, removed: true };

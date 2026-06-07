@@ -26,6 +26,20 @@ export interface EscalationRuleView {
   conditionLogic: 'and' | 'or';
   actions: EscalationAction[];
   trigger: string;
+  runCount?: number;
+  lastTriggeredAt?: string | null;
+}
+
+export interface EscalationRuleRun {
+  id: string;
+  ruleId: string;
+  ruleName?: string;
+  triggeredAt: string;
+  inputEvent: Record<string, unknown>;
+  conditionsPassed: boolean;
+  actionsAttempted: EscalationAction[];
+  outcomes: unknown[];
+  error?: string | null;
 }
 
 const OP_TO_LOGIC: Record<string, string> = {
@@ -99,6 +113,62 @@ function clauseToCondition(clause: unknown): EscalationCondition | null {
   return { field, operator, value: args[1] as string | number };
 }
 
+export const ESCALATION_TRIGGERS = [
+  { value: 'sla.warning', label: 'SLA warning' },
+  { value: 'sla.breached', label: 'SLA breached' },
+  { value: 'conversation.unassigned_for_minutes', label: 'Conversation unassigned (timer)' },
+  { value: 'conversation.no_response_for_minutes', label: 'No agent response (timer)' },
+  { value: 'conversation.priority_changed_to', label: 'Priority changed' },
+  { value: 'call.abandoned_in_queue', label: 'Call abandoned in queue' },
+  { value: 'call.long_wait', label: 'Long queue wait' },
+] as const;
+
+export const DEFAULT_RULESET_NAME = 'Default escalations';
+
+/** Normalize API actions (flat seed format or `{ type, params }`). */
+export function normalizeApiActions(actions: unknown): EscalationAction[] {
+  if (!Array.isArray(actions)) return [];
+  return actions.map(raw => {
+    const action = raw as Record<string, unknown>;
+    const type = String(action.type ?? '');
+    if (action.params && typeof action.params === 'object') {
+      return { type, params: action.params as Record<string, unknown> };
+    }
+    const params: Record<string, unknown> = {};
+    switch (type) {
+      case 'reassign_to_team':
+        params.team_id = action.team_id ?? action.target;
+        break;
+      case 'reassign_to_agent':
+        params.agent_id = action.agent_id ?? action.target;
+        break;
+      case 'add_label':
+        params.label = action.label ?? action.name;
+        break;
+      case 'change_priority':
+        params.priority = action.priority;
+        break;
+      case 'post_internal_note':
+        params.body = action.body ?? action.content ?? action.template ?? action.message;
+        break;
+      case 'notify_slack':
+        params.channel = action.channel ?? action.webhook_url;
+        break;
+      case 'send_webhook':
+        params.url = action.url;
+        break;
+      case 'bump_queue_priority':
+        params.delta = action.delta ?? 1;
+        break;
+      default:
+        for (const [k, v] of Object.entries(action)) {
+          if (k !== 'type') params[k] = v;
+        }
+    }
+    return { type, params };
+  });
+}
+
 export function describeAction(action: EscalationAction): { label: string; icon: string } {
   const p = action.params ?? {};
   switch (action.type) {
@@ -135,13 +205,24 @@ export function uiActionsToApi(actions: UiActionRow[]): EscalationAction[] {
     .filter(a => a.target.trim())
     .map(a => {
       switch (a.type) {
-        case 'reassign':
-          return a.target.toLowerCase().includes('agent')
-            ? { type: 'reassign_to_agent', params: { agent_id: a.target } }
-            : { type: 'reassign_to_team', params: { team_id: a.target } };
+        case 'reassign': {
+          const t = a.target.trim();
+          if (/^agent:/i.test(t)) {
+            return { type: 'reassign_to_agent', params: { agent_id: t.replace(/^agent:/i, '').trim() } };
+          }
+          if (/^team:/i.test(t)) {
+            return { type: 'reassign_to_team', params: { team_id: t.replace(/^team:/i, '').trim() } };
+          }
+          return t.toLowerCase().includes('agent')
+            ? { type: 'reassign_to_agent', params: { agent_id: t } }
+            : { type: 'reassign_to_team', params: { team_id: t } };
+        }
         case 'notify':
           return { type: 'notify_slack', params: { channel: a.target } };
         case 'label':
+          if (/^priority:/i.test(a.target)) {
+            return { type: 'change_priority', params: { priority: a.target.replace(/^priority:/i, '').trim() } };
+          }
           return { type: 'add_label', params: { label: a.target } };
         case 'message':
           return { type: 'post_internal_note', params: { body: a.target } };
@@ -151,6 +232,34 @@ export function uiActionsToApi(actions: UiActionRow[]): EscalationAction[] {
           return { type: 'send_webhook', params: { url: a.target } };
       }
     });
+}
+
+/** Map stored API actions back to the rule form rows. */
+export function apiActionsToUi(actions: EscalationAction[]): UiActionRow[] {
+  if (!actions.length) return [{ type: 'label', target: '' }];
+  return actions.map(a => {
+    const p = a.params ?? {};
+    switch (a.type) {
+      case 'reassign_to_team':
+        return { type: 'reassign', target: `team:${p.team_id ?? ''}` };
+      case 'reassign_to_agent':
+        return { type: 'reassign', target: `agent:${p.agent_id ?? ''}` };
+      case 'notify_slack':
+        return { type: 'notify', target: String(p.channel ?? p.webhook_url ?? '') };
+      case 'add_label':
+        return { type: 'label', target: String(p.label ?? p.name ?? '') };
+      case 'post_internal_note':
+        return { type: 'message', target: String(p.body ?? p.message ?? p.content ?? '') };
+      case 'send_webhook':
+        return { type: 'webhook', target: String(p.url ?? '') };
+      case 'change_priority':
+        return { type: 'label', target: `priority:${p.priority ?? 'urgent'}` };
+      case 'bump_queue_priority':
+        return { type: 'notify', target: 'queue-priority' };
+      default:
+        return { type: 'webhook', target: a.type };
+    }
+  });
 }
 
 export function dryRunContext(values: {

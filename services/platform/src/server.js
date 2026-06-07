@@ -31,6 +31,7 @@ const store = createStore(process.env.DATA_DIR || './data', () => ({
   brandingOverrides: {},
   tenantBrandAssets: {},
   seq: { nextTenantId: 2 },
+  telephonyConfig: {},
 }));
 
 const BRAND_UPLOADS = process.env.BLINKONE_BRAND_UPLOADS_DIR
@@ -442,6 +443,52 @@ app.get('/v1/storage/stats', auth, (_req, res) => {
   ok(res, stats);
 });
 
+// ─── PSTN / Twilio telephony config (Settings → PSTN) ────────────────────────
+
+function defaultTelephonyConfig() {
+  const base = (process.env.FRONTEND_URL || 'https://app.blinksone.com').replace(/\/$/, '');
+  return {
+    twilioTrunkHost: process.env.TWILIO_SIP_HOST || 'intelysys.pstn.twilio.com',
+    outboundCallerId: process.env.TWILIO_DID || '+19143038893',
+    inboundVoiceWebhook: `${base}/api/ivr/v1/ivr/inbound`,
+    callStatusWebhook: `${base}/api/ivr/v1/ivr/status`,
+    sipWssUrl: process.env.NEXT_PUBLIC_SIP_WSS || 'wss://sip.blinksone.com',
+    ringTimeoutSec: 30,
+    syncHangupBothLegs: true,
+    trialAccount: true,
+  };
+}
+
+app.get('/v1/telephony-config', auth, (_req, res) => {
+  const s = store.load();
+  ok(res, { ...defaultTelephonyConfig(), ...(s.telephonyConfig ?? {}) });
+});
+
+app.patch('/v1/telephony-config', auth, async (req, res) => {
+  const allowed = [
+    'twilioTrunkHost',
+    'outboundCallerId',
+    'inboundVoiceWebhook',
+    'callStatusWebhook',
+    'sipWssUrl',
+    'ringTimeoutSec',
+    'syncHangupBothLegs',
+    'trialAccount',
+  ];
+  const patch = {};
+  for (const key of allowed) {
+    if (req.body?.[key] !== undefined) patch[key] = req.body[key];
+  }
+  if (!Object.keys(patch).length) {
+    return fail(res, 'VALIDATION_ERROR', 'No telephony fields to update');
+  }
+  const next = await store.withStore(s => {
+    s.telephonyConfig = { ...(s.telephonyConfig ?? {}), ...patch };
+    return { ...defaultTelephonyConfig(), ...s.telephonyConfig };
+  });
+  ok(res, next);
+});
+
 // ─── Service health (P1) ──────────────────────────────────────────────────────
 
 const SERVICE_ENDPOINTS = [
@@ -452,8 +499,8 @@ const SERVICE_ENDPOINTS = [
   { name: 'sla',         url: process.env.SLA_URL         || 'http://sla:8796',         path: '/health' },
   { name: 'billing',     url: process.env.BILLING_URL     || 'http://billing:8794',     path: '/health' },
   { name: 'integration', url: process.env.INT_URL         || 'http://integration:8800', path: '/health' },
-  { name: 'calls',       url: process.env.CALLS_URL       || 'http://calls:8799',       path: '/health' },
-  { name: 'recording',   url: process.env.RECORDING_URL   || 'http://recording:8801',   path: '/health' },
+  { name: 'calls',       url: process.env.CALLS_URL       || 'http://calls:8792',       path: '/health' },
+  { name: 'recording',   url: process.env.RECORDING_URL   || 'http://recording:8799',   path: '/health' },
   { name: 'tenant',      url: process.env.TENANT_URL      || 'http://tenant:8802',      path: '/health' },
 ];
 

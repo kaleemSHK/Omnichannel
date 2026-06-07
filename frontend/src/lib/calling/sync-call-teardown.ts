@@ -1,5 +1,6 @@
 import { hangupCall, endCall } from '@/lib/api/calls';
 import { completeRoute } from '@/lib/api/routing';
+import { notifyCallHistoryChanged } from '@/lib/calling/call-history-events';
 import { isDemoDataEnabled, shouldSkipGatewayFetch } from '@/lib/demo/config';
 import type { CallSession } from '@/types';
 
@@ -41,4 +42,6 @@ export async function syncCallTeardown(
       /* SIP may have ended without a DB row */
     }
   }
+
+  notifyCallHistoryChanged();
 }

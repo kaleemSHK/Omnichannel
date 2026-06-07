@@ -1,5 +1,6 @@
 import { CHATWOOT_URL } from '@/lib/env';
 import { attachmentTypeForFile } from '@/lib/utils/attachments';
+import { parseMessageType } from '@/lib/utils/message-sender';
 import type { CWAttachment, CWMessage } from '@/types';
 
 /** Resolve relative attachment URLs from Chatwoot to absolute paths. */
@@ -54,13 +55,15 @@ export function normalizeMessage(raw: unknown): CWMessage {
     contentType = 'private_note';
   }
 
+  const sender = m.sender as CWMessage['sender'];
+
   return {
     id: Number(m.id ?? Date.now()),
     content: String(m.content ?? ''),
-    message_type: Number(m.message_type ?? 1) as CWMessage['message_type'],
+    message_type: parseMessageType(m.message_type, sender),
     content_type: contentType,
     created_at: Number(m.created_at ?? Math.floor(Date.now() / 1000)),
-    sender: m.sender as CWMessage['sender'],
+    sender,
     attachments: attachments?.length ? attachments : undefined,
   };
 }

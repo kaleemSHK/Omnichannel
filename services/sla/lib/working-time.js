@@ -31,15 +31,24 @@ function addUtcDays(d, n) {
   return x;
 }
 
+function hasBusinessHours(weekdayHours = {}) {
+  return WEEKDAYS.some((d) => (weekdayHours[d] || []).length > 0);
+}
+
 /**
  * Add N business minutes from start using calendar weekday_hours + holidays.
- * Uses UTC date parts (timezone refinement in later pass).
+ * Falls back to wall-clock minutes when no business hours are configured.
  */
 export function addBusinessMinutes(startIso, minutes, calendar = {}) {
   if (!minutes || minutes <= 0) return new Date(startIso).toISOString();
 
   const weekdayHours = calendar.weekdayHours || calendar.weekday_hours || {};
   const holidays = calendar.holidays || [];
+
+  if (!hasBusinessHours(weekdayHours)) {
+    return new Date(new Date(startIso).getTime() + minutes * 60_000).toISOString();
+  }
+
   let remaining = minutes;
   let cur = new Date(startIso);
   let guard = 0;
@@ -77,6 +86,10 @@ export function addBusinessMinutes(startIso, minutes, calendar = {}) {
     if (remaining > 0) {
       cur = addUtcDays(startOfUtcDay(cur), 1);
     }
+  }
+
+  if (remaining > 0) {
+    return new Date(cur.getTime() + remaining * 60_000).toISOString();
   }
 
   return cur.toISOString();

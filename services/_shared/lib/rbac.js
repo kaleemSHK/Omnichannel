@@ -26,7 +26,8 @@ const PERMISSIONS = {
   'calling.monitor_call': ['admin', 'supervisor'],
   'ivr.view': ['admin', 'supervisor', 'viewer'],
   'ivr.edit': ['admin', 'supervisor'],
-  'ivr.publish': ['admin'],
+  'ivr.publish': ['admin', 'supervisor'],
+  'ivr.delete': ['admin', 'supervisor'],
   'roles.view': ['admin', 'supervisor'],
   'users.view': ['admin', 'supervisor'],
   'users.edit': ['admin'],
@@ -139,6 +140,7 @@ export function ivrPermission(method, path) {
     return null;
   }
   if (p.includes('/publish')) return 'ivr.publish';
+  if (method === 'DELETE') return 'ivr.delete';
   return readOrWrite(method, 'ivr.view', 'ivr.edit');
 }
 

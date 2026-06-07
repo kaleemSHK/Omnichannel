@@ -79,7 +79,7 @@ export function requireFeature(featureKey, resolveTenantId, failFn) {
     const tenantId = resolveTenantId(req);
     const features = await fetchTenantFeatures(tenantId);
     if (!isFeatureEnabled(features, featureKey)) {
-      const failopenKeys = ['calling.pstn', 'telephony', 'rag', 'agent_assist', 'voice_bot'];
+      const failopenKeys = ['calling.pstn', 'telephony', 'rag', 'agent_assist', 'voice_bot', 'sla', 'escalation'];
       if (CALLING_FAILOPEN && failopenKeys.includes(featureKey)) {
         return next();
       }

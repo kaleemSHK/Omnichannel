@@ -131,7 +131,7 @@ export async function getCustomerConversation(conversationId: number): Promise<{
 
 export type CustomerCallRouteStatus = {
   callId: string;
-  status: 'queued' | 'assigned' | 'routing' | 'pending' | 'unknown';
+  status: 'queued' | 'assigned' | 'routing' | 'pending' | 'unknown' | 'abandoned' | 'completed' | 'cancelled';
   eventType?: string;
   position?: number;
   depth?: number;

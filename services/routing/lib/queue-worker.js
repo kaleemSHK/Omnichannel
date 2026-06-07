@@ -2,6 +2,7 @@ import { createLogger } from '../lib/logger.js';
 import * as queueRepo from './queue-repo.js';
 import { processQueue } from './route-request.js';
 import { processWaitTimeOverflow } from './overflow.js';
+import { processLongWaitEscalations } from './escalation-events.js';
 import { getPool, dbEnabled } from './db.js';
 
 const log = createLogger('routing-worker');
@@ -38,6 +39,7 @@ export function startQueueWorker(intervalMs = 5000) {
         for (const q of queues) {
           try {
             await processWaitTimeOverflow(tenantId, q);
+            await processLongWaitEscalations(tenantId, q);
             await processQueue(tenantId, q.queueKey);
           } catch (e) {
             if (e.code !== 'NO_AGENT' && e.code !== 'NO_CALL') {

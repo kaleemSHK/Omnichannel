@@ -13,6 +13,7 @@ import { navigationRef } from '@/navigation/navigationRef';
 import { registerForPushNotifications, addNotificationListeners } from '@/lib/notifications';
 import '@/lib/i18n';
 import { installWebRtcGlobals } from '@/lib/webrtc';
+import { C } from '@/lib/ui';
 
 installWebRtcGlobals();
 
@@ -46,7 +47,7 @@ export default function App() {
         <ErrorBoundary>
           <QueryClientProvider client={queryClient}>
             <SipProvider>
-              <StatusBar barStyle="light-content" backgroundColor="#0f1117" />
+              <StatusBar barStyle="dark-content" backgroundColor={C.navy} />
               <NavigationContainer ref={navigationRef}>
                 <RootNavigator />
               </NavigationContainer>

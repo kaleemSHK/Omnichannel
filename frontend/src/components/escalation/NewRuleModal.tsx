@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 import { Dialog } from '@/components/ui/Dialog';
 import { ConditionBuilder, type ConditionBuilderValue } from '@/components/escalation/ConditionBuilder';
 import { useCreateEscalationRule } from '@/lib/hooks/useEscalation';
-import type { UiActionRow, UiActionType } from '@/lib/utils/escalation';
+import { ESCALATION_TRIGGERS, type UiActionRow, type UiActionType } from '@/lib/utils/escalation';
 
 interface Props {
   open: boolean;
@@ -33,6 +33,7 @@ export function NewRuleModal({ open, onClose }: Props) {
   const create = useCreateEscalationRule();
   const [name, setName] = useState('');
   const [enabled, setEnabled] = useState(true);
+  const [trigger, setTrigger] = useState('sla.breached');
   const [conditions, setConditions] = useState<ConditionBuilderValue>({
     conditions: [{ field: 'sla_tier', operator: '=', value: 'gold' }],
     logic: 'and',
@@ -60,6 +61,7 @@ export function NewRuleModal({ open, onClose }: Props) {
       await create.mutateAsync({
         name: name.trim(),
         enabled,
+        trigger,
         conditions: conditions.conditions,
         conditionLogic: conditions.logic,
         actions,
@@ -99,6 +101,21 @@ export function NewRuleModal({ open, onClose }: Props) {
             className="rounded border-gray-300"
           />
           <span className="text-sm text-gray-700">Enabled</span>
+        </label>
+
+        <label className="block">
+          <span className="text-sm font-medium text-gray-700">Trigger event</span>
+          <select
+            value={trigger}
+            onChange={e => setTrigger(e.target.value)}
+            className="mt-1 w-full border border-gray-200 rounded-md px-3 py-2 text-sm"
+          >
+            {ESCALATION_TRIGGERS.map(t => (
+              <option key={t.value} value={t.value}>
+                {t.label}
+              </option>
+            ))}
+          </select>
         </label>
 
         <div>

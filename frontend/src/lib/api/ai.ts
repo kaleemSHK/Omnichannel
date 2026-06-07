@@ -15,24 +15,60 @@ export async function suggestReply(payload: {
   conversationId: string;
   messages: { role: 'user' | 'assistant'; content: string }[];
   language?: 'ar' | 'en';
+  collectionId?: string;
 }): Promise<AIAssistResponse> {
-  const res = await bnFetch<{ data: AIAssistResponse }>(SVC, '/v1/assist', {
+  const res = await bnFetch<{
+    data: {
+      suggestion?: string;
+      confidence?: number;
+      suggestions?: { text: string; language?: string; rag_citations?: unknown[] }[];
+      ragSources?: RAGSource[];
+    };
+  }>(SVC, '/v1/assist', {
     method: 'POST',
-    body: JSON.stringify({ action: 'suggestReply', ...payload }),
+    body: JSON.stringify({
+      action: 'suggestReply',
+      conversationId: payload.conversationId,
+      messages: payload.messages,
+      language: payload.language,
+      collectionId: payload.collectionId,
+    }),
   });
-  return res.data;
+  const row = res.data;
+  return {
+    suggestion: row.suggestion ?? row.suggestions?.[0]?.text ?? '',
+    confidence: row.confidence ?? (row.suggestion ? 0.85 : 0.5),
+    ragSources: row.ragSources,
+  };
 }
 
-export async function summarizeConversation(conversationId: string): Promise<{
+export async function summarizeConversation(payload: {
+  conversationId: string;
+  messages?: { role: 'user' | 'assistant'; content: string }[];
+}): Promise<{
   summary: string;
   keyPoints: string[];
   sentiment: string;
 }> {
-  const res = await bnFetch<{ data: unknown }>(SVC, '/v1/assist', {
+  const res = await bnFetch<{ data: Record<string, unknown> }>(SVC, '/v1/assist', {
     method: 'POST',
-    body: JSON.stringify({ action: 'summarize', conversationId }),
+    body: JSON.stringify({
+      action: 'summarize',
+      conversationId: payload.conversationId,
+      messages: payload.messages,
+    }),
   });
-  return res.data as { summary: string; keyPoints: string[]; sentiment: string };
+  const row = res.data ?? {};
+  const keyPoints = Array.isArray(row.keyPoints)
+    ? row.keyPoints
+    : Array.isArray(row.key_points)
+      ? row.key_points
+      : [];
+  return {
+    summary: String(row.summary ?? ''),
+    keyPoints: keyPoints.map(String),
+    sentiment: String(row.sentiment ?? 'neutral'),
+  };
 }
 
 export async function classifyConversation(conversationId: string): Promise<{
@@ -52,6 +88,7 @@ export async function queryRAG(payload: {
   collectionId?: string;
   topK?: number;
   language?: 'ar' | 'en';
+  minScore?: number;
 }): Promise<RAGSource[]> {
   const res = await bnFetch<{ data: RAGSource[] | { chunks?: RagChunkRow[] } }>(
     SVC,
@@ -63,6 +100,7 @@ export async function queryRAG(payload: {
         collection_id: payload.collectionId,
         top_k: payload.topK,
         language: payload.language,
+        min_score: payload.minScore,
       }),
     },
   );
@@ -158,23 +196,43 @@ async function readFileText(file: File): Promise<string> {
   });
 }
 
+async function extractUploadText(file: File): Promise<string> {
+  const ext = file.name.includes('.') ? file.name.split('.').pop()?.toLowerCase() : 'txt';
+  if (ext === 'txt' || ext === 'md') {
+    const text = (await readFileText(file)).trim();
+    if (!text) throw new BlinkoneApiError('VALIDATION', 'File is empty', 400);
+    return text;
+  }
+  if (ext === 'docx') {
+    const mammoth = await import('mammoth');
+    const arrayBuffer = await file.arrayBuffer();
+    const { value } = await mammoth.extractRawText({ arrayBuffer });
+    const text = String(value ?? '').trim();
+    if (!text) {
+      throw new BlinkoneApiError('VALIDATION', 'Could not extract text from DOCX', 400);
+    }
+    return text;
+  }
+  throw new BlinkoneApiError(
+    'VALIDATION',
+    'Unsupported file type. Upload .txt, .md, or .docx',
+    400,
+  );
+}
+
 export async function uploadDocument(
   collectionId: string,
   file: File,
   onProgress?: (pct: number) => void,
 ): Promise<void> {
   const ext = file.name.includes('.') ? file.name.split('.').pop()?.toLowerCase() : 'txt';
-  const textTypes = new Set(['txt', 'md']);
-  let content: string | undefined;
-  if (textTypes.has(ext ?? '')) {
-    content = await readFileText(file);
-  }
+  const content = await extractUploadText(file);
 
   const body = JSON.stringify({
     collection_id: collectionId,
     source_type: ext === 'md' ? 'markdown' : ext ?? 'plain_text',
     source_ref: file.name,
-    content: content ?? `[binary upload ${file.name}]`,
+    content,
   });
 
   const { tokens } = useAuthStore.getState();
@@ -205,6 +263,14 @@ export async function uploadDocument(
     xhr.onerror = () => reject(new BlinkoneApiError('NETWORK', 'Upload failed', 0));
     xhr.send(body);
   });
+}
+
+export async function deleteDocument(documentId: string): Promise<void> {
+  await bnFetch<{ data: { deleted: boolean } }>(
+    SVC,
+    `/v1/rag/documents/${encodeURIComponent(documentId)}`,
+    { method: 'DELETE' },
+  );
 }
 
 export async function listRAGCollections(): Promise<{

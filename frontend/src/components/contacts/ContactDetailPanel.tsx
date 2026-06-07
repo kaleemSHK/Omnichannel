@@ -31,6 +31,7 @@ import {
   contactPlan,
   contactSlaTier,
   formatRelativeDate,
+  resolveContactDialNumber,
   slaTierBadgeClass,
   ticketDisplayId,
   ticketPriorityClass,
@@ -211,6 +212,7 @@ export function ContactDetailPanel({ contactId, onEdit }: Props) {
   const { data: tickets = [] } = useContactTickets(contactId);
   const makeCall = useCallsStore(s => s.makeCall);
   const sipRegistered = useCallsStore(s => s.sipRegistered);
+  const setPendingDialNumber = useCallsStore(s => s.setPendingDialNumber);
   const role = useAuthStore(s => s.user?.role);
   const deleteMutation = useDeleteContact();
   const router = useRouter();
@@ -228,7 +230,8 @@ export function ContactDetailPanel({ contactId, onEdit }: Props) {
 
   const tier = contactSlaTier(contact);
   const displayName = contactDisplayName(contact);
-  const phone = contact.phone_number?.replace(/[^\d+]/g, '') ?? '';
+  const phone = resolveContactDialNumber(contact);
+  const phoneDisplay = contact.phone_number?.trim() || (phone ? phone : '');
   const plan = contactPlan(contact);
   const labels = (contact.labels ?? []).filter(l =>
     !['gold', 'silver', 'bronze', 'vip', 'enterprise', 'professional', 'standard'].includes(l.toLowerCase()),
@@ -238,12 +241,22 @@ export function ContactDetailPanel({ contactId, onEdit }: Props) {
   const latestConv = conversations[0];
 
   function handleCallContact() {
-    if (!phone) return;
-    if (!makeCall || !sipRegistered) {
-      toast.error('SIP not connected — visit the Calling page first.');
+    if (!phone) {
+      toast.error('No phone number on this contact.');
       return;
     }
-    makeCall(phone);
+    useCallsStore.getState().cacheContact(phone, displayName);
+    if (makeCall && sipRegistered) {
+      makeCall(phone);
+      return;
+    }
+    setPendingDialNumber(phone);
+    if (makeCall) {
+      toast.info('Connecting softphone… your call will start when ready.');
+    } else {
+      toast.info('Opening dial pad…');
+      router.push(`/calling?dial=${encodeURIComponent(phone)}`);
+    }
   }
 
   return (
@@ -294,10 +307,10 @@ export function ContactDetailPanel({ contactId, onEdit }: Props) {
               type="button"
               disabled={!phone}
               onClick={handleCallContact}
-              title={sipRegistered ? `Call ${phone}` : 'SIP not connected'}
+              title={phone ? (sipRegistered ? `Call ${phone}` : 'Call — softphone connecting…') : 'No phone number'}
               className={cn(
                 'flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium rounded-lg border transition-colors',
-                phone && sipRegistered
+                phone
                   ? 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100'
                   : 'border-gray-200 text-gray-400 cursor-not-allowed',
               )}
@@ -357,7 +370,7 @@ export function ContactDetailPanel({ contactId, onEdit }: Props) {
         <div className="px-6 py-4 border-b border-gray-100">
           <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-1">Contact info</p>
           <div className="divide-y divide-gray-50">
-            <InfoRow icon={Phone}    label="Phone"    value={contact.phone_number ?? '—'} copyable href={contact.phone_number ? `tel:${contact.phone_number}` : undefined} />
+            <InfoRow icon={Phone}    label="Phone"    value={phoneDisplay || '—'} copyable href={phoneDisplay ? `tel:${phoneDisplay}` : undefined} />
             <InfoRow icon={Mail}     label="Email"    value={contact.email ?? '—'}        copyable href={contact.email ? `mailto:${contact.email}` : undefined} />
             <InfoRow icon={MapPin}   label="Location" value={contact.location ?? '—'}     copyable={false} />
             <InfoRow icon={Hash}     label="ID"       value={contact.id != null ? String(contact.id) : '—'} copyable />

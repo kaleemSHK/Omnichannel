@@ -11,6 +11,26 @@ export async function getCallRouteStatus(tenantId, callId) {
     return { callId, status: 'unknown', eventType: 'call:initiate' };
   }
 
+  if (meta.abandonedAt) {
+    return {
+      callId,
+      status: 'abandoned',
+      eventType: 'call:ended',
+      queueKey: meta.queueKey ?? null,
+      sessionId: meta.sessionId ?? null,
+    };
+  }
+
+  if (meta.completedAt) {
+    return {
+      callId,
+      status: 'completed',
+      eventType: 'call:ended',
+      queueKey: meta.queueKey ?? null,
+      sessionId: meta.sessionId ?? null,
+    };
+  }
+
   if (meta.agentId && meta.assignedAt) {
     return {
       callId,

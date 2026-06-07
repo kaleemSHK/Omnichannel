@@ -57,7 +57,7 @@ interface PolicyForm {
   tier: SLAPolicy['tier'];
   firstResponseMinutes: number;
   resolutionHours: number;
-  escalationHours: number;
+  escalationHours?: number;
 }
 
 const DEFAULT_FORM: PolicyForm = {

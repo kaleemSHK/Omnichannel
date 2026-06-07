@@ -8,6 +8,7 @@ import {
   listDocuments,
   queryRAG,
   uploadDocument,
+  deleteDocument,
 } from '@/lib/api/ai';
 import { isDemoDataEnabled, isGatewayQueryEnabled } from '@/lib/demo/config';
 import {
@@ -176,6 +177,29 @@ export function useUploadRagDocuments(collectionId: string | null) {
   });
 }
 
+export function useDeleteRagDocument(collectionId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (documentId: string) => {
+      if (isDemoDataEnabled()) {
+        const docKey = [...documentsKey(collectionId ?? ''), isDemoDataEnabled()];
+        qc.setQueryData<RagDocument[]>(docKey, old =>
+          (old ?? []).filter(d => d.id !== documentId),
+        );
+        return;
+      }
+      await deleteDocument(documentId);
+    },
+    onSuccess: () => {
+      if (!collectionId) return;
+      void qc.invalidateQueries({ queryKey: documentsKey(collectionId) });
+      void qc.invalidateQueries({ queryKey: COLLECTIONS_KEY });
+      toast.success('Document deleted');
+    },
+    onError: () => toast.error('Could not delete document'),
+  });
+}
+
 export function useRagQuery() {
   return useMutation({
     mutationFn: async ({
@@ -193,7 +217,7 @@ export function useRagQuery() {
           r => !collectionId || r.collectionId === collectionId,
         ).slice(0, topK);
       }
-      const sources = await queryRAG({ query, collectionId, topK });
+      const sources = await queryRAG({ query, collectionId, topK, minScore: 0 });
       return mapQueryResults(sources, collectionId);
     },
   });

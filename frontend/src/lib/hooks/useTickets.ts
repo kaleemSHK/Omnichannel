@@ -28,10 +28,14 @@ import {
   type TicketView,
 } from '@/lib/utils/tickets';
 import type { Ticket } from '@/types';
+import { useAuthStore } from '@/lib/store/auth';
 
-const TICKETS_KEY = ['tickets'];
-const ticketByConversationKey = (conversationId: number) => [
+function ticketsQueryKey(tenantId: number) {
+  return ['tickets', tenantId, isDemoDataEnabled()] as const;
+}
+const ticketByConversationKey = (conversationId: number, tenantId: number) => [
   'ticket-by-conversation',
+  tenantId,
   conversationId,
   isDemoDataEnabled(),
 ];
@@ -115,11 +119,12 @@ export function useTicketsDemoMode() {
 }
 
 export function useTicketsList() {
+  const tenantId = useAuthStore(s => s.user?.chatwootAccountId ?? 0);
   const gwEnabled = isGatewayQueryEnabled();
   return useQuery({
-    queryKey: [...TICKETS_KEY, isDemoDataEnabled()],
+    queryKey: ticketsQueryKey(tenantId),
     queryFn: loadTickets,
-    enabled: gwEnabled,
+    enabled: gwEnabled && tenantId > 0,
   });
 }
 
@@ -139,9 +144,10 @@ export function useTicketAgents() {
 }
 
 export function useTicketByConversation(conversationId: number | null) {
+  const tenantId = useAuthStore(s => s.user?.chatwootAccountId ?? 0);
   const gwEnabled = isGatewayQueryEnabled();
   return useQuery({
-    queryKey: ticketByConversationKey(conversationId ?? 0),
+    queryKey: ticketByConversationKey(conversationId ?? 0, tenantId),
     queryFn: async (): Promise<Ticket | null> => {
       if (!conversationId) return null;
       if (isDemoDataEnabled()) {
@@ -157,6 +163,9 @@ export function useTicketByConversation(conversationId: number | null) {
 
 export function useLinkTicketToConversation(conversationId: number) {
   const qc = useQueryClient();
+  const tenantId = useAuthStore(s => s.user?.chatwootAccountId ?? 0);
+  const listKey = ticketsQueryKey(tenantId);
+  const convKey = ticketByConversationKey(conversationId, tenantId);
 
   return useMutation({
     mutationFn: async (ticketId: string) => {
@@ -164,17 +173,17 @@ export function useLinkTicketToConversation(conversationId: number) {
         const match = DEMO_TICKETS.find(t => t.id === ticketId.trim());
         if (!match) throw new Error('Ticket not found');
         const updated: TicketView = { ...match, conversationId };
-        qc.setQueryData<TicketView[]>([...TICKETS_KEY, true], old =>
+        qc.setQueryData<TicketView[]>(listKey, old =>
           (old ?? []).map(t => (t.id === ticketId.trim() ? updated : t)),
         );
-        qc.setQueryData<Ticket | null>(ticketByConversationKey(conversationId), demoTicketToApi(updated));
+        qc.setQueryData<Ticket | null>(convKey, demoTicketToApi(updated));
         return demoTicketToApi(updated);
       }
       return linkTicketToConversation(ticketId.trim(), conversationId);
     },
     onSuccess: ticket => {
-      qc.setQueryData<Ticket | null>(ticketByConversationKey(conversationId), ticket);
-      void qc.invalidateQueries({ queryKey: TICKETS_KEY });
+      qc.setQueryData<Ticket | null>(convKey, ticket);
+      void qc.invalidateQueries({ queryKey: listKey });
       toast.success('Ticket linked to conversation');
     },
     onError: () => toast.error('Could not link ticket'),
@@ -183,6 +192,8 @@ export function useLinkTicketToConversation(conversationId: number) {
 
 export function useCreateTicket() {
   const qc = useQueryClient();
+  const tenantId = useAuthStore(s => s.user?.chatwootAccountId ?? 0);
+  const listKey = ticketsQueryKey(tenantId);
 
   return useMutation({
     mutationFn: async (input: {
@@ -220,7 +231,7 @@ export function useCreateTicket() {
         };
         if (input.conversationId != null) {
           qc.setQueryData<Ticket | null>(
-            ticketByConversationKey(input.conversationId),
+            ticketByConversationKey(input.conversationId, tenantId),
             demoTicketToApi(ticket),
           );
         }
@@ -253,10 +264,11 @@ export function useCreateTicket() {
       return mapApiTicket(created as unknown as Record<string, unknown>);
     },
     onSuccess: (ticket, input) => {
-      const key = [...TICKETS_KEY, isDemoDataEnabled()];
-      qc.setQueryData<TicketView[]>(key, old => [ticket, ...(old ?? [])]);
+      qc.setQueryData<TicketView[]>(listKey, old => [ticket, ...(old ?? [])]);
       if (input.conversationId != null) {
-        void qc.invalidateQueries({ queryKey: ticketByConversationKey(input.conversationId) });
+        void qc.invalidateQueries({
+          queryKey: ticketByConversationKey(input.conversationId, tenantId),
+        });
       }
       toast.success('Ticket created');
     },
@@ -266,6 +278,8 @@ export function useCreateTicket() {
 
 export function useSendTicketMessage(ticketId: string | null) {
   const qc = useQueryClient();
+  const tenantId = useAuthStore(s => s.user?.chatwootAccountId ?? 0);
+  const listKey = ticketsQueryKey(tenantId);
 
   return useMutation({
     mutationFn: async ({
@@ -288,8 +302,7 @@ export function useSendTicketMessage(ticketId: string | null) {
         const mKey = [...messagesKey(ticketId), isDemoDataEnabled()];
         qc.setQueryData<TicketMessageView[]>(mKey, old => [...(old ?? []), msg]);
         if (resolve) {
-          const tKey = [...TICKETS_KEY, isDemoDataEnabled()];
-          qc.setQueryData<TicketView[]>(tKey, old =>
+          qc.setQueryData<TicketView[]>(listKey, old =>
             (old ?? []).map(t =>
               t.id === ticketId ? { ...t, status: 'resolved' as const, updatedAt: new Date().toISOString() } : t,
             ),
@@ -307,7 +320,7 @@ export function useSendTicketMessage(ticketId: string | null) {
       if (!ticketId) return;
       if (!isDemoDataEnabled()) {
         void qc.invalidateQueries({ queryKey: messagesKey(ticketId) });
-        void qc.invalidateQueries({ queryKey: TICKETS_KEY });
+        void qc.invalidateQueries({ queryKey: listKey });
       }
       toast.success(vars.resolve ? 'Reply sent and ticket resolved' : 'Reply sent');
     },
@@ -317,14 +330,15 @@ export function useSendTicketMessage(ticketId: string | null) {
 
 export function useUpdateTicketMeta(ticketId: string | null) {
   const qc = useQueryClient();
+  const tenantId = useAuthStore(s => s.user?.chatwootAccountId ?? 0);
+  const listKey = ticketsQueryKey(tenantId);
 
   return useMutation({
     mutationFn: async (patch: { status?: TicketStatusUi; assigneeId?: string }) => {
       if (!ticketId) throw new Error('No ticket');
       if (isDemoDataEnabled()) {
-        const tKey = [...TICKETS_KEY, isDemoDataEnabled()];
         const agents = DEMO_TICKET_AGENTS;
-        qc.setQueryData<TicketView[]>(tKey, old =>
+        qc.setQueryData<TicketView[]>(listKey, old =>
           (old ?? []).map(t => {
             if (t.id !== ticketId) return t;
             const agent = agents.find(a => a.id === patch.assigneeId);
@@ -346,7 +360,7 @@ export function useUpdateTicketMeta(ticketId: string | null) {
     },
     onSuccess: () => {
       if (!isDemoDataEnabled() && ticketId) {
-        void qc.invalidateQueries({ queryKey: TICKETS_KEY });
+        void qc.invalidateQueries({ queryKey: listKey });
       }
       toast.success('Ticket updated');
     },

@@ -44,6 +44,9 @@ interface CallsState {
   cacheContact: (phone: string, name: string) => void;
   makeCall: ((destination: string) => void) | null;
   setMakeCall: (fn: ((destination: string) => void) | null) => void;
+  /** Outbound number queued until softphone registers (e.g. click-to-call from Contacts). */
+  pendingDialNumber: string | null;
+  setPendingDialNumber: (n: string | null) => void;
   sipControls: SipControls | null;
   setSipControls: (controls: SipControls | null) => void;
 }
@@ -59,6 +62,7 @@ export const useCallsStore = create<CallsState>(set => ({
   held: false,
   contactCache: new Map(),
   makeCall: null,
+  pendingDialNumber: null,
   sipControls: null,
 
   // When ending a connected call, promote it to acwCall for wrap-up notes
@@ -97,5 +101,6 @@ export const useCallsStore = create<CallsState>(set => ({
       return { contactCache: next };
     }),
   setMakeCall: fn => set({ makeCall: fn }),
+  setPendingDialNumber: pendingDialNumber => set({ pendingDialNumber }),
   setSipControls: controls => set({ sipControls: controls }),
 }));

@@ -24,14 +24,25 @@ import {
 } from '@/lib/calling/incoming-call-ui';
 import { resolveCallerName } from '@/lib/utils/calling';
 import { unlockSipAudio } from '@/lib/telephony/sip-audio';
-import { answerCall as apiAnswerCall, declineCall as apiDeclineCall } from '@/lib/api/calls';
+import { answerCall as apiAnswerCall, declineCall as apiDeclineCall, createSession } from '@/lib/api/calls';
 import { syncCallTeardown } from '@/lib/calling/sync-call-teardown';
+import { normalizePstnDial } from '@/lib/utils/phone';
 import { startCallRecording, uploadCallRecording } from '@/lib/telephony/call-recording';
 import { linkCallRecording } from '@/lib/api/calls';
 import { lookupContactAll } from '@/lib/api/connectors';
 import { toast } from 'sonner';
 import type { CallSession } from '@/types';
 
+function twilioOutbound403Hint(destination?: string): string {
+  const digits = (destination ?? '').replace(/\D/g, '');
+  const isPakistan = digits.startsWith('92') || destination?.trim().startsWith('+92');
+  const country = isPakistan ? 'Pakistan (+92)' : 'the destination country';
+  return (
+    `Twilio blocked outbound (403). In Twilio Console: (1) Voice → Geo permissions → enable ${country}. ` +
+    `(2) Trial account: verify ${destination || 'this number'} under Verified Caller IDs. ` +
+    `(3) SIP trunk Caller ID must be your Twilio DID (+19143038893 on intelysys trunk).`
+  );
+}
 const SIP_WSS = process.env.NEXT_PUBLIC_SIP_WSS ?? '';
 const SIP_DOMAIN = process.env.NEXT_PUBLIC_SIP_DOMAIN ?? 'blinkone.local';
 const SIP_USER = process.env.NEXT_PUBLIC_SIP_USER ?? 'agent';
@@ -64,7 +75,7 @@ interface JsSIPUA {
 
 interface JsSIPRTCSession {
   answer(options?: unknown): void;
-  terminate(): void;
+  terminate(options?: { status_code?: number; reason_phrase?: string }): void;
   mute(opts?: { audio?: boolean }): void;
   unmute(opts?: { audio?: boolean }): void;
   hold(): Promise<void>;
@@ -104,6 +115,7 @@ const sipCredsRef = { current: { wsUri: SIP_WSS, sipUri: '', password: SIP_PASS 
 // The next incoming newRTCSession will be answered automatically.
 const pendingAnswerRef = { current: false };
 const teardownGuardRef = { current: false };
+const outboundDestRef = { current: '' };
 const callRecorderRef = { current: null as ReturnType<typeof startCallRecording> | null };
 const callConnectedAtRef = { current: null as number | null };
 let sipInitOwners = 0;
@@ -143,17 +155,22 @@ export function useJsSip() {
   const teardownCallSession = useCallback(
     async ({ sendBye }: { sendBye: boolean }) => {
       if (teardownGuardRef.current && !sendBye) return;
-      if (sendBye && teardownGuardRef.current) return;
       teardownGuardRef.current = true;
 
       stopIncomingRingtone();
       stopOutgoingRingback();
       pendingAnswerRef.current = false;
 
+      const endedCall = useCallsStore.getState().activeCall;
       const s = sessionRef.current;
       if (sendBye && s && !sessionEnded(s)) {
         try {
-          s.terminate();
+          const ringing = endedCall?.status === 'ringing' || (s as { status?: number }).status !== 8;
+          if (ringing) {
+            s.terminate({ status_code: 487, reason_phrase: 'Request Terminated' });
+          } else {
+            s.terminate();
+          }
         } catch {
           /* already ended */
         }
@@ -165,7 +182,6 @@ export function useJsSip() {
         incomingIdRef.current = null;
       }
 
-      const endedCall = useCallsStore.getState().activeCall;
       const recorder = callRecorderRef.current;
       callRecorderRef.current = null;
       const connectedAt = callConnectedAtRef.current;
@@ -207,6 +223,7 @@ export function useJsSip() {
         agentId: user?.id ? String(user.id) : undefined,
         outcome: 'completed',
       });
+      teardownGuardRef.current = false;
     },
     [removeIncomingCall, setActiveCall, setMuted, setHeld, setAgentState, user?.id],
   );
@@ -446,18 +463,26 @@ export function useJsSip() {
               teardownRef.current({ sendBye: false });
             });
           } else {
-            // Outbound call — show ringing state immediately
-            setActiveCall(
-              buildCallSession(
-                {
-                  id: crypto.randomUUID(),
-                  customerPhone: 'dialing…',
-                  status: 'ringing',
-                  direction: 'outbound',
-                },
-                user,
-              ),
-            );
+            // Outbound PSTN — show ringing immediately with real destination
+            const dest = outboundDestRef.current || 'unknown';
+            const existing = useCallsStore.getState().activeCall;
+            if (existing?.customerPhone && existing.customerPhone !== 'dialing…') {
+              setActiveCall({ ...existing, status: 'ringing', direction: 'outbound' });
+            } else {
+              setActiveCall(
+                buildCallSession(
+                  {
+                    id: existing?.id ?? crypto.randomUUID(),
+                    roomId: existing?.roomId,
+                    customerPhone: dest,
+                    status: 'ringing',
+                    direction: 'outbound',
+                    transport: 'pstn',
+                  },
+                  user,
+                ),
+              );
+            }
           }
 
           session.on('peerconnection', () => {
@@ -530,7 +555,24 @@ export function useJsSip() {
                 );
             } else {
               const prev = useCallsStore.getState().activeCall;
-              if (prev) {
+              if (prev?.id) {
+                void apiAnswerCall(prev.id, prev.roomId)
+                  .then(s =>
+                    setActiveCall({
+                      ...s,
+                      status: 'connected',
+                      connectedAt: new Date().toISOString(),
+                      transport: prev.transport ?? 'pstn',
+                    }),
+                  )
+                  .catch(() =>
+                    setActiveCall({
+                      ...prev,
+                      status: 'connected',
+                      connectedAt: new Date().toISOString(),
+                    }),
+                  );
+              } else if (prev) {
                 setActiveCall({
                   ...prev,
                   status: 'connected',
@@ -570,9 +612,9 @@ export function useJsSip() {
 
             const userHint =
               sipCode === 403 || cause === 'Rejected'
-                ? ' — check Twilio trial verified numbers, geo permissions, and trunk credentials'
+                ? ` — ${twilioOutbound403Hint(useCallsStore.getState().activeCall?.customerPhone)}`
                 : '';
-            toast.error(`Call failed: ${detail}${userHint}`);
+            toast.error(`Call failed: ${detail}${userHint}`, { duration: 12000 });
             setSipError(String(cause));
             teardownRef.current({ sendBye: false });
           });
@@ -637,12 +679,61 @@ export function useJsSip() {
         toast.error('Softphone not connected — wait for "Softphone connected" in the sidebar.');
         return;
       }
+      const e164 = normalizePstnDial(destination);
+      outboundDestRef.current = e164;
       const target = pstnSipTarget(destination, SIP_DOMAIN);
+
+      void (async () => {
+        if (!isDemoDataEnabled() && !shouldSkipGatewayFetch()) {
+          const accountId = user?.chatwootAccountId ?? (Number(user?.tenantId) || 1);
+          try {
+            const session = await createSession({
+              roomId: `out-${Date.now()}`,
+              chatwootAccountId: accountId,
+              agentLabel: user?.name ?? 'agent',
+              customerPhone: e164,
+              transport: 'pstn',
+              direction: 'outbound',
+            });
+            setActiveCall({ ...session, status: 'ringing', direction: 'outbound', transport: 'pstn' });
+          } catch (e) {
+            console.warn('[JsSIP] createSession failed', e);
+            toast.error('Call started but history may not sync — check Settings → Calling');
+            setActiveCall(
+              buildCallSession(
+                {
+                  id: crypto.randomUUID(),
+                  customerPhone: e164,
+                  status: 'ringing',
+                  direction: 'outbound',
+                  transport: 'pstn',
+                },
+                user,
+              ),
+            );
+          }
+        } else {
+          setActiveCall(
+            buildCallSession(
+              {
+                id: crypto.randomUUID(),
+                customerPhone: e164,
+                status: 'ringing',
+                direction: 'outbound',
+                transport: 'pstn',
+              },
+              user,
+            ),
+          );
+        }
+      })();
+
       try {
         sessionRef.current = uaRef.current.call(target, {
           mediaConstraints: { audio: true, video: false },
           rtcOfferConstraints: { offerToReceiveAudio: true, offerToReceiveVideo: false },
           pcConfig: pcConfig(),
+          sessionTimersExpires: 1800,
         });
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Call failed';
@@ -650,7 +741,7 @@ export function useJsSip() {
         setSipError(msg);
       }
     },
-    [pcConfig, setSipError],
+    [pcConfig, setSipError, setActiveCall, user],
   );
 
   /** Direct WebRTC call to another registered agent (numeric agent id). */
@@ -751,6 +842,18 @@ export function useJsSip() {
     setMakeCall,
     setSipControls,
   ]);
+
+  const pendingDialNumber = useCallsStore(s => s.pendingDialNumber);
+  const sipRegistered = useCallsStore(s => s.sipRegistered);
+
+  useEffect(() => {
+    if (!pendingDialNumber || !sipRegistered) return;
+    const fn = useCallsStore.getState().makeCall;
+    if (!fn) return;
+    const destination = pendingDialNumber;
+    useCallsStore.getState().setPendingDialNumber(null);
+    fn(destination);
+  }, [pendingDialNumber, sipRegistered, makeCall]);
 
   return { makeCall, makePeerCall, answerCall, hangup, toggleMute, toggleHold, sendDTMF, blindTransfer };
 }

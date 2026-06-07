@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useCDR } from '@/lib/hooks/useCalls';
+import { CALL_HISTORY_INVALIDATE } from '@/lib/calling/call-history-events';
 import { getMosHistory, type MosHistory } from '@/lib/api/calls';
 import { fetchRecordingAudioBlob } from '@/lib/api/recording';
 import { useCallsStore } from '@/lib/store/calls';
@@ -29,6 +30,7 @@ const PAGE_SIZE = 25;
 type RangeKey = 'today' | '7d' | '30d' | 'all';
 type DirFilter = 'all' | 'inbound' | 'outbound';
 type OutcomeFilter = 'all' | 'completed' | 'missed' | 'failed';
+type TransportFilter = 'all' | 'pstn' | 'whatsapp' | 'webrtc';
 
 const RANGES: { key: RangeKey; label: string }[] = [
   { key: 'today', label: 'Today' },
@@ -132,6 +134,7 @@ function dedupeHistoryRows(rows: CDRRecord[]): CDRRecord[] {
 
 export function CallHistoryView() {
   const [range, setRange] = useState<RangeKey>('7d');
+  const [transport, setTransport] = useState<TransportFilter>('all');
   const [dir, setDir] = useState<DirFilter>('all');
   const [outcome, setOutcome] = useState<OutcomeFilter>('all');
   const [search, setSearch] = useState('');
@@ -151,13 +154,20 @@ export function CallHistoryView() {
     page,
     limit: PAGE_SIZE,
     from,
+    transport: transport === 'all' ? undefined : transport,
   });
 
-  // Reset accumulation whenever the server-side filter (date range) changes.
+  // Reset accumulation whenever the server-side filter (date range / transport) changes.
   useEffect(() => {
     setPage(1);
     setRows([]);
-  }, [range]);
+  }, [range, transport]);
+
+  useEffect(() => {
+    const onInvalidate = () => void refetch();
+    window.addEventListener(CALL_HISTORY_INVALIDATE, onInvalidate);
+    return () => window.removeEventListener(CALL_HISTORY_INVALIDATE, onInvalidate);
+  }, [refetch]);
 
   useEffect(() => {
     if (page === 1) {
@@ -265,6 +275,17 @@ export function CallHistoryView() {
 
           {/* Filters */}
           <div className="flex items-center gap-2 mt-3 flex-wrap">
+            <SegmentedControl
+              value={transport}
+              onChange={v => setTransport(v as TransportFilter)}
+              options={[
+                { value: 'all', label: 'All channels' },
+                { value: 'pstn', label: 'PSTN' },
+                { value: 'whatsapp', label: 'WhatsApp' },
+                { value: 'webrtc', label: 'WebRTC' },
+              ]}
+            />
+
             <div className="relative">
               <Search size={14} className="absolute start-2.5 top-1/2 -translate-y-1/2 text-gray-400" aria-hidden />
               <input

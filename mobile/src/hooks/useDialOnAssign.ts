@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useCallsStore } from '@/store/calls';
 import { navigate } from '@/navigation/navigationRef';
 import { cancelCustomerCall } from '@/api/customer';
+import { isTerminalCallStatus } from '@/lib/end-customer-call';
 import { resolveAssignDialTarget } from '@/lib/utils/sip-target';
 
 type AssignStatus = {
@@ -42,6 +43,13 @@ export function useDialOnAssign(
   }, [activeCall?.id, activeCall?.status]);
 
   useEffect(() => {
+    if (isTerminalCallStatus(status?.status)) {
+      dialedForCallIdRef.current = null;
+      setDialError(null);
+      setConnecting(false);
+      return;
+    }
+
     if (status?.status !== 'assigned') {
       dialedForCallIdRef.current = null;
       setDialError(null);

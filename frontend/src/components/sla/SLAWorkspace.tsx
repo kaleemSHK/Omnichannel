@@ -1,12 +1,12 @@
 'use client';
 
 import { useState } from 'react';
-import { PlusCircle } from 'lucide-react';
+import { AlertCircle, PlusCircle } from 'lucide-react';
 import { SLAKPICards } from '@/components/sla/SLAKPICards';
 import { SLAInstanceTable } from '@/components/sla/SLAInstanceTable';
 import { PolicyCard } from '@/components/sla/PolicyCard';
 import { PolicyFormModal } from '@/components/sla/PolicyFormModal';
-import { BusinessHoursSection } from '@/components/settings/BusinessHoursSection';
+import { SlaCalendarsSection } from '@/components/sla/SlaCalendarsSection';
 import { Button } from '@/components/ui/button';
 import {
   instancesForFilter,
@@ -29,7 +29,7 @@ export function SLAWorkspace() {
   const [view, setView] = useState<SlaFilter | 'policies' | 'hours'>('dashboard');
   const [newPolicyOpen, setNewPolicyOpen] = useState(false);
 
-  const { data, isLoading } = useSlaDashboard();
+  const { data, isLoading, isError, error, refetch } = useSlaDashboard();
   const { data: policies = [] } = useSlaPolicies();
 
   // Fires toast notifications on new breaches (side-effect hook, no render output)
@@ -120,6 +120,21 @@ export function SLAWorkspace() {
 
         {/* Main content */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4 min-w-0">
+          {isError && view !== 'policies' && view !== 'hours' && (
+            <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              <AlertCircle size={16} className="shrink-0 mt-0.5" />
+              <div>
+                <p className="font-medium">Could not load SLA dashboard</p>
+                <p className="text-xs mt-0.5 text-amber-800">
+                  {(error as Error)?.message ?? 'Check gateway JWT and SLA service.'}
+                </p>
+                <button type="button" onClick={() => refetch()} className="text-xs underline mt-1">
+                  Retry
+                </button>
+              </div>
+            </div>
+          )}
+
           {view === 'policies' && (
             <>
               <div className="flex items-center justify-between">
@@ -142,7 +157,7 @@ export function SLAWorkspace() {
             </>
           )}
 
-          {view === 'hours' && <BusinessHoursSection />}
+          {view === 'hours' && <SlaCalendarsSection />}
 
           {view !== 'policies' && view !== 'hours' && (
             <>

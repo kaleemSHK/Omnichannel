@@ -45,7 +45,6 @@ export function PolicyCard({ policy }: { policy: SLAPolicy }) {
         <dl className="space-y-2 text-sm">
           <Row label="First response" value={`${policy.firstResponseMinutes} min`} />
           <Row label="Resolution"     value={`${policy.resolutionHours} h`} />
-          <Row label="Escalates after" value={`${policy.escalationHours} h`} />
           <Row label="Business hours only" value={policy.calendarId ? 'Yes' : 'No'} />
         </dl>
       </div>

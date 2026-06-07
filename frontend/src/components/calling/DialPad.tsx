@@ -27,10 +27,12 @@ interface Props {
   onCall?: (number: string, transport: 'pstn' | 'whatsapp' | 'webrtc') => void;
   disabled?: boolean;
   className?: string;
+  /** Pre-fill dial pad (e.g. /calling?dial=+968...) */
+  initialNumber?: string;
 }
 
-export function DialPad({ transport: transportProp, onCall, disabled, className }: Props) {
-  const [number, setNumber] = useState('');
+export function DialPad({ transport: transportProp, onCall, disabled, className, initialNumber }: Props) {
+  const [number, setNumber] = useState(initialNumber ?? '');
   const [tab, setTab] = useState<'pstn' | 'whatsapp' | 'webrtc'>('pstn');
   const [calling, setCalling] = useState(false);
   const [dtmfFlash, setDtmfFlash] = useState<string | null>(null);
@@ -63,6 +65,10 @@ export function DialPad({ transport: transportProp, onCall, disabled, className 
 
   // Cleanup dtmf timer on unmount
   useEffect(() => () => { if (dtmfTimer.current) clearTimeout(dtmfTimer.current); }, []);
+
+  useEffect(() => {
+    if (initialNumber?.trim()) setNumber(sanitizePhone(initialNumber.trim()));
+  }, [initialNumber]);
 
   const handleCall = useCallback(async () => {
     const n = number.trim();
@@ -145,7 +151,7 @@ export function DialPad({ transport: transportProp, onCall, disabled, className 
     ((transport === 'pstn' || transport === 'webrtc') && !sipRegistered);
 
   return (
-    <div className={cn('p-4 space-y-3 h-full flex flex-col min-h-0', className)}>
+    <div className={cn('p-4 flex flex-col gap-2', className)}>
       {/* Transport tab (only when not controlled by parent) */}
       {!transportProp && (
         <div className="flex border border-gray-200 rounded-md overflow-hidden text-xs">
@@ -202,7 +208,7 @@ export function DialPad({ transport: transportProp, onCall, disabled, className 
       )}
 
       {/* Keypad grid */}
-      <div className="grid grid-cols-3 gap-2 flex-1 content-start">
+      <div className="grid grid-cols-3 gap-2">
         {KEYPAD_ROWS.flat().map(key => (
           <button
             key={key}
@@ -222,13 +228,13 @@ export function DialPad({ transport: transportProp, onCall, disabled, className 
         ))}
       </div>
 
-      {/* Call button */}
+      {/* Call button — sits directly under keypad */}
       <Button
         type="button"
         onClick={() => void handleCall()}
         disabled={callDisabled}
         aria-label={`Call ${number || 'number'} via ${transport}`}
-        className="w-full bg-green-500 hover:bg-green-600 text-white"
+        className="w-full mt-1 bg-green-500 hover:bg-green-600 text-white shrink-0"
       >
         <Phone className="w-4 h-4 me-2" aria-hidden />
         {calling ? 'Calling…' : 'Call'}

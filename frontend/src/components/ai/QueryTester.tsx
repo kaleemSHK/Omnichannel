@@ -95,7 +95,11 @@ export function QueryTester({ defaultCollectionId }: Props) {
         )}
 
         {query.isSuccess && query.data?.length === 0 && (
-          <p className="text-xs text-gray-500">No matching chunks above the score threshold.</p>
+          <p className="text-xs text-gray-500">
+            No matching chunks found. Try a specific question about your documents (e.g. &quot;What is
+            the dispatch architecture?&quot;). If you uploaded .docx files before today, re-upload them
+            so text is extracted correctly.
+          </p>
         )}
       </div>
     </aside>

@@ -48,8 +48,19 @@ app.get('/v1/resolve-host', async (req, res) => {
 
 app.get('/v1/tenants/:id/branding', auth, async (req, res) => {
   if (!dbEnabled()) return fail(res, 'NOT_CONFIGURED', 'Postgres required', 501);
-  const b = await repo.getBranding(req.params.id);
+  const tenant = await repo.getTenantPlatform(req.params.id);
+  if (!tenant) return fail(res, 'NOT_FOUND', 'Tenant not found', 404);
+  const b = await repo.getBranding(tenant.id);
   return ok(res, b);
+});
+
+/** Agent-readable feature entitlements for the logged-in workspace. */
+app.get('/v1/tenants/:id/features', auth, async (req, res) => {
+  if (!dbEnabled()) return fail(res, 'NOT_CONFIGURED', 'Postgres required', 501);
+  const tenant = await repo.getTenantPlatform(req.params.id);
+  if (!tenant) return fail(res, 'NOT_FOUND', 'Tenant not found', 404);
+  const features = await repo.listFeatures(tenant.id).catch(() => ({}));
+  return ok(res, { tenantId: tenant.id, chatwootAccountId: tenant.chatwootAccountId, features });
 });
 
 app.patch('/v1/tenants/:id/branding', auth, async (req, res) => {

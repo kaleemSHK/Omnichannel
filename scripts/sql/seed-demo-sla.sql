@@ -62,18 +62,23 @@ ON CONFLICT (tenant_id, name) DO UPDATE SET enabled = true;
 DELETE FROM escalation_rules WHERE ruleset_id IN (
   SELECT id FROM escalation_rulesets WHERE tenant_id = '1' AND name = 'Default escalations'
 );
-INSERT INTO escalation_rules (ruleset_id, name, trigger, conditions, actions)
-SELECT r.id, 'SLA warning → bump priority', 'sla.warning', 'true'::jsonb, '[{"type":"change_priority","priority":"high"}]'::jsonb
+INSERT INTO escalation_rules (ruleset_id, name, enabled, trigger, conditions, actions)
+SELECT r.id, 'SLA warning → bump priority', true, 'sla.warning', 'true'::jsonb,
+  '[{"type":"change_priority","params":{"priority":"high"}}]'::jsonb
 FROM escalation_rulesets r WHERE r.tenant_id = '1' AND r.name = 'Default escalations';
-INSERT INTO escalation_rules (ruleset_id, name, trigger, conditions, actions)
-SELECT r.id, 'SLA breach → label', 'sla.breached', 'true'::jsonb, '[{"type":"add_label","label":"sla-breached"}]'::jsonb
+INSERT INTO escalation_rules (ruleset_id, name, enabled, trigger, conditions, actions)
+SELECT r.id, 'SLA breach → label', true, 'sla.breached', 'true'::jsonb,
+  '[{"type":"add_label","params":{"label":"sla-breached"}}]'::jsonb
 FROM escalation_rulesets r WHERE r.tenant_id = '1' AND r.name = 'Default escalations';
-INSERT INTO escalation_rules (ruleset_id, name, trigger, conditions, actions)
-SELECT r.id, 'Long queue wait', 'call.long_wait', '{">":[{"var":"event.wait_minutes"},10]}'::jsonb, '[{"type":"bump_queue_priority","delta":1}]'::jsonb
+INSERT INTO escalation_rules (ruleset_id, name, enabled, trigger, conditions, actions)
+SELECT r.id, 'Long queue wait', true, 'call.long_wait', '{">=":[{"var":"event.wait_minutes"},10]}'::jsonb,
+  '[{"type":"bump_queue_priority","params":{"delta":1}}]'::jsonb
 FROM escalation_rulesets r WHERE r.tenant_id = '1' AND r.name = 'Default escalations';
-INSERT INTO escalation_rules (ruleset_id, name, trigger, conditions, actions)
-SELECT r.id, 'Abandoned call', 'call.abandoned_in_queue', 'true'::jsonb, '[{"type":"add_label","label":"abandoned-call"}]'::jsonb
+INSERT INTO escalation_rules (ruleset_id, name, enabled, trigger, conditions, actions)
+SELECT r.id, 'Abandoned call', true, 'call.abandoned_in_queue', 'true'::jsonb,
+  '[{"type":"add_label","params":{"label":"abandoned-call"}}]'::jsonb
 FROM escalation_rulesets r WHERE r.tenant_id = '1' AND r.name = 'Default escalations';
-INSERT INTO escalation_rules (ruleset_id, name, trigger, conditions, actions)
-SELECT r.id, 'Priority urgent', 'conversation.priority_changed_to', '{"==":[{"var":"event.priority"},"urgent"]}'::jsonb, '[{"type":"add_label","label":"urgent"}]'::jsonb
+INSERT INTO escalation_rules (ruleset_id, name, enabled, trigger, conditions, actions)
+SELECT r.id, 'Priority urgent', true, 'conversation.priority_changed_to', '{"==":[{"var":"event.priority"},"urgent"]}'::jsonb,
+  '[{"type":"add_label","params":{"label":"urgent"}}]'::jsonb
 FROM escalation_rulesets r WHERE r.tenant_id = '1' AND r.name = 'Default escalations';

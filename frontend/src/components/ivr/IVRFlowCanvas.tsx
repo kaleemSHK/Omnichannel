@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   ReactFlow,
   Background,
@@ -9,6 +9,8 @@ import {
   addEdge,
   useNodesState,
   useEdgesState,
+  useReactFlow,
+  ReactFlowProvider,
   type Connection,
   type Edge,
   type Node,
@@ -36,13 +38,11 @@ const NODE_COLOR_HEX: Record<IVRNodeType, string> = {
   hangup: '#ef4444',
 };
 
-// ─── Helpers ───────────────────────────────────────────────────────────────────
-
 function flowNodesToRF(nodes: IVRNode[], entryId: string): Node<IVRNodeData>[] {
   return nodes.map(n => ({
     id: n.id,
     type: 'ivrNode',
-    position: n.position,
+    position: n.position ?? { x: 0, y: 0 },
     data: {
       nodeType: n.type as IVRNodeType,
       label: n.label,
@@ -74,17 +74,14 @@ function flowEdgesToRF(edges: IVREdge[]): Edge[] {
   }));
 }
 
-function rfNodesToFlow(rfNodes: Node<IVRNodeData>[], originalNodes: IVRNode[]): IVRNode[] {
-  return rfNodes.map(rn => {
-    const orig = originalNodes.find(n => n.id === rn.id);
-    return {
-      id: rn.id,
-      type: rn.data.nodeType,
-      label: rn.data.label,
-      config: rn.data.config,
-      position: rn.position,
-    } satisfies IVRNode;
-  });
+function rfNodesToFlow(rfNodes: Node<IVRNodeData>[]): IVRNode[] {
+  return rfNodes.map(rn => ({
+    id: rn.id,
+    type: rn.data.nodeType,
+    label: rn.data.label,
+    config: rn.data.config ?? {},
+    position: rn.position,
+  }));
 }
 
 function rfEdgesToFlow(rfEdges: Edge[]): IVREdge[] {
@@ -96,39 +93,66 @@ function rfEdgesToFlow(rfEdges: Edge[]): IVREdge[] {
   }));
 }
 
+function flowSignature(flow: IVRFlow): string {
+  const nodes = flow.nodes ?? [];
+  const edges = flow.edges ?? [];
+  return JSON.stringify({
+    nodes: nodes.map(n => `${n.id}:${n.type}:${Math.round(n.position?.x ?? 0)}:${Math.round(n.position?.y ?? 0)}:${n.label}`),
+    edges: edges.map(e => `${e.id}:${e.source}->${e.target}:${e.label ?? ''}`),
+    entry: flow.entry ?? '',
+  });
+}
+
 const nodeTypes = { ivrNode: IVRNodeCard };
 
-// ─── Component ─────────────────────────────────────────────────────────────────
-
-interface Props {
+interface CanvasProps {
   flow: IVRFlow;
   onFlowChange: (nodes: IVRNode[], edges: IVREdge[]) => void;
   onSelectNode: (id: string | null) => void;
-  selectedId: string | null;
+  onAddNode?: (type: IVRNodeType, position: { x: number; y: number }) => void;
 }
 
-export function IVRFlowCanvas({ flow, onFlowChange, onSelectNode, selectedId }: Props) {
-  const entryId = flow.nodes?.[0]?.id ?? '';
+function IVRFlowCanvasInner({ flow, onFlowChange, onSelectNode, onAddNode }: CanvasProps) {
+  const entryId = flow.entry ?? flow.nodes?.[0]?.id ?? '';
+  const { screenToFlowPosition } = useReactFlow();
+  const syncingFromProp = useRef(false);
+  const lastPushedSig = useRef('');
 
   const initialNodes = useMemo(
     () => flowNodesToRF(flow.nodes ?? [], entryId),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [flow.id],
+    [flow.id, entryId],
   );
   const initialEdges = useMemo(
     () => flowEdgesToRF(flow.edges ?? []),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [flow.id],
   );
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
 
-  const commit = useCallback(
+  const propSig = useMemo(() => flowSignature(flow), [flow]);
+
+  // Sync canvas when parent adds/removes nodes (palette click, load, save response).
+  useEffect(() => {
+    if (propSig === lastPushedSig.current) return;
+    syncingFromProp.current = true;
+    setNodes(flowNodesToRF(flow.nodes ?? [], entryId));
+    setEdges(flowEdgesToRF(flow.edges ?? []));
+  }, [propSig, flow, entryId, setNodes, setEdges]);
+
+  const pushToParent = useCallback(
     (ns: Node<IVRNodeData>[], es: Edge[]) => {
-      onFlowChange(rfNodesToFlow(ns, flow.nodes ?? []), rfEdgesToFlow(es));
+      const nextNodes = rfNodesToFlow(ns);
+      const nextEdges = rfEdgesToFlow(es);
+      const sig = JSON.stringify({
+        nodes: nextNodes.map(n => `${n.id}:${n.type}:${Math.round(n.position.x)}:${Math.round(n.position.y)}:${n.label}`),
+        edges: nextEdges.map(e => `${e.id}:${e.source}->${e.target}:${e.label ?? ''}`),
+        entry: flow.entry ?? '',
+      });
+      lastPushedSig.current = sig;
+      onFlowChange(nextNodes, nextEdges);
     },
-    [flow.nodes, onFlowChange],
+    [onFlowChange, flow.entry],
   );
 
   const onConnect: OnConnect = useCallback(
@@ -142,11 +166,65 @@ export function IVRFlowCanvas({ flow, onFlowChange, onSelectNode, selectedId }: 
           },
           prev,
         );
-        commit(nodes, next);
+        pushToParent(nodes, next);
         return next;
       });
     },
-    [nodes, setEdges, commit],
+    [nodes, setEdges, pushToParent],
+  );
+
+  const onNodeDragStop = useCallback(() => {
+    if (syncingFromProp.current) {
+      syncingFromProp.current = false;
+      return;
+    }
+    pushToParent(nodes, edges);
+  }, [nodes, edges, pushToParent]);
+
+  const onNodesDelete = useCallback(
+    (deleted: Node[]) => {
+      const deletedIds = new Set(deleted.map(n => n.id));
+      setNodes(prev => {
+        const nextNodes = prev.filter(n => !deletedIds.has(n.id));
+        setEdges(prevEdges => {
+          const nextEdges = prevEdges.filter(
+            e => !deletedIds.has(e.source) && !deletedIds.has(e.target),
+          );
+          pushToParent(nextNodes, nextEdges);
+          return nextEdges;
+        });
+        return nextNodes;
+      });
+    },
+    [setNodes, setEdges, pushToParent],
+  );
+
+  const onEdgesDelete = useCallback(
+    (deleted: Edge[]) => {
+      const deletedIds = new Set(deleted.map(e => e.id));
+      setEdges(prev => {
+        const next = prev.filter(e => !deletedIds.has(e.id));
+        pushToParent(nodes, next);
+        return next;
+      });
+    },
+    [nodes, setEdges, pushToParent],
+  );
+
+  const onDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  }, []);
+
+  const onDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      const type = e.dataTransfer.getData('application/ivr-node-type') as IVRNodeType;
+      if (!type || !NODE_META[type]) return;
+      const position = screenToFlowPosition({ x: e.clientX, y: e.clientY });
+      onAddNode?.(type, position);
+    },
+    [onAddNode, screenToFlowPosition],
   );
 
   const onNodeClick = useCallback(
@@ -156,38 +234,21 @@ export function IVRFlowCanvas({ flow, onFlowChange, onSelectNode, selectedId }: 
 
   const onPaneClick = useCallback(() => onSelectNode(null), [onSelectNode]);
 
-  const onNodesChangeWrapped: typeof onNodesChange = useCallback(
-    changes => {
-      onNodesChange(changes);
-      setNodes(prev => {
-        commit(prev, edges);
-        return prev;
-      });
-    },
-    [onNodesChange, setNodes, edges, commit],
-  );
-
-  const onEdgesChangeWrapped: typeof onEdgesChange = useCallback(
-    changes => {
-      onEdgesChange(changes);
-      setEdges(prev => {
-        commit(nodes, prev);
-        return prev;
-      });
-    },
-    [onEdgesChange, setEdges, nodes, commit],
-  );
-
   return (
     <div className="flex-1 min-h-0 rounded-xl overflow-hidden border border-gray-200">
       <ReactFlow
         nodes={nodes}
         edges={edges}
-        onNodesChange={onNodesChangeWrapped}
-        onEdgesChange={onEdgesChangeWrapped}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
         onConnect={onConnect}
+        onNodeDragStop={onNodeDragStop}
+        onNodesDelete={onNodesDelete}
+        onEdgesDelete={onEdgesDelete}
         onNodeClick={onNodeClick}
         onPaneClick={onPaneClick}
+        onDrop={onDrop}
+        onDragOver={onDragOver}
         nodeTypes={nodeTypes}
         fitView
         fitViewOptions={{ padding: 0.2 }}
@@ -213,5 +274,13 @@ export function IVRFlowCanvas({ flow, onFlowChange, onSelectNode, selectedId }: 
         </Panel>
       </ReactFlow>
     </div>
+  );
+}
+
+export function IVRFlowCanvas(props: CanvasProps) {
+  return (
+    <ReactFlowProvider>
+      <IVRFlowCanvasInner {...props} />
+    </ReactFlowProvider>
   );
 }

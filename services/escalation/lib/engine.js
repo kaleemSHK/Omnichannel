@@ -11,12 +11,35 @@ import {
 
 const log = createLogger('escalation-engine');
 
+/** Accept UI/seed `{ type, params }` and legacy flat action objects. */
+export function normalizeAction(raw) {
+  if (!raw || typeof raw !== 'object') return raw;
+  const action = { ...raw };
+  const params = action.params && typeof action.params === 'object' ? action.params : null;
+  if (params) {
+    if (params.team_id != null) action.team_id = params.team_id;
+    if (params.agent_id != null) action.agent_id = params.agent_id;
+    if (params.label != null) action.label = params.label;
+    if (params.labels != null) action.labels = params.labels;
+    if (params.body != null) action.content = params.body;
+    if (params.message != null) action.content = params.message;
+    if (params.content != null) action.content = params.content;
+    if (params.url != null) action.url = params.url;
+    if (params.channel != null) action.webhook_url = params.webhook_url ?? params.channel;
+    if (params.webhook_url != null) action.webhook_url = params.webhook_url;
+    if (params.priority != null) action.priority = params.priority;
+    if (params.delta != null) action.delta = params.delta;
+  }
+  return action;
+}
+
 export async function executeActions(actions, event) {
   const accountId = Number(event.account_id ?? event.tenant_id ?? event.tenantId);
   const conversationId = Number(event.conversation_id ?? event.conversationId);
   const outcomes = [];
 
-  for (const action of actions) {
+  for (const raw of actions) {
+    const action = normalizeAction(raw);
     try {
       switch (action.type) {
         case 'change_priority':

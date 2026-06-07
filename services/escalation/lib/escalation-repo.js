@@ -1,10 +1,14 @@
 import { getPool } from './db.js';
 import { validateTrigger, validateActions, validateLogic } from './json-logic-safe.js';
+import { requireTenantId, resolveTenantIdFromReq } from '../_shared/lib/tenant-id.js';
 
 export function resolveTenantId(req) {
-  const h = req.headers['x-blinkone-tenant-id'];
-  if (typeof h === 'string' && h.trim()) return h.trim();
-  return String(req.body?.tenant_id ?? req.query?.tenant_id ?? process.env.ESCALATION_DEFAULT_TENANT ?? 'default');
+  try {
+    return requireTenantId(req, { allowQuery: true, allowBody: true });
+  } catch {
+    return resolveTenantIdFromReq(req, { allowQuery: true, allowBody: true }) ||
+      String(process.env.ESCALATION_DEFAULT_TENANT ?? 'default');
+  }
 }
 
 function rulesetRow(r) {
@@ -98,12 +102,128 @@ export async function createRule(tenantId, rulesetId, body) {
   return ruleRow(rows[0]);
 }
 
+export async function getRule(tenantId, ruleId) {
+  const { rows } = await getPool().query(
+    `SELECT r.* FROM escalation_rules r
+     JOIN escalation_rulesets s ON s.id = r.ruleset_id
+     WHERE s.tenant_id = $1 AND r.id = $2`,
+    [tenantId, ruleId],
+  );
+  return rows[0] ? ruleRow(rows[0]) : null;
+}
+
+export async function updateRuleset(tenantId, rulesetId, body) {
+  const sets = [];
+  const vals = [tenantId, rulesetId];
+  if (typeof body.name === 'string' && body.name.trim()) {
+    vals.push(body.name.trim());
+    sets.push(`name = $${vals.length}`);
+  }
+  if (typeof body.enabled === 'boolean') {
+    vals.push(body.enabled);
+    sets.push(`enabled = $${vals.length}`);
+  }
+  if (!sets.length) {
+    const err = new Error('No fields to update');
+    err.code = 'VALIDATION_ERROR';
+    throw err;
+  }
+  sets.push('updated_at = now()');
+  const { rows } = await getPool().query(
+    `UPDATE escalation_rulesets SET ${sets.join(', ')}
+     WHERE tenant_id = $1 AND id = $2
+     RETURNING *`,
+    vals,
+  );
+  if (!rows.length) {
+    const err = new Error('Ruleset not found');
+    err.code = 'NOT_FOUND';
+    throw err;
+  }
+  return rulesetRow(rows[0]);
+}
+
+export async function updateRule(tenantId, ruleId, body) {
+  const existing = await getRule(tenantId, ruleId);
+  if (!existing) {
+    const err = new Error('Rule not found');
+    err.code = 'NOT_FOUND';
+    throw err;
+  }
+  if (body.trigger != null && !validateTrigger(body.trigger)) {
+    const err = new Error('trigger not in whitelist');
+    err.code = 'VALIDATION_ERROR';
+    throw err;
+  }
+  if (body.actions != null && !validateActions(body.actions)) {
+    const err = new Error('invalid actions');
+    err.code = 'VALIDATION_ERROR';
+    throw err;
+  }
+  if (body.conditions != null && !validateLogic(body.conditions)) {
+    const err = new Error('invalid JSON-Logic conditions');
+    err.code = 'VALIDATION_ERROR';
+    throw err;
+  }
+
+  const sets = [];
+  const vals = [tenantId, ruleId];
+  if (typeof body.name === 'string' && body.name.trim()) {
+    vals.push(body.name.trim());
+    sets.push(`name = $${vals.length}`);
+  }
+  if (typeof body.enabled === 'boolean') {
+    vals.push(body.enabled);
+    sets.push(`enabled = $${vals.length}`);
+  }
+  if (body.trigger != null) {
+    vals.push(body.trigger);
+    sets.push(`trigger = $${vals.length}`);
+  }
+  if (body.conditions != null) {
+    vals.push(JSON.stringify(body.conditions));
+    sets.push(`conditions = $${vals.length}::jsonb`);
+  }
+  if (body.actions != null) {
+    vals.push(JSON.stringify(body.actions));
+    sets.push(`actions = $${vals.length}::jsonb`);
+  }
+  if (!sets.length) {
+    const err = new Error('No fields to update');
+    err.code = 'VALIDATION_ERROR';
+    throw err;
+  }
+  sets.push('updated_at = now()');
+  const { rows } = await getPool().query(
+    `UPDATE escalation_rules r SET ${sets.join(', ')}
+     FROM escalation_rulesets s
+     WHERE r.ruleset_id = s.id AND s.tenant_id = $1 AND r.id = $2
+     RETURNING r.*`,
+    vals,
+  );
+  return ruleRow(rows[0]);
+}
+
+export async function deleteRule(tenantId, ruleId) {
+  const { rowCount } = await getPool().query(
+    `DELETE FROM escalation_rules r
+     USING escalation_rulesets s
+     WHERE r.ruleset_id = s.id AND s.tenant_id = $1 AND r.id = $2`,
+    [tenantId, ruleId],
+  );
+  if (!rowCount) {
+    const err = new Error('Rule not found');
+    err.code = 'NOT_FOUND';
+    throw err;
+  }
+}
+
 export async function rulesForTrigger(tenantId, trigger) {
   const { rows } = await getPool().query(
     `SELECT r.* FROM escalation_rules r
      JOIN escalation_rulesets s ON s.id = r.ruleset_id
      WHERE s.tenant_id = $1 AND s.enabled = true AND r.enabled = true AND r.trigger = $2
-     ORDER BY r.priority ASC NULLS LAST, r.id ASC`,
+     ORDER BY r.name ASC, r.id ASC`,
     [tenantId, trigger],
   );
   return rows.map(ruleRow);
@@ -121,5 +241,56 @@ export async function recordRun(ruleId, { inputEvent, conditionsPassed, actionsA
       JSON.stringify(outcomes),
       error ?? null,
     ],
+  );
+}
+
+function runRow(r) {
+  return {
+    id: r.id,
+    ruleId: r.rule_id,
+    ruleName: r.rule_name,
+    triggeredAt: r.triggered_at,
+    inputEvent: r.input_event ?? {},
+    conditionsPassed: r.conditions_passed,
+    actionsAttempted: r.actions_attempted ?? [],
+    outcomes: r.outcomes ?? [],
+    error: r.error,
+  };
+}
+
+export async function listRuleRuns(tenantId, { ruleId = null, limit = 50 } = {}) {
+  const cap = Math.min(Math.max(Number(limit) || 50, 1), 200);
+  const { rows } = await getPool().query(
+    `SELECT rr.*, r.name AS rule_name
+     FROM escalation_rule_runs rr
+     JOIN escalation_rules r ON r.id = rr.rule_id
+     JOIN escalation_rulesets s ON s.id = r.ruleset_id
+     WHERE s.tenant_id = $1
+       AND ($2::uuid IS NULL OR rr.rule_id = $2::uuid)
+     ORDER BY rr.triggered_at DESC
+     LIMIT $3`,
+    [tenantId, ruleId, cap],
+  );
+  return rows.map(runRow);
+}
+
+export async function ruleRunStats(tenantId, ruleIds) {
+  if (!ruleIds?.length) return {};
+  const { rows } = await getPool().query(
+    `SELECT r.id AS rule_id,
+            COUNT(rr.id)::int AS run_count,
+            MAX(rr.triggered_at) AS last_triggered_at
+     FROM escalation_rules r
+     JOIN escalation_rulesets s ON s.id = r.ruleset_id
+     LEFT JOIN escalation_rule_runs rr ON rr.rule_id = r.id
+     WHERE s.tenant_id = $1 AND r.id = ANY($2::uuid[])
+     GROUP BY r.id`,
+    [tenantId, ruleIds],
+  );
+  return Object.fromEntries(
+    rows.map(r => [
+      r.rule_id,
+      { runCount: r.run_count, lastTriggeredAt: r.last_triggered_at },
+    ]),
   );
 }

@@ -1,6 +1,7 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { Search, SlidersHorizontal, Plus, X, ArrowUpDown } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { ConversationListItem } from '@/components/conversations/ConversationListItem';
@@ -79,6 +80,7 @@ interface Props {
 }
 
 export function ConversationList({ selectedId, onSelect, onNewConversation }: Props) {
+  const searchParams = useSearchParams();
   const [statusTab,    setStatusTab]    = useState<StatusTab>('open');
   const [assigneeTab, setAssigneeTab]  = useState<AssigneeTab>('all');
   const [rawSearch,   setRawSearch]    = useState('');
@@ -87,6 +89,14 @@ export function ConversationList({ selectedId, onSelect, onNewConversation }: Pr
   const [sortKey,     setSortKey]      = useState<SortKey>('last_activity_at');
   const [showFilters, setShowFilters]  = useState(false);
   const search = useDebouncedValue(rawSearch, 300);
+
+  useEffect(() => {
+    const inboxId = searchParams.get('inbox_id');
+    if (inboxId) {
+      setInboxFilter(inboxId);
+      setShowFilters(true);
+    }
+  }, [searchParams]);
 
   const { data: inboxes = [] } = useQuery({
     queryKey: ['inboxes', 'filter', isDemoDataEnabled()],

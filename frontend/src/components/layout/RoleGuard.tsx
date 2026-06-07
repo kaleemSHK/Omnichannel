@@ -5,6 +5,8 @@ import { useRouter, usePathname } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store/auth';
 import { canAccessRoute, defaultRouteForRole } from '@/lib/rbac';
+import { canAccessTenantFeatureRoute, firstAllowedRoute } from '@/lib/features/access';
+import { useTenantFeatures } from '@/lib/hooks/useTenantFeatures';
 
 export function RoleGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -13,6 +15,7 @@ export function RoleGuard({ children }: { children: React.ReactNode }) {
   const tokens = useAuthStore(s => s.tokens);
   const hydrated = useAuthStore(s => s.hydrated);
   const hydrateFromSession = useAuthStore(s => s.hydrateFromSession);
+  const { features, loaded: featuresLoaded } = useTenantFeatures();
 
   useLayoutEffect(() => {
     hydrateFromSession();
@@ -26,8 +29,16 @@ export function RoleGuard({ children }: { children: React.ReactNode }) {
     }
     if (!canAccessRoute(user.role, pathname)) {
       router.replace(defaultRouteForRole(user.role));
+      return;
     }
-  }, [hydrated, tokens, user, pathname, router]);
+    if (
+      featuresLoaded &&
+      user.role !== 'platform_admin' &&
+      !canAccessTenantFeatureRoute(pathname, features)
+    ) {
+      router.replace(firstAllowedRoute(features));
+    }
+  }, [hydrated, tokens, user, pathname, router, features, featuresLoaded]);
 
   if (!hydrated) {
     return (

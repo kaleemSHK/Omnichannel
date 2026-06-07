@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { getPool } from '../db.js';
 import { chatCompletions, resolveAdapter } from '../llm/gateway.js';
+import { extractDocumentText } from './extract.js';
+import { isValidRagQuery } from '../assist/message-filter.js';
 
 const CHUNK_CHARS = 1800;
 const OVERLAP = 200;
@@ -56,8 +58,8 @@ export async function createCollection(tenantId, { name, language }) {
   return { collection_id: rows[0].id, ...rows[0] };
 }
 
-export async function indexDocument(tenantId, { collection_id, source_type, source_ref, content }) {
-  const text = content || source_ref;
+export async function indexDocument(tenantId, { collection_id, source_type, source_ref, content, file_base64 }) {
+  const text = await extractDocumentText({ source_type, source_ref, content, file_base64 });
   const { rows: docRows } = await getPool().query(
     `INSERT INTO rag_documents (tenant_id, collection_id, source_type, source_ref, status)
      VALUES ($1,$2,$3,$4,'indexing') RETURNING *`,
@@ -65,6 +67,13 @@ export async function indexDocument(tenantId, { collection_id, source_type, sour
   );
   const docId = docRows[0].id;
   const chunks = chunkText(text);
+  if (!chunks.length) {
+    await getPool().query(
+      `UPDATE rag_documents SET status = 'error', metadata = jsonb_build_object('error', 'no_chunks') WHERE id = $1`,
+      [docId],
+    );
+    throw new Error('Document produced no indexable text chunks (content too short).');
+  }
   const adapter = await resolveAdapter(tenantId);
   const embeddings = await adapter.embed(chunks);
 
@@ -85,32 +94,94 @@ export async function indexDocument(tenantId, { collection_id, source_type, sour
   return { index_job_id: docId, chunk_count: chunks.length };
 }
 
+export async function deleteDocument(tenantId, documentId) {
+  const { rowCount } = await getPool().query(
+    `DELETE FROM rag_documents WHERE tenant_id = $1 AND id = $2`,
+    [tenantId, documentId],
+  );
+  if (!rowCount) {
+    const err = new Error('Document not found');
+    err.code = 'NOT_FOUND';
+    throw err;
+  }
+  return { deleted: true, id: documentId };
+}
+
+export async function resolveDefaultCollectionId(tenantId) {
+  const { rows } = await getPool().query(
+    `SELECT id FROM rag_collections WHERE tenant_id = $1 ORDER BY created_at ASC LIMIT 1`,
+    [tenantId],
+  );
+  return rows[0]?.id ?? null;
+}
+
 export async function queryRag(tenantId, { collection_id, query, top_k = 5, min_score }) {
+  const q = String(query ?? '').trim();
+  if (!isValidRagQuery(q)) {
+    return { chunks: [] };
+  }
+
   const defaultMin = parseFloat(process.env.RAG_MIN_SCORE || '0.35');
   const threshold = min_score ?? defaultMin;
   const adapter = await resolveAdapter(tenantId);
   const [qEmb] = await adapter.embed([query]);
   const vec = `[${qEmb.join(',')}]`;
 
+  const params = [vec, tenantId, top_k];
+  let collectionSql = '';
+  if (collection_id) {
+    collectionSql = 'AND d.collection_id = $4';
+    params.push(collection_id);
+  }
+
   const { rows } = await getPool().query(
-    `SELECT c.id AS chunk_id, c.content, c.document_id, 1 - (c.embedding <=> $1::vector) AS score
+    `SELECT c.id AS chunk_id, c.content, c.document_id, d.source_ref,
+            1 - (c.embedding <=> $1::vector) AS score
      FROM rag_chunks c
      JOIN rag_documents d ON d.id = c.document_id
-     WHERE c.tenant_id = $2 AND d.collection_id = $3 AND c.embedding IS NOT NULL
+     WHERE c.tenant_id = $2 AND c.embedding IS NOT NULL ${collectionSql}
      ORDER BY c.embedding <=> $1::vector
-     LIMIT $4`,
-    [vec, tenantId, collection_id, top_k],
+     LIMIT $3`,
+    params,
   );
 
+  let matched = rows.filter((r) => Number(r.score) >= threshold);
+
+  // Short or generic queries often score below threshold — fall back to keyword match.
+  if (!matched.length && String(query).trim()) {
+    const q = String(query).trim().replace(/[%_\\]/g, '');
+    if (q.length >= 2) {
+      const kwParams = [tenantId, `%${q}%`, top_k];
+      let kwCollectionSql = '';
+      if (collection_id) {
+        kwCollectionSql = 'AND d.collection_id = $4';
+        kwParams.push(collection_id);
+      }
+      const { rows: kwRows } = await getPool().query(
+        `SELECT c.id AS chunk_id, c.content, c.document_id, d.source_ref, 0.5 AS score
+         FROM rag_chunks c
+         JOIN rag_documents d ON d.id = c.document_id
+         WHERE c.tenant_id = $1 ${kwCollectionSql}
+           AND c.content ILIKE $2
+         LIMIT $3`,
+        kwParams,
+      );
+      if (kwRows.length) matched = kwRows;
+    }
+  }
+
+  // Query tester may pass min_score=0 — otherwise show best vector hits when above absolute floor.
+  if (!matched.length && rows.length && threshold <= 0) {
+    matched = rows;
+  }
+
   return {
-    chunks: rows
-      .filter((r) => Number(r.score) >= threshold)
-      .map((r) => ({
+    chunks: matched.map((r) => ({
         chunk_id: r.chunk_id,
         content: r.content,
         score: Number(r.score),
         document_id: r.document_id,
-        metadata: {},
+        metadata: { filename: r.source_ref ?? undefined },
       })),
   };
 }

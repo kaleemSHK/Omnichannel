@@ -2,6 +2,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTranslation } from 'react-i18next';
+import { C, tabBarScreenOptions } from '@/lib/ui';
 import type { CustomerStackParamList, CustomerTabParamList } from './types';
 import CustomerHome from '@/screens/(customer)/index';
 import CustomerChats from '@/screens/(customer)/chat/index';
@@ -19,14 +20,7 @@ function CustomerTabs() {
   const { t } = useTranslation();
 
   return (
-    <Tab.Navigator
-      screenOptions={{
-        headerShown: false,
-        tabBarStyle: { backgroundColor: '#1a1d26', borderTopColor: 'rgba(255,255,255,0.08)' },
-        tabBarActiveTintColor: '#63b3ed',
-        tabBarInactiveTintColor: '#5a6170',
-      }}
-    >
+    <Tab.Navigator screenOptions={tabBarScreenOptions}>
       <Tab.Screen
         name="Home"
         component={CustomerHome}
@@ -63,7 +57,7 @@ function CustomerTabs() {
 
 export function CustomerNavigator() {
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#0f1117' } }}>
+    <Stack.Navigator screenOptions={{ headerShown: false, contentStyle: { backgroundColor: C.bg } }}>
       <Stack.Screen name="CustomerWelcome" component={CustomerWelcome} />
       <Stack.Screen name="CustomerTabs" component={CustomerTabs} />
       <Stack.Screen name="ChatDetail" component={ChatDetail} />

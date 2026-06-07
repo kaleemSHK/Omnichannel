@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState, type ElementType } from 'react';
+import { useSearchParams } from 'next/navigation';
 import {
   Headphones,
   Mic,
@@ -31,12 +32,14 @@ import {
   useCDR,
   useDeclineCall,
 } from '@/lib/hooks/useCalls';
+import { useQueryClient } from '@tanstack/react-query';
 import { useQueues } from '@/lib/hooks/useQueues';
 import { useAuthStore } from '@/lib/store/auth';
 import { useCallsStore } from '@/lib/store/calls';
 import { can } from '@/lib/rbac';
 import { useAgents } from '@/lib/hooks/useAgentState';
 import { resolveCallerName, resolveCdrCallerName, transportLabel } from '@/lib/utils/calling';
+import { CALL_HISTORY_INVALIDATE } from '@/lib/calling/call-history-events';
 import { isDemoDataEnabled } from '@/lib/demo/config';
 import { cn } from '@/lib/utils/cn';
 import type { CDRRecord } from '@/types';
@@ -77,6 +80,8 @@ function CtrlBtn({
 }
 
 export function CallingWorkspace() {
+  const searchParams = useSearchParams();
+  const dialFromUrl = searchParams.get('dial')?.trim() ?? '';
   const [transport, setTransport] = useState<'pstn' | 'whatsapp' | 'webrtc'>('pstn');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [transferOpen, setTransferOpen] = useState(false);
@@ -86,6 +91,7 @@ export function CallingWorkspace() {
   const [cdrRows, setCdrRows] = useState<CDRRecord[]>([]);
 
   const { user } = useAuthStore();
+  const qc = useQueryClient();
   const activeCall = useCallsStore(s => s.activeCall);
   const setActiveCall = useCallsStore(s => s.setActiveCall);
   const muted = useCallsStore(s => s.muted);
@@ -95,19 +101,26 @@ export function CallingWorkspace() {
   const sipRegistered = useCallsStore(s => s.sipRegistered);
   const sipError = useCallsStore(s => s.sipError);
 
-  const { data: sessions = [] } = useActiveSessions();
-  const { data: cdrBatch = [], isFetching: cdrFetching } = useCDR({ limit: 20, page: cdrPage });
+  const { data: sessions = [] } = useActiveSessions(transport);
+  const { data: cdrBatch = [], isFetching: cdrFetching, refetch: refetchCdr } = useCDR({
+    limit: 20,
+    page: cdrPage,
+    transport,
+  });
   const { data: queues = [] } = useQueues();
   const { data: routingAgents = [] } = useAgents();
   const decline = useDeclineCall();
   const makeCall = useCallsStore(s => s.makeCall);
+  const setPendingDialNumber = useCallsStore(s => s.setPendingDialNumber);
   const sipControls = useCallsStore(s => s.sipControls);
 
-  const filtered = sessions.filter(s => s.transport === transport);
-  const filteredCdr = useMemo(
-    () => cdrRows.filter(r => r.transport === transport),
-    [cdrRows, transport],
-  );
+  useEffect(() => {
+    if (!dialFromUrl) return;
+    setPendingDialNumber(dialFromUrl.replace(/[^\d+]/g, ''));
+  }, [dialFromUrl, setPendingDialNumber]);
+
+  const filtered = sessions;
+  const filteredCdr = cdrRows;
   const activeList = filtered.filter(
     s => s.status === 'connected' || s.status === 'ringing',
   );
@@ -118,6 +131,12 @@ export function CallingWorkspace() {
   const selectedCdr =
     filteredCdr.find(r => r.callSessionId === selectedId || r.id === selectedId) ?? null;
 
+  const selectedCustomerPhone =
+    activeCall?.customerPhone?.trim() ||
+    selectedSession?.customerPhone?.trim() ||
+    selectedCdr?.customerPhone?.trim() ||
+    null;
+
   const incomingRing = incoming.find(c => c.transport === transport) ?? null;
   const isSupervisor = can(user?.role, 'supervisorListen');
   const queueDisplay = queues.length > 0 ? queues : [];
@@ -125,6 +144,27 @@ export function CallingWorkspace() {
     !activeCall && !incomingRing && !selectedSession && !selectedCdr;
   // Show "Sample" badge only when demo data is active
   const showSampleBadge = isDemoDataEnabled() && queueDisplay.length > 0;
+  const showingCallerDetail =
+    (selectedSession != null && (!activeCall || activeCall.id !== selectedSession.id)) ||
+    (selectedCdr != null &&
+      (!selectedSession || selectedCdr.callSessionId !== selectedSession.id));
+  const insightCard =
+    'rounded-xl border border-gray-100 p-4 bg-white shadow-sm h-full flex flex-col min-h-[148px]';
+
+  useEffect(() => {
+    setCdrPage(1);
+    setCdrRows([]);
+    setSelectedId(null);
+  }, [transport]);
+
+  useEffect(() => {
+    const onInvalidate = () => {
+      void refetchCdr();
+      void qc.invalidateQueries({ queryKey: ['activeSessions'] });
+    };
+    window.addEventListener(CALL_HISTORY_INVALIDATE, onInvalidate);
+    return () => window.removeEventListener(CALL_HISTORY_INVALIDATE, onInvalidate);
+  }, [refetchCdr, qc]);
 
   useEffect(() => {
     if (!selectedId) {
@@ -140,12 +180,19 @@ export function CallingWorkspace() {
 
   useEffect(() => {
     if (cdrPage === 1) {
-      setCdrRows(cdrBatch);
+      setCdrRows(
+        [...cdrBatch].sort(
+          (a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime(),
+        ),
+      );
       return;
     }
     setCdrRows(prev => {
       const ids = new Set(prev.map(r => r.id));
-      return [...prev, ...cdrBatch.filter(r => !ids.has(r.id))];
+      const merged = [...prev, ...cdrBatch.filter(r => !ids.has(r.id))];
+      return merged.sort(
+        (a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime(),
+      );
     });
   }, [cdrBatch, cdrPage]);
 
@@ -353,7 +400,7 @@ export function CallingWorkspace() {
           <AgentStateSelector />
         </div>
 
-        <div className="flex-1 overflow-y-auto min-h-0 p-4 space-y-4">
+        <div className="flex-1 overflow-y-auto min-h-0 p-4 space-y-3">
           {/* Empty state */}
           {showEmptyCenter && (
             <div className="flex flex-col items-center justify-center py-12 px-6 text-center rounded-xl border border-dashed border-gray-200 bg-slate-50/80">
@@ -425,12 +472,66 @@ export function CallingWorkspace() {
             </div>
           )}
 
-          {/* Selected call details (list click) */}
-          {selectedSession && (!activeCall || activeCall.id !== selectedSession.id) && (
-            <SessionDetailPanel session={selectedSession} />
-          )}
-          {selectedCdr && (!selectedSession || selectedCdr.callSessionId !== selectedSession.id) && (
-            <CdrDetailPanel record={selectedCdr} agents={routingAgents} />
+          {/* Selected caller overview — horizontal card grid */}
+          {showingCallerDetail && (
+            <div className="space-y-3">
+              {selectedSession && (!activeCall || activeCall.id !== selectedSession.id) && (
+                <SessionDetailPanel session={selectedSession} />
+              )}
+              {selectedCdr &&
+                (!selectedSession || selectedCdr.callSessionId !== selectedSession.id) && (
+                  <CdrDetailPanel record={selectedCdr} agents={routingAgents} />
+                )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 items-stretch">
+                <div className={insightCard}>
+                  <div className="flex items-center justify-between mb-2 shrink-0">
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                      Queue stats
+                    </p>
+                    {showSampleBadge && (
+                      <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                        Sample
+                      </span>
+                    )}
+                  </div>
+                  {queueDisplay.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">No queues configured</p>
+                  ) : (
+                    <ul className="space-y-1.5 flex-1 min-h-0 overflow-y-auto">
+                      {queueDisplay.map(q => (
+                        <li
+                          key={q.id}
+                          className="flex justify-between gap-2 text-xs py-1.5 border-b border-gray-50 last:border-0"
+                        >
+                          <span className="font-medium truncate">{q.name}</span>
+                          <span className="text-gray-500 shrink-0 tabular-nums">
+                            {q.stats?.waiting ?? 0} · {q.stats?.avgWaitSec ?? 0}s
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+
+                <div className={insightCard}>
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 shrink-0">
+                    Today
+                  </p>
+                  <p className="text-2xl font-bold text-gray-900 tabular-nums">{filteredCdr.length}</p>
+                  <p className="text-xs text-gray-500 mt-0.5">{transportLabel(transport)} calls</p>
+                  <p className="text-xs text-red-600 mt-1.5 font-medium">
+                    {filteredCdr.filter(r => r.outcome === 'missed').length} missed
+                  </p>
+                </div>
+
+                <RecordingsPanel
+                  customerPhone={selectedCustomerPhone}
+                  transport={transport}
+                  className={cn(insightCard, 'mt-0')}
+                />
+              </div>
+            </div>
           )}
 
           {/* Active call controls */}
@@ -510,52 +611,56 @@ export function CallingWorkspace() {
             </div>
           )}
 
-          {/* Queue stats + today summary */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="rounded-xl border border-gray-100 p-4 bg-white shadow-sm">
-              <div className="flex items-center justify-between mb-3">
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                  Queue stats
-                </p>
-                {showSampleBadge && (
-                  <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
-                    Sample
-                  </span>
+          {!showingCallerDetail && !showEmptyCenter && (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 items-stretch">
+              <div className={insightCard}>
+                <div className="flex items-center justify-between mb-2 shrink-0">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                    Queue stats
+                  </p>
+                  {showSampleBadge && (
+                    <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                      Sample
+                    </span>
+                  )}
+                </div>
+                {queueDisplay.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">No queues configured</p>
+                ) : (
+                  <ul className="space-y-1.5">
+                    {queueDisplay.map(q => (
+                      <li
+                        key={q.id}
+                        className="flex justify-between gap-2 text-xs py-1.5 border-b border-gray-50 last:border-0"
+                      >
+                        <span className="font-medium truncate">{q.name}</span>
+                        <span className="text-gray-500 shrink-0 tabular-nums">
+                          {q.stats?.waiting ?? 0} · {q.stats?.avgWaitSec ?? 0}s
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
                 )}
               </div>
-              {queueDisplay.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No queues configured</p>
-              ) : (
-                <ul className="space-y-2">
-                  {queueDisplay.map(q => (
-                    <li
-                      key={q.id}
-                      className="flex justify-between gap-2 text-sm py-2 border-b border-gray-50 last:border-0"
-                    >
-                      <span className="font-medium truncate">{q.name}</span>
-                      <span className="text-gray-500 text-xs shrink-0 tabular-nums">
-                        {q.stats?.waiting ?? 0} waiting · {q.stats?.avgWaitSec ?? 0}s
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-            <div className="rounded-xl border border-gray-100 p-4 bg-white shadow-sm">
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
-                Today
-              </p>
-              <p className="text-3xl font-bold text-gray-900 tabular-nums">{filteredCdr.length}</p>
-              <p className="text-sm text-gray-500 mt-0.5">
-                {transportLabel(transport)} calls
-              </p>
-              <p className="text-sm text-red-600 mt-2 font-medium">
-                {filteredCdr.filter(r => r.outcome === 'missed').length} missed
-              </p>
-            </div>
-          </div>
 
-          <RecordingsPanel />
+              <div className={insightCard}>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                  Today
+                </p>
+                <p className="text-2xl font-bold text-gray-900 tabular-nums">{filteredCdr.length}</p>
+                <p className="text-xs text-gray-500 mt-0.5">{transportLabel(transport)} calls</p>
+                <p className="text-xs text-red-600 mt-1.5 font-medium">
+                  {filteredCdr.filter(r => r.outcome === 'missed').length} missed
+                </p>
+              </div>
+
+              <RecordingsPanel
+                customerPhone={selectedCustomerPhone}
+                transport={transport}
+                className={cn(insightCard, 'mt-0')}
+              />
+            </div>
+          )}
 
           {/* Supervisor controls */}
           {isSupervisor && (selectedSession || activeCall) && (
@@ -584,14 +689,14 @@ export function CallingWorkspace() {
       </div>
 
       {/* ── Right sidebar: dial pad ──────────────────────────────────── */}
-      <aside className="w-64 shrink-0 border-s border-gray-200 bg-white flex flex-col min-h-0">
+      <aside className="w-64 shrink-0 border-s border-gray-200 bg-white flex flex-col">
         <p className="px-4 pt-3 pb-1 text-[10px] font-semibold text-gray-400 uppercase tracking-wider shrink-0">
           Dial pad
         </p>
         <DialPad
-          className="flex-1 min-h-0"
           transport={transport}
           disabled={!user}
+          initialNumber={dialFromUrl}
           onCall={async (number, t) => {
             if (t === 'pstn' || t === 'webrtc') {
               if (!makeCall || !sipRegistered) {

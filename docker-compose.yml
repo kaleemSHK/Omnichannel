@@ -192,6 +192,16 @@ services:
       PLATFORM_ADMIN_EMAILS: ${PLATFORM_ADMIN_EMAILS:-admin@blinksone.com,admin@blinkone.ai,admin@labbik.om}
       BLINKONE_BRANDING_CONFIG: /config/blinkone/branding.yml
       BLINKONE_BRAND_UPLOADS_DIR: /data/brand-uploads
+      GATEWAY_URL:     http://gateway:8787
+      ROUTING_URL:     http://routing:8798
+      IVR_URL:         http://ivr:8795
+      AI_URL:          http://ai:8793
+      SLA_URL:         http://sla:8796
+      BILLING_URL:     http://billing:8794
+      INT_URL:         http://integration:8800
+      CALLS_URL:       http://calls:8792
+      RECORDING_URL:   http://recording:8799
+      TENANT_URL:      http://tenant:8802
     volumes:
       - platform_data:/data
       - brand_uploads:/data/brand-uploads
@@ -476,8 +486,14 @@ services:
       PORT:                      "8797"
       DATA_DIR:                  /data
       TOKEN:                     ${ESCALATION_TOKEN}
+      TENANT_URL:                http://tenant:8802
+      TENANT_TOKEN:              ${TENANT_TOKEN:-${PLATFORM_TOKEN}}
+      FEATURE_FAILOPEN:          ${FEATURE_FAILOPEN:-0}
       BLINKONE_DATABASE_URL:     postgresql://app:${APP_DB_PASSWORD}@postgres_app:5432/blinkone_app
       ESCALATION_DEFAULT_TENANT: default
+      ESCALATION_UNASSIGNED_MINUTES: ${ESCALATION_UNASSIGNED_MINUTES:-15}
+      ESCALATION_NO_RESPONSE_MINUTES: ${ESCALATION_NO_RESPONSE_MINUTES:-8}
+      ESCALATION_CONVERSATION_TIMER: ${ESCALATION_CONVERSATION_TIMER:-1}
     volumes: [escalation_data:/data]
     depends_on:
       postgres_app: { condition: service_healthy }
@@ -502,6 +518,9 @@ services:
       CALLS_TOKEN:           ${CALLS_TOKEN}
       IVR_URL:               http://ivr:8795
       IVR_TOKEN:             ${IVR_TOKEN}
+      ESCALATION_URL:        http://escalation:8797
+      ESCALATION_TOKEN:      ${ESCALATION_TOKEN}
+      ESCALATION_LONG_WAIT_MINUTES: ${ESCALATION_LONG_WAIT_MINUTES:-10}
       ROUTING_QUEUE_WORKER:  "1"
       AST_WSS_URI:           ${AST_WSS_URI:-wss://sip.blinksone.com}
       AST_WSS_DOMAIN:        ${AST_WSS_DOMAIN:-blinkone.local}
@@ -581,6 +600,12 @@ services:
       KEYCLOAK_STUB:           ${KEYCLOAK_STUB:-1}
       FRONTEND_URL:            ${FRONTEND_URL:-http://localhost}
       INTEGRATION_WORKERS:     "1"
+      SLA_URL:                 http://sla:8796
+      SLA_TOKEN:               ${SLA_TOKEN}
+      ESCALATION_URL:          http://escalation:8797
+      ESCALATION_TOKEN:        ${ESCALATION_TOKEN}
+      TENANT_URL:              http://tenant:8802
+      TENANT_TOKEN:            ${TENANT_TOKEN:-${PLATFORM_TOKEN}}
     volumes: [integration_data:/data]
     depends_on:
       postgres_app: { condition: service_healthy }

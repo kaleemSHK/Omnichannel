@@ -2,7 +2,25 @@
  * Valid node types (both backend-native and frontend-canvas aliases).
  * IVR1: 'transfer' is the frontend canvas alias for 'enqueue'.
  */
-const VALID_TYPES = new Set(['play', 'enqueue', 'transfer', 'voicebot', 'dtmf', 'hangup', 'condition']);
+const VALID_TYPES = new Set([
+  'play',
+  'enqueue',
+  'transfer',
+  'voicebot',
+  'dtmf',
+  'hangup',
+  'condition',
+  'timecheck',
+  'schedule',
+  'http',
+  'webhook',
+  'setvar',
+  'set_variable',
+  'record',
+  'voicemail',
+  'sms',
+  'callback',
+]);
 
 /** Validate IVR flow DAG shape. */
 export function validateGraph(g) {
@@ -13,7 +31,29 @@ export function validateGraph(g) {
   if (!ids.has(g.entry)) return `entry node "${g.entry}" not found`;
   for (const n of g.nodes) {
     if (!n.id || !n.type) return 'each node needs id and type';
+    if (!VALID_TYPES.has(n.type)) return `unsupported node type "${n.type}"`;
     if (n.next && !ids.has(n.next)) return `node "${n.id}" next "${n.next}" not found`;
+    if (n.routes && typeof n.routes === 'object') {
+      for (const [digit, target] of Object.entries(n.routes)) {
+        if (target && !ids.has(String(target))) {
+          return `node "${n.id}" route "${digit}" → "${target}" not found`;
+        }
+      }
+    }
+    if (Array.isArray(n.options)) {
+      for (const o of n.options) {
+        if (o?.next && !ids.has(String(o.next))) {
+          return `node "${n.id}" option → "${o.next}" not found`;
+        }
+      }
+    }
+    if (Array.isArray(n.branches)) {
+      for (const b of n.branches) {
+        if (b?.next && !ids.has(String(b.next))) {
+          return `node "${n.id}" branch → "${b.next}" not found`;
+        }
+      }
+    }
     if (n.digit != null) {
       const dup = g.nodes.filter((x) => x.digit === String(n.digit) && x.id !== n.id);
       if (dup.length) return `duplicate digit "${n.digit}"`;

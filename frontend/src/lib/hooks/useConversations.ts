@@ -9,16 +9,14 @@ import {
   type QueryClient,
 } from '@tanstack/react-query';
 import {
+  getConversation,
   getMessages,
   listConversations,
   markConversationAsRead,
   sendMessage,
 } from '@/lib/api/conversations';
 import type { ConversationFilters } from '@/lib/api/conversations';
-import {
-  DEMO_CONVERSATIONS,
-  DEMO_MESSAGES,
-} from '@/lib/demo/conversationsFixture';
+import { DEMO_CONVERSATIONS, DEMO_MESSAGES, isFixtureConversationId } from '@/lib/demo/conversationsFixture';
 import { appendDemoMessage, loadDemoMessages } from '@/lib/demo/demoMessageStore';
 import { isDemoDataEnabled } from '@/lib/demo/config';
 import { attachmentTypeForFile } from '@/lib/utils/attachments';
@@ -29,7 +27,7 @@ import {
   parseConversationList,
   conversationContactName,
 } from '@/lib/utils/conversations';
-import type { CWMessage } from '@/types';
+import type { CWConversation, CWMessage } from '@/types';
 
 export type ConversationPage = {
   data: ReturnType<typeof parseConversationList>;
@@ -201,6 +199,24 @@ export function useSendMessage(conversationId: number) {
         qc.invalidateQueries({ queryKey: ['messages', conversationId] });
       }
       qc.invalidateQueries({ queryKey: ['conversations'] });
+      qc.invalidateQueries({ queryKey: ['conversation', conversationId] });
     },
+  });
+}
+
+/** Full conversation detail (priority, team, assignee) — refreshes after macros/actions. */
+export function useConversationDetail(conversationId: number | null) {
+  return useQuery({
+    queryKey: ['conversation', conversationId, isDemoDataEnabled()],
+    queryFn: async (): Promise<CWConversation> => {
+      if (!conversationId) throw new Error('No conversation id');
+      if (isDemoDataEnabled() || isFixtureConversationId(conversationId)) {
+        const demo = DEMO_CONVERSATIONS.find(c => c.id === conversationId);
+        if (demo) return demo;
+      }
+      return getConversation(conversationId);
+    },
+    enabled: !!conversationId,
+    staleTime: 5_000,
   });
 }

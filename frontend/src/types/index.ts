@@ -16,9 +16,12 @@ export interface AuthTokens {
 }
 
 // ─── Chatwoot core types ───────────────────────────────────────────────────────
+export type ConversationPriority = 'none' | 'low' | 'medium' | 'high' | 'urgent';
+
 export interface CWConversation {
   id: number;
   status: 'open' | 'resolved' | 'pending' | 'snoozed';
+  priority?: ConversationPriority | null;
   inbox_id: number;
   meta: {
     sender: { id: number; name: string; avatar?: string; phone_number?: string };
@@ -37,11 +40,14 @@ export interface CWContact {
   name: string;
   email?: string;
   phone_number?: string;
+  identifier?: string;
   avatar_url?: string;
   location?: string;
   company?: { id: number; name: string };
   labels: string[];
   created_at: string;
+  additional_attributes?: Record<string, unknown>;
+  custom_attributes?: Record<string, string>;
 }
 
 export interface CWMessage {
@@ -130,6 +136,7 @@ export interface CDRRecord {
   duration: number;
   outcome: string;
   recordingId?: string | null;
+  conversationId?: string | null;
   startedAt: string;
   endedAt?: string | null;
 }
@@ -140,6 +147,9 @@ export interface CDRFilters {
   to?: string;
   agentId?: string;
   limit?: number;
+  transport?: 'pstn' | 'whatsapp' | 'webrtc';
+  customerPhone?: string;
+  hasRecording?: boolean;
 }
 
 // ─── Routing sidecar ───────────────────────────────────────────────────────────
@@ -222,7 +232,7 @@ export interface SLAPolicy {
   tier: 'gold' | 'silver' | 'bronze' | 'custom';
   firstResponseMinutes: number;
   resolutionHours: number;
-  escalationHours: number;
+  escalationHours?: number;
   calendarId?: string;
 }
 
@@ -246,6 +256,8 @@ export interface IVRFlow {
   name: string;
   description?: string;
   version: number;
+  /** Runtime graph entry node id */
+  entry?: string;
   nodes: IVRNode[];
   edges: IVREdge[];
   isActive: boolean;
@@ -381,13 +393,17 @@ export interface EscalationRuleset {
   tenantId: string;
   name: string;
   isActive: boolean;
+  enabled?: boolean;
   rules: EscalationRule[];
 }
 
 export interface EscalationRule {
   id: string;
   rulesetId: string;
-  conditions: EscalationCondition[];
+  name: string;
+  enabled?: boolean;
+  trigger?: string;
+  conditions: EscalationCondition[] | unknown;
   actions: EscalationAction[];
   firedCount?: number;
   lastFiredAt?: string;
@@ -424,6 +440,7 @@ export interface TenantFeatures {
   rag: boolean;
   voiceBot: boolean;
   sla: boolean;
+  escalation: boolean;
   outboundDialer: boolean;
 }
 

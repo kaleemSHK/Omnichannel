@@ -12,24 +12,68 @@ const SVC = 'sla';
  * (target_type ∈ first_response | next_response | resolution, threshold in minutes).
  * The UI works with flat tier fields, so we translate at this boundary.
  */
+function tierAppliesWhen(tier?: string) {
+  if (tier === 'gold') return { priority: ['urgent', 'high'] };
+  if (tier === 'silver') return { priority: ['medium'] };
+  if (tier === 'bronze') return { priority: ['low'] };
+  return {};
+}
+
 function toPolicyRequest(data: Partial<Omit<SLAPolicy, 'id' | 'tenantId'>>) {
-  const targets: { targetType: string; thresholdMinutes: number }[] = [];
+  const appliesWhen = tierAppliesWhen(data.tier);
+  const targets: {
+    targetType: string;
+    thresholdMinutes: number;
+    appliesWhen?: Record<string, unknown>;
+  }[] = [];
   if (data.firstResponseMinutes != null) {
     targets.push({
       targetType: 'first_response',
       thresholdMinutes: Math.max(1, Math.round(data.firstResponseMinutes)),
+      appliesWhen,
     });
   }
   if (data.resolutionHours != null) {
     targets.push({
       targetType: 'resolution',
       thresholdMinutes: Math.max(1, Math.round(data.resolutionHours * 60)),
+      appliesWhen: {},
     });
   }
   return {
     ...(data.name != null ? { name: data.name } : {}),
+    ...(data.calendarId != null ? { businessHoursCalendarId: data.calendarId } : {}),
     ...(targets.length ? { targets } : {}),
   };
+}
+
+export async function listCalendars(): Promise<
+  {
+    id: string;
+    name: string;
+    timezone: string;
+    weekdayHours: Record<string, { start: string; end: string }[]>;
+    holidays: string[];
+  }[]
+> {
+  const res = await bnFetch<{ data: unknown[] }>(SVC, '/v1/calendars');
+  return res.data as ReturnType<typeof listCalendars> extends Promise<infer T> ? T : never;
+}
+
+export async function updateCalendar(
+  id: string,
+  data: {
+    name?: string;
+    timezone?: string;
+    weekdayHours?: Record<string, { start: string; end: string }[]>;
+    holidays?: string[];
+  },
+): Promise<void> {
+  await bnFetch(SVC, `/v1/calendars/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
 }
 
 export async function listPolicies(): Promise<SLAPolicy[]> {

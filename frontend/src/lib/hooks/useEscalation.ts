@@ -4,22 +4,29 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   createRule,
   createRuleset,
+  deleteRule,
   getRules,
+  getRunStats,
+  listRuleRuns,
   listRulesets,
   simulateRule,
+  updateRule,
 } from '@/lib/api/escalation';
 import { isDemoDataEnabled, isGatewayQueryEnabled } from '@/lib/demo/config';
 import { DEMO_ESCALATION_RULES } from '@/lib/demo/escalationFixture';
 import {
   conditionsToLogic,
+  DEFAULT_RULESET_NAME,
   logicToConditions,
+  normalizeApiActions,
   uiActionsToApi,
   type EscalationRuleView,
+  type EscalationRuleRun,
   type UiActionRow,
 } from '@/lib/utils/escalation';
 import type { EscalationCondition } from '@/types';
 
-const QUERY_KEY = ['escalation-rules'];
+export const ESCALATION_QUERY_KEY = ['escalation-rules'] as const;
 
 type ApiRuleset = {
   id: string;
@@ -35,98 +42,122 @@ type ApiRule = {
   enabled?: boolean;
   trigger?: string;
   conditions?: unknown;
-  actions?: EscalationRuleView['actions'];
+  actions?: unknown;
 };
+
+async function findOrCreateDefaultRuleset(): Promise<string> {
+  const sets = (await listRulesets()) as unknown as ApiRuleset[];
+  const existing =
+    sets.find(s => s.name === DEFAULT_RULESET_NAME) ??
+    sets.find(s => s.enabled !== false && s.isActive !== false) ??
+    sets[0];
+  if (existing) return existing.id;
+  const rs = await createRuleset({ name: DEFAULT_RULESET_NAME, enabled: true });
+  return rs.id;
+}
 
 async function loadAllRules(): Promise<EscalationRuleView[]> {
   if (isDemoDataEnabled()) return DEMO_ESCALATION_RULES;
-  try {
-    const sets = (await listRulesets()) as unknown as ApiRuleset[];
-    if (!sets?.length) return DEMO_ESCALATION_RULES;
 
-    const views: EscalationRuleView[] = [];
-    for (const set of sets) {
-      const rulesetEnabled = set.enabled ?? set.isActive ?? true;
-      let rules: ApiRule[] = [];
-      try {
-        rules = (await getRules(set.id)) as ApiRule[];
-      } catch {
-        rules = [];
-      }
-      if (!rules.length) {
-        views.push({
-          id: `${set.id}-placeholder`,
-          rulesetId: set.id,
-          name: set.name,
-          isActive: rulesetEnabled,
-          rulesetEnabled,
-          trigger: 'sla.breached',
-          conditionLogic: 'and',
-          conditions: [],
-          actions: [],
-        });
-        continue;
-      }
-      for (const rule of rules) {
-        const { conditions, logic } = logicToConditions(rule.conditions);
-        views.push({
-          id: rule.id,
-          rulesetId: rule.rulesetId ?? set.id,
-          name: rule.name,
-          isActive: rule.enabled !== false,
-          rulesetEnabled,
-          trigger: rule.trigger ?? 'sla.breached',
-          conditionLogic: logic,
-          conditions,
-          actions: rule.actions ?? [],
-        });
-      }
+  const sets = (await listRulesets()) as unknown as ApiRuleset[];
+  const views: EscalationRuleView[] = [];
+
+  for (const set of sets) {
+    const rulesetEnabled = set.enabled ?? set.isActive ?? true;
+    const rules = (await getRules(set.id)) as ApiRule[];
+    if (!rules.length) {
+      views.push({
+        id: `${set.id}-placeholder`,
+        rulesetId: set.id,
+        name: set.name,
+        isActive: rulesetEnabled,
+        rulesetEnabled,
+        trigger: 'sla.breached',
+        conditionLogic: 'and',
+        conditions: [],
+        actions: [],
+      });
+      continue;
     }
-    return views.length ? views : DEMO_ESCALATION_RULES;
-  } catch {
-    return DEMO_ESCALATION_RULES;
+    for (const rule of rules) {
+      const { conditions, logic } = logicToConditions(rule.conditions);
+      views.push({
+        id: rule.id,
+        rulesetId: rule.rulesetId ?? set.id,
+        name: rule.name,
+        isActive: rule.enabled !== false,
+        rulesetEnabled,
+        trigger: rule.trigger ?? 'sla.breached',
+        conditionLogic: logic,
+        conditions,
+        actions: normalizeApiActions(rule.actions),
+      });
+    }
   }
+  const realIds = views.filter(v => !v.id.includes('-placeholder')).map(v => v.id);
+  if (realIds.length) {
+    try {
+      const stats = await getRunStats(realIds);
+      for (const v of views) {
+        const s = stats[v.id];
+        if (s) {
+          v.runCount = s.runCount;
+          v.lastTriggeredAt = s.lastTriggeredAt;
+        }
+      }
+    } catch {
+      /* stats optional */
+    }
+  }
+  return views;
 }
 
 export function useEscalationRules() {
-  const gwEnabled = isGatewayQueryEnabled();
+  const demo = isDemoDataEnabled();
   return useQuery({
-    queryKey: [...QUERY_KEY, isDemoDataEnabled()],
+    queryKey: [...ESCALATION_QUERY_KEY, demo],
     queryFn: loadAllRules,
-    enabled: gwEnabled,
+    enabled: isGatewayQueryEnabled(),
+    retry: demo ? false : 1,
   });
 }
 
 export function useToggleRuleEnabled() {
   const qc = useQueryClient();
+  const demo = isDemoDataEnabled();
   return useMutation({
     mutationFn: async ({ id, enabled }: { id: string; enabled: boolean }) => {
-      const current = qc.getQueryData<EscalationRuleView[]>(QUERY_KEY) ?? [];
-      return current.map(r => (r.id === id ? { ...r, isActive: enabled } : r));
+      if (demo || id.includes('-placeholder')) {
+        const current = qc.getQueryData<EscalationRuleView[]>(ESCALATION_QUERY_KEY) ?? [];
+        return current.map(r => (r.id === id ? { ...r, isActive: enabled } : r));
+      }
+      await updateRule(id, { enabled });
+      return loadAllRules();
     },
     onSuccess: data => {
-      qc.setQueryData(QUERY_KEY, data);
+      qc.setQueryData([...ESCALATION_QUERY_KEY, demo], data);
     },
   });
 }
 
 export function useDuplicateRule() {
   const qc = useQueryClient();
+  const demo = isDemoDataEnabled();
   return useMutation({
     mutationFn: async (rule: EscalationRuleView) => {
       const copyName = `${rule.name} (copy)`;
-      try {
-        await createRule(rule.rulesetId, {
+      if (!demo) {
+        const rulesetId = rule.rulesetId || (await findOrCreateDefaultRuleset());
+        await createRule(rulesetId, {
           name: copyName,
           enabled: rule.isActive,
           trigger: rule.trigger,
           conditions: conditionsToLogic(rule.conditions, rule.conditionLogic),
           actions: rule.actions,
         } as unknown as Parameters<typeof createRule>[1]);
-      } catch {
-        /* demo mode — append locally */
+        return loadAllRules();
       }
-      const current = qc.getQueryData<EscalationRuleView[]>(QUERY_KEY) ?? [];
+      const current = qc.getQueryData<EscalationRuleView[]>(ESCALATION_QUERY_KEY) ?? [];
       const copy: EscalationRuleView = {
         ...rule,
         id: `copy-${Date.now()}`,
@@ -135,8 +166,7 @@ export function useDuplicateRule() {
       return [...current, copy];
     },
     onSuccess: data => {
-      qc.setQueryData(QUERY_KEY, data);
-      qc.invalidateQueries({ queryKey: QUERY_KEY });
+      qc.setQueryData([...ESCALATION_QUERY_KEY, demo], data);
     },
   });
 }
@@ -144,48 +174,120 @@ export function useDuplicateRule() {
 export interface CreateRulePayload {
   name: string;
   enabled: boolean;
+  trigger: string;
   conditions: EscalationCondition[];
   conditionLogic: 'and' | 'or';
   actions: UiActionRow[];
 }
 
+export type UpdateRulePayload = CreateRulePayload & { id: string };
+
+export function useUpdateEscalationRule() {
+  const qc = useQueryClient();
+  const demo = isDemoDataEnabled();
+  return useMutation({
+    mutationFn: async (payload: UpdateRulePayload) => {
+      const logic = conditionsToLogic(payload.conditions, payload.conditionLogic);
+      const actions = uiActionsToApi(payload.actions);
+
+      if (demo || payload.id.includes('-placeholder')) {
+        const current = qc.getQueryData<EscalationRuleView[]>(ESCALATION_QUERY_KEY) ?? [];
+        return current.map(r =>
+          r.id === payload.id
+            ? {
+                ...r,
+                name: payload.name,
+                isActive: payload.enabled,
+                trigger: payload.trigger,
+                conditionLogic: payload.conditionLogic,
+                conditions: payload.conditions,
+                actions,
+              }
+            : r,
+        );
+      }
+
+      await updateRule(payload.id, {
+        name: payload.name,
+        enabled: payload.enabled,
+        trigger: payload.trigger,
+        conditions: logic,
+        actions,
+      });
+      return loadAllRules();
+    },
+    onSuccess: data => {
+      qc.setQueryData([...ESCALATION_QUERY_KEY, demo], data);
+    },
+  });
+}
+
+export function useDeleteEscalationRule() {
+  const qc = useQueryClient();
+  const demo = isDemoDataEnabled();
+  return useMutation({
+    mutationFn: async (ruleId: string) => {
+      if (demo || ruleId.includes('-placeholder')) {
+        const current = qc.getQueryData<EscalationRuleView[]>(ESCALATION_QUERY_KEY) ?? [];
+        return current.filter(r => r.id !== ruleId);
+      }
+      await deleteRule(ruleId);
+      return loadAllRules();
+    },
+    onSuccess: data => {
+      qc.setQueryData([...ESCALATION_QUERY_KEY, demo], data);
+    },
+  });
+}
+
+export function useRuleRuns(ruleId: string | undefined, enabled: boolean) {
+  const demo = isDemoDataEnabled();
+  return useQuery({
+    queryKey: ['escalation-runs', ruleId],
+    queryFn: async (): Promise<EscalationRuleRun[]> => {
+      if (!ruleId || demo) return [];
+      return listRuleRuns(ruleId, 30);
+    },
+    enabled: enabled && Boolean(ruleId) && !demo && isGatewayQueryEnabled(),
+  });
+}
+
 export function useCreateEscalationRule() {
   const qc = useQueryClient();
+  const demo = isDemoDataEnabled();
   return useMutation({
     mutationFn: async (payload: CreateRulePayload) => {
       const logic = conditionsToLogic(payload.conditions, payload.conditionLogic);
       const actions = uiActionsToApi(payload.actions);
-      let rulesetId = 'demo-rs';
-      try {
-        const rs = await createRuleset({ name: payload.name, enabled: payload.enabled });
-        rulesetId = rs.id;
-        await createRule(rulesetId, {
+
+      if (demo) {
+        const current = qc.getQueryData<EscalationRuleView[]>(ESCALATION_QUERY_KEY) ?? [];
+        const row: EscalationRuleView = {
+          id: `new-${Date.now()}`,
+          rulesetId: 'demo-rs',
           name: payload.name,
-          enabled: payload.enabled,
-          trigger: 'sla.breached',
-          conditions: logic,
+          isActive: payload.enabled,
+          rulesetEnabled: true,
+          trigger: payload.trigger,
+          conditionLogic: payload.conditionLogic,
+          conditions: payload.conditions,
           actions,
-        } as unknown as Parameters<typeof createRule>[1]);
-      } catch {
-        /* local demo append */
+        };
+        return [...current, row];
       }
-      const current = qc.getQueryData<EscalationRuleView[]>(QUERY_KEY) ?? [];
-      const row: EscalationRuleView = {
-        id: `new-${Date.now()}`,
-        rulesetId,
+
+      const rulesetId = await findOrCreateDefaultRuleset();
+      await createRule(rulesetId, {
         name: payload.name,
-        isActive: payload.enabled,
-        rulesetEnabled: true,
-        trigger: 'sla.breached',
-        conditionLogic: payload.conditionLogic,
-        conditions: payload.conditions,
+        enabled: payload.enabled,
+        trigger: payload.trigger,
+        conditions: logic,
         actions,
-      };
-      return [...current, row];
+      } as unknown as Parameters<typeof createRule>[1]);
+      return loadAllRules();
     },
     onSuccess: data => {
-      qc.setQueryData(QUERY_KEY, data);
-      qc.invalidateQueries({ queryKey: QUERY_KEY });
+      qc.setQueryData([...ESCALATION_QUERY_KEY, demo], data);
     },
   });
 }
@@ -199,6 +301,7 @@ export interface DryRunResult {
 }
 
 export function useDryRunSimulation() {
+  const demo = isDemoDataEnabled();
   return useMutation({
     mutationFn: async ({
       rules,
@@ -219,7 +322,7 @@ export function useDryRunSimulation() {
             event: context,
           });
           const matched = sim.conditionsPassed ?? false;
-          const actions = sim.actions ?? (matched && active ? rule.actions : []);
+          const actions = normalizeApiActions(sim.actions ?? (matched && active ? rule.actions : []));
           results.push({
             ruleId: rule.id,
             ruleName: rule.name,
@@ -228,6 +331,7 @@ export function useDryRunSimulation() {
             actions: active ? actions : [],
           });
         } catch {
+          if (!demo) throw new Error('Simulation failed');
           const matched = evalDemoMatch(rule, context);
           results.push({
             ruleId: rule.id,

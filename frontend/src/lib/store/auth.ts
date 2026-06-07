@@ -13,6 +13,7 @@ import {
   saveAuthSession,
 } from '@/lib/store/auth-persist';
 import { hydratePermissionsFromJwt, usePermissionsStore } from '@/lib/store/permissions';
+import { useFeaturesStore } from '@/lib/store/features';
 
 interface AuthState {
   user: BlinkoneUser | null;
@@ -66,6 +67,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   clearAuth: () => {
     clearAuthSession();
     usePermissionsStore.getState().clear();
+    useFeaturesStore.getState().clear();
     set({ user: null, tokens: null, hydrated: true });
   },
 

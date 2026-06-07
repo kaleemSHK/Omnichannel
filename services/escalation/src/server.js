@@ -8,6 +8,7 @@ import { requireFeature } from '../_shared/lib/features.js';
 import * as repo from '../lib/escalation-repo.js';
 import { simulateRule } from '../lib/json-logic-safe.js';
 import { processEvent } from '../lib/engine.js';
+import { syncConversationFromWebhook, startConversationTimerWorker } from '../lib/conversation-watch.js';
 
 const log = createLogger('escalation');
 const PORT = parseInt(process.env.PORT || '8797', 10);
@@ -71,6 +72,78 @@ app.post('/v1/rulesets/:id/rules', auth, escFeature, async (req, res) => {
   }
 });
 
+app.patch('/v1/rulesets/:id', auth, escFeature, async (req, res) => {
+  if (!dbEnabled()) return fail(res, 'NOT_CONFIGURED', 'Postgres required', 501);
+  try {
+    return ok(res, await repo.updateRuleset(repo.resolveTenantId(req), req.params.id, req.body ?? {}));
+  } catch (e) {
+    if (e.code === 'VALIDATION_ERROR') return fail(res, 'VALIDATION_ERROR', e.message, 400);
+    if (e.code === 'NOT_FOUND') return fail(res, 'NOT_FOUND', e.message, 404);
+    if (e.code === '23505') return fail(res, 'CONFLICT', 'Ruleset name exists', 409);
+    return fail(res, 'INTERNAL_ERROR', e.message, 500);
+  }
+});
+
+app.patch('/v1/rules/:id', auth, escFeature, async (req, res) => {
+  if (!dbEnabled()) return fail(res, 'NOT_CONFIGURED', 'Postgres required', 501);
+  try {
+    return ok(res, await repo.updateRule(repo.resolveTenantId(req), req.params.id, req.body ?? {}));
+  } catch (e) {
+    if (e.code === 'VALIDATION_ERROR') return fail(res, 'VALIDATION_ERROR', e.message, 400);
+    if (e.code === 'NOT_FOUND') return fail(res, 'NOT_FOUND', e.message, 404);
+    return fail(res, 'INTERNAL_ERROR', e.message, 500);
+  }
+});
+
+app.delete('/v1/rules/:id', auth, escFeature, async (req, res) => {
+  if (!dbEnabled()) return fail(res, 'NOT_CONFIGURED', 'Postgres required', 501);
+  try {
+    await repo.deleteRule(repo.resolveTenantId(req), req.params.id);
+    return ok(res, { deleted: true });
+  } catch (e) {
+    if (e.code === 'NOT_FOUND') return fail(res, 'NOT_FOUND', e.message, 404);
+    return fail(res, 'INTERNAL_ERROR', e.message, 500);
+  }
+});
+
+app.post('/v1/conversations/sync', auth, escFeature, async (req, res) => {
+  if (!dbEnabled()) return ok(res, { synced: false, db: false });
+  const tenantId = repo.resolveTenantId(req);
+  const type = req.body?.type ?? req.body?.event ?? '';
+  const body = req.body?.payload ?? req.body ?? {};
+  try {
+    const result = await syncConversationFromWebhook(tenantId, type, body);
+    return ok(res, result);
+  } catch (e) {
+    return fail(res, 'INTERNAL_ERROR', e.message, 500);
+  }
+});
+
+app.get('/v1/runs', auth, escFeature, async (req, res) => {
+  if (!dbEnabled()) return ok(res, []);
+  const tenantId = repo.resolveTenantId(req);
+  const ruleId = req.query.rule_id || req.query.ruleId || null;
+  const limit = req.query.limit ?? 50;
+  return ok(res, await repo.listRuleRuns(tenantId, { ruleId, limit }));
+});
+
+app.get('/v1/rules/:id/runs', auth, escFeature, async (req, res) => {
+  if (!dbEnabled()) return ok(res, []);
+  const tenantId = repo.resolveTenantId(req);
+  const limit = req.query.limit ?? 50;
+  return ok(res, await repo.listRuleRuns(tenantId, { ruleId: req.params.id, limit }));
+});
+
+app.get('/v1/run-stats', auth, escFeature, async (req, res) => {
+  if (!dbEnabled()) return ok(res, {});
+  const tenantId = repo.resolveTenantId(req);
+  const ids = String(req.query.rule_ids ?? req.query.ruleIds ?? '')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
+  return ok(res, await repo.ruleRunStats(tenantId, ids));
+});
+
 app.post('/v1/rules/simulate', auth, escFeature, async (req, res) => {
   const { rule, event } = req.body ?? {};
   if (!rule) return fail(res, 'VALIDATION_ERROR', 'rule required');
@@ -115,6 +188,7 @@ app.use(errorHandler(log));
 async function boot() {
   if (dbEnabled()) {
     await runMigrations(log);
+    startConversationTimerWorker();
     log.info('Escalation Postgres ready');
   }
   const server = app.listen(PORT, '0.0.0.0', () => log.info({ port: PORT, db: dbEnabled() }, 'escalation started'));

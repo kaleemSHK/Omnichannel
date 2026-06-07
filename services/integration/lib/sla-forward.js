@@ -5,6 +5,21 @@ const SLA_TOKEN = (process.env.SLA_TOKEN || '').trim();
 const ESC_URL = (process.env.ESCALATION_URL || 'http://escalation:8797').replace(/\/$/, '');
 const ESC_TOKEN = (process.env.ESCALATION_TOKEN || '').trim();
 
+const ESC_WATCH_EVENTS = new Set([
+  'conversation.created',
+  'conversation_created',
+  'message.created',
+  'message_created',
+  'conversation.status_changed',
+  'conversation_status_changed',
+  'conversation.updated',
+  'conversation_updated',
+  'conversation.resolved',
+  'conversation_resolved',
+  'conversation.reopened',
+  'conversation_reopened',
+]);
+
 const SLA_EVENTS = new Set([
   'conversation.created',
   'conversation_created',
@@ -59,6 +74,23 @@ export async function forwardChatwootToSla(tenantId, type, body) {
       'X-Blinkone-Tenant-Id': String(tenantId),
     },
     body: JSON.stringify(payload),
+  }).catch(() => {});
+}
+
+export async function forwardChatwootToEscalationWatch(tenantId, type, body) {
+  if (!ESC_TOKEN || !ESC_WATCH_EVENTS.has(type)) return;
+  const features = await fetchTenantFeatures(tenantId);
+  if (!isFeatureEnabled(features, 'escalation')) return;
+  const conv = body.conversation ?? {};
+  if (!conv.id && !body.conversation_id) return;
+  await fetch(`${ESC_URL}/v1/conversations/sync`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${ESC_TOKEN}`,
+      'X-Blinkone-Tenant-Id': String(tenantId),
+    },
+    body: JSON.stringify({ type, ...body }),
   }).catch(() => {});
 }
 

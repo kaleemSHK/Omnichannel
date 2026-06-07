@@ -88,7 +88,6 @@ function CallControls({ callId }: { callId?: string }) {
           aria-label="End call"
           onClick={() => {
             sipControls?.hangup();
-            setActiveCall(null);
           }}
           className="w-10 h-10 rounded-full bg-red-500 text-white flex items-center justify-center"
         >

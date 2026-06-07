@@ -5,7 +5,7 @@ import express from 'express';
 import { createProxyMiddleware } from 'http-proxy-middleware';
 import jwt from 'jsonwebtoken';
 import pino from 'pino';
-import { tenantHasFeature } from './tenant-features.js';
+import { tenantHasFeature, fetchTenantFeatures, normalizeFeatureEnabled } from './tenant-features.js';
 import { piiSerializer, pinoMixin, PII_REDACT, maskString } from '../../services/_shared/lib/pii-masker.js';
 import { rateLimitMiddleware, authRateLimitMiddleware } from './rate-limiter.js';
 import { mountMetrics } from '../../services/_shared/lib/metrics-middleware.js';
@@ -73,6 +73,7 @@ const IVR_DEFAULT_TENANT = (process.env.IVR_DEFAULT_TENANT || '1').trim();
 function isTwilioVoiceWebhook(path) {
   return (
     path === '/api/ivr/v1/ivr/inbound' ||
+    path === '/api/ivr/v1/ivr/status' ||
     path.startsWith('/api/ivr/v1/ivr/respond/')
   );
 }
@@ -138,6 +139,13 @@ function signTenantHeaders(payload) {
   return headers;
 }
 
+async function tenantFeaturesPayload(tenantId) {
+  const raw = await fetchTenantFeatures(String(tenantId));
+  return Object.fromEntries(
+    Object.entries(raw).map(([k, v]) => [k, normalizeFeatureEnabled(v)]),
+  );
+}
+
 async function loadEffectiveRbac({ tenantId, userId, roles, email, name, chatwootRole }) {
   if (!U.tenant || !TOKENS.tenant) return null;
   const isPlatformAdmin = roles.includes('platform_admin');
@@ -173,6 +181,7 @@ function requiresPlatformAdminForTenantRoute(path, method) {
   if (path === '/api/tenant/v1/tenants' || path.startsWith('/api/tenant/v1/tenants?')) {
     return true;
   }
+  if (method === 'GET' && /^\/api\/tenant\/v1\/tenants\/[^/]+$/.test(path)) return true;
   if (method === 'PATCH' && /^\/api\/tenant\/v1\/tenants\/[^/]+$/.test(path)) return true;
   if (method === 'POST' && /^\/api\/tenant\/v1\/tenants\/[^/]+\/suspend$/.test(path)) return true;
   if (method === 'POST' && /^\/api\/tenant\/v1\/tenants\/[^/]+\/impersonate$/.test(path)) return true;
@@ -183,14 +192,15 @@ function requiresPlatformAdminForTenantRoute(path, method) {
 
 function requirePlatformAdmin(req, res, next) {
   const path = (req.originalUrl || req.url).split('?')[0];
-  // Agents may read their own tenant branding (white-label sidebar).
-  const brandingRead =
+  // Agents may read their own tenant branding + feature entitlements.
+  const tenantSelfRead =
     req.method === 'GET' &&
-    /^\/api\/tenant\/v1\/tenants\/[^/]+\/branding$/.test(path);
-  if (brandingRead) {
+    /^\/api\/tenant\/v1\/tenants\/[^/]+\/(branding|features)$/.test(path);
+  if (tenantSelfRead) {
     const jwtTenant = String(req.gatewayAuth?.payload?.tenant_id ?? '');
-    const pathTenant = path.match(/\/tenants\/([^/]+)\/branding$/)?.[1] ?? '';
-    if (jwtTenant && pathTenant && jwtTenant === pathTenant) return next();
+    const accountId = String(req.gatewayAuth?.payload?.account_id ?? '');
+    const pathTenant = path.match(/\/tenants\/([^/]+)\/(?:branding|features)$/)?.[1] ?? '';
+    if (pathTenant && (jwtTenant === pathTenant || accountId === pathTenant)) return next();
   }
   const platformMutate =
     path.startsWith('/api/platform') && ['POST', 'PATCH', 'PUT', 'DELETE'].includes(req.method);
@@ -492,6 +502,8 @@ app.post('/api/auth/token', authRateLimitMiddleware(), express.json(), async (re
       { expiresIn, issuer: 'blinkone-gateway' },
     );
 
+    const features = await tenantFeaturesPayload(tenantId);
+
     return res.json({
       token,
       expiresIn,
@@ -499,6 +511,7 @@ app.post('/api/auth/token', authRateLimitMiddleware(), express.json(), async (re
       permissions: rbac?.permissions ?? [],
       pages: rbac?.pages ?? [],
       rbacRoles: rbac?.roles ?? [],
+      features,
     });
   } catch (e) {
     log.error({ err: e.message }, 'auth token exchange failed');
@@ -572,7 +585,8 @@ app.post('/api/auth/mfa', authRateLimitMiddleware(), express.json(), async (req,
   );
 
   log.info({ userId, tenantId }, 'MFA verified — JWT issued');
-  return res.json({ token, expiresIn });
+  const features = await tenantFeaturesPayload(tenantId);
+  return res.json({ token, expiresIn, features });
 });
 
 /** Platform admin — switch JWT tenant context (impersonation). */

@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { cwFetch } from '@/lib/api/client';
+import { cwFetch, BlinkoneApiError } from '@/lib/api/client';
 import {
   DEMO_AGENT_REPORT,
   DEMO_INBOX_REPORT,
@@ -347,45 +347,80 @@ export function useTeamReport(range: DateRangeValue) {
 // ─── A1: Advanced Analytics hooks ────────────────────────────────────────────
 
 interface CWSurveyResponse {
-  created_at: string;
-  rating: 'satisfied' | 'neutral' | 'dissatisfied';
+  created_at: number | string;
+  rating: number | string;
+}
+
+function csatRatingBucket(rating: number | string): 'satisfied' | 'neutral' | 'unsatisfied' {
+  const n = typeof rating === 'number' ? rating : Number(rating);
+  if (!Number.isFinite(n)) return 'neutral';
+  if (n >= 4) return 'satisfied';
+  if (n <= 2) return 'unsatisfied';
+  return 'neutral';
+}
+
+function csatCreatedAtMs(value: number | string): number {
+  if (typeof value === 'number') return value > 1e12 ? value : value * 1000;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : Date.now();
+}
+
+/** Chatwoot v1 CSAT index — paginated (25/page). */
+async function fetchCsatSurveyResponses(since: number, until: number): Promise<CWSurveyResponse[]> {
+  const rows: CWSurveyResponse[] = [];
+  for (let page = 1; page <= 40; page++) {
+    const batch = await cwFetch<CWSurveyResponse[]>(
+      `/accounts/${accountId()}/csat_survey_responses?since=${since}&until=${until}&page=${page}`,
+      {},
+      'v1',
+    );
+    if (!Array.isArray(batch) || batch.length === 0) break;
+    rows.push(...batch);
+    if (batch.length < 25) break;
+  }
+  return rows;
+}
+
+function bucketCsatResponses(rows: CWSurveyResponse[]): CsatPoint[] {
+  const buckets = new Map<string, { satisfied: number; unsatisfied: number }>();
+  for (const r of rows) {
+    const label = new Date(csatCreatedAtMs(r.created_at)).toLocaleDateString('en-US', {
+      weekday: 'short',
+    });
+    const bucket = csatRatingBucket(r.rating);
+    const b = buckets.get(label) ?? { satisfied: 0, unsatisfied: 0 };
+    if (bucket === 'satisfied') b.satisfied++;
+    else if (bucket === 'unsatisfied') b.unsatisfied++;
+    buckets.set(label, b);
+  }
+  return [...buckets.entries()].map(([date, b]) => ({
+    date,
+    satisfied: b.satisfied,
+    unsatisfied: b.unsatisfied,
+    score:
+      b.satisfied + b.unsatisfied > 0
+        ? Math.round((b.satisfied / (b.satisfied + b.unsatisfied)) * 100)
+        : 0,
+  }));
 }
 
 /** CSAT trend — day-by-day satisfied/unsatisfied + score (%). */
 export function useCsatReport(range: DateRangeValue): { data: CsatPoint[]; isLoading: boolean; isError: boolean } {
   const { since, until } = sinceUntil(range);
   const q = useQuery<CsatPoint[]>({
-    queryKey: ['reportCsat', range, isDemoDataEnabled()],
+    queryKey: ['reportCsat', range, since, until, isDemoDataEnabled()],
     queryFn: async (): Promise<CsatPoint[]> => {
       if (isDemoDataEnabled()) return DEMO_CSAT_DATA;
       try {
-        const res = await cwFetch<{ data: CWSurveyResponse[] } | CWSurveyResponse[]>(
-          `/accounts/${accountId()}/reports/csat_survey_responses?since=${since}&until=${until}`,
-          {},
-          'v2',
-        );
-        const rows: CWSurveyResponse[] = Array.isArray(res) ? res : (res as { data: CWSurveyResponse[] }).data ?? [];
-        // Bucket by day label
-        const buckets = new Map<string, { satisfied: number; unsatisfied: number }>();
-        for (const r of rows) {
-          const label = new Date(r.created_at).toLocaleDateString('en-US', { weekday: 'short' });
-          const b = buckets.get(label) ?? { satisfied: 0, unsatisfied: 0 };
-          if (r.rating === 'satisfied') b.satisfied++;
-          else b.unsatisfied++;
-          buckets.set(label, b);
-        }
-        return [...buckets.entries()].map(([date, b]) => ({
-          date,
-          satisfied: b.satisfied,
-          unsatisfied: b.unsatisfied,
-          score: b.satisfied + b.unsatisfied > 0
-            ? Math.round((b.satisfied / (b.satisfied + b.unsatisfied)) * 100)
-            : 0,
-        }));
-      } catch {
-        return DEMO_CSAT_DATA; // graceful fallback
+        const rows = await fetchCsatSurveyResponses(since, until);
+        return bucketCsatResponses(rows);
+      } catch (e) {
+        if (e instanceof BlinkoneApiError && e.status === 404) return [];
+        return [];
       }
     },
+    retry: false,
+    staleTime: 5 * 60_000,
   });
   return { data: q.data ?? [], isLoading: q.isLoading, isError: q.isError };
 }

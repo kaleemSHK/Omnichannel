@@ -4,13 +4,12 @@ import { useNavigation } from '@react-navigation/native';
 import type { CompositeNavigationProp } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '@/store/auth';
 import { useCallsStore } from '@/store/calls';
 import { useRoutingPresence } from '@/hooks/useRoutingPresence';
 import { listConversations } from '@/api/conversations';
-import { Avatar } from '@/components/layout/Avatar';
+import { Five9Header } from '@/components/layout/Five9Header';
 import { C } from '@/lib/ui';
 import { hapticSelection } from '@/lib/haptics';
 import type { AgentState } from '@/types';
@@ -76,27 +75,22 @@ export default function AgentDashboard() {
   ];
 
   return (
-    <SafeAreaView style={s.screen}>
+    <View style={s.screen}>
+      <Five9Header
+        title={user?.name ?? 'Agent'}
+        subtitle={user?.email ?? 'Agent workspace'}
+        right={
+          <View style={[s.statePill, { backgroundColor: stateInfo.bg }]}>
+            <View style={[s.stateDot, { backgroundColor: stateInfo.color }]} />
+            <Text style={[s.stateLabel, { color: stateInfo.color }]}>{stateInfo.label}</Text>
+          </View>
+        }
+      />
       <ScrollView
         contentContainerStyle={s.scroll}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.brand} />}
         showsVerticalScrollIndicator={false}
       >
-        {/* Header */}
-        <View style={s.header}>
-          <View style={s.headerLeft}>
-            <Avatar name={user?.name ?? ''} imageUrl={user?.avatarUrl} size={46} online={agentState === 'available'} />
-            <View style={{ marginLeft: 12 }}>
-              <Text style={s.userName}>{user?.name ?? 'Agent'}</Text>
-              <Text style={s.userEmail} numberOfLines={1}>{user?.email}</Text>
-            </View>
-          </View>
-          <View style={[s.statePill, { backgroundColor: stateInfo.bg }]}>
-            <View style={[s.stateDot, { backgroundColor: stateInfo.color }]} />
-            <Text style={[s.stateLabel, { color: stateInfo.color }]}>{stateInfo.label}</Text>
-          </View>
-        </View>
-
         {/* KPI cards */}
         <Text style={s.sectionLabel}>MY QUEUES</Text>
         <View style={s.kpiRow}>
@@ -150,18 +144,14 @@ export default function AgentDashboard() {
           ))}
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
 const s = StyleSheet.create({
   screen:       { flex: 1, backgroundColor: C.bg },
   scroll:       { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 40 },
-  header:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 },
-  headerLeft:   { flexDirection: 'row', alignItems: 'center', flex: 1 },
-  userName:     { fontSize: 16, fontWeight: '700', color: C.text },
-  userEmail:    { fontSize: 12, color: C.textSub, marginTop: 1 },
-  statePill:    { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999 },
+  statePill:    { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999 },
   stateDot:     { width: 8, height: 8, borderRadius: 4 },
   stateLabel:   { fontSize: 12, fontWeight: '600' },
   sectionLabel: { fontSize: 11, fontWeight: '700', color: C.textMute, letterSpacing: 1, marginBottom: 10, marginTop: 8 },

@@ -7,6 +7,8 @@ import {
   ChevronRight,
   ChevronDown,
   Zap,
+  Trash2,
+  Loader2,
 } from 'lucide-react';
 import { NODE_META } from './IVRNodeCard';
 import type { IVRNodeType } from '@/types';
@@ -31,7 +33,10 @@ interface Props {
   onSelectFlow: (id: string) => void;
   onAddNode: (type: IVRNodeType) => void;
   onCreateFlow?: () => void;
+  onDeleteFlow?: (id: string) => void;
+  deletingFlowId?: string | null;
   creating?: boolean;
+  tenantLabel?: string;
 }
 
 // ─── Palette item ──────────────────────────────────────────────────────────────
@@ -121,7 +126,10 @@ export function IVRNodePalette({
   onSelectFlow,
   onAddNode,
   onCreateFlow,
+  onDeleteFlow,
+  deletingFlowId,
   creating,
+  tenantLabel,
 }: Props) {
   const [search, setSearch] = useState('');
 
@@ -182,28 +190,52 @@ export function IVRNodePalette({
 
       {/* Flows list */}
       <div className="border-t border-gray-100 px-1 py-2 max-h-[40%] flex flex-col min-h-0">
-        <p className="px-2 text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-1">
-          Flows
-        </p>
+        <div className="flex items-center justify-between px-2 mb-1 gap-1">
+          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">
+            Flows
+          </p>
+          {tenantLabel && (
+            <span className="text-[9px] text-muted-foreground truncate" title={tenantLabel}>
+              {tenantLabel}
+            </span>
+          )}
+        </div>
         <ul className="overflow-y-auto flex-1 space-y-0.5">
           {flows.map(f => (
-            <li key={f.id}>
+            <li key={f.id} className="group flex items-center gap-0.5">
               <button
                 type="button"
                 onClick={() => onSelectFlow(f.id)}
                 className={cn(
-                  'w-full text-start px-2 py-1.5 rounded-lg text-[11px] transition-colors flex items-center gap-1.5',
+                  'flex-1 min-w-0 text-start px-2 py-1.5 rounded-lg text-[11px] transition-colors flex items-center gap-1.5',
                   activeFlowId === f.id
                     ? 'bg-blue-50 text-brand-primary font-semibold'
                     : 'hover:bg-gray-50 text-gray-700',
                 )}
               >
-                <span className={cn(
-                  'w-1.5 h-1.5 rounded-full shrink-0',
-                  f.isActive ? 'bg-green-400' : 'bg-gray-300',
-                )} />
+                <span
+                  className={cn(
+                    'w-1.5 h-1.5 rounded-full shrink-0',
+                    f.isActive ? 'bg-green-400' : 'bg-gray-300',
+                  )}
+                />
                 <span className="truncate">{f.name}</span>
               </button>
+              {onDeleteFlow && (
+                <button
+                  type="button"
+                  title={`Delete ${f.name}`}
+                  disabled={deletingFlowId === f.id || flows.length <= 1}
+                  onClick={() => onDeleteFlow(f.id)}
+                  className="shrink-0 p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-red-50 text-red-500 disabled:opacity-30 transition-all"
+                >
+                  {deletingFlowId === f.id ? (
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                  ) : (
+                    <Trash2 className="w-3 h-3" />
+                  )}
+                </button>
+              )}
             </li>
           ))}
         </ul>

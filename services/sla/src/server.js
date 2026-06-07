@@ -4,7 +4,7 @@ import { createStore } from '../lib/store.js';
 import { ok, fail, bearerAuth, requestId, errorHandler, healthRouter, gracefulShutdown } from '../lib/http.js';
 import { mountMetrics } from '../_shared/lib/metrics-middleware.js';
 import { dbEnabled, runMigrations, closePool, getPool } from '../lib/db.js';
-import { resolveTenantId } from '../lib/tenant.js';
+import { resolveTenantId, requireTenantId } from '../lib/tenant.js';
 import { tenantSuspendedMiddleware } from '../lib/tenant-guard.js';
 import { requireFeature } from '../_shared/lib/features.js';
 import { requireSlaRbac } from '../_shared/lib/rbac.js';
@@ -33,6 +33,19 @@ app.use(tenantSuspendedMiddleware(resolveTenantId, fail));
 healthRouter(app, 'sla');
 mountMetrics(app, 'sla');
 
+function attachTenant(req, res, next) {
+  const path = req.path || '';
+  if (path === '/healthz' || path === '/readyz') return next();
+  try {
+    req.tenantId = requireTenantId(req);
+    next();
+  } catch (e) {
+    return fail(res, e.code || 'TENANT_REQUIRED', e.message, 400);
+  }
+}
+
+app.use(attachTenant);
+
 app.get('/readyz', async (_req, res) => {
   if (!dbEnabled()) return res.json({ status: 'ready', db: false });
   try {
@@ -59,6 +72,13 @@ app.post('/v1/calendars', auth, slaFeature, async (req, res) => {
     if (e.code === '23505') return fail(res, 'CONFLICT', 'Calendar name exists', 409);
     throw e;
   }
+});
+
+app.patch('/v1/calendars/:id', auth, slaFeature, async (req, res) => {
+  if (!dbEnabled()) return fail(res, 'NOT_CONFIGURED', 'Postgres required', 501);
+  const updated = await repo.updateCalendar(resolveTenantId(req), req.params.id, req.body ?? {});
+  if (!updated) return fail(res, 'NOT_FOUND', 'Calendar not found', 404);
+  return ok(res, updated);
 });
 
 app.get('/v1/policies', auth, slaFeature, async (req, res) => {
@@ -140,7 +160,24 @@ app.post('/v1/events', slaFeature, async (req, res) => {
 
 app.post('/v1/sla/recalculate', auth, slaFeature, async (req, res) => {
   if (!dbEnabled()) return fail(res, 'NOT_CONFIGURED', 'Postgres required', 501);
-  return ok(res, { status: 'accepted', message: 'Recalculate queued (stub)' });
+  const tenantId = resolveTenantId(req);
+  const body = req.body ?? {};
+  const conversationId = Number(body.conversationId ?? body.conversation_id);
+  if (!Number.isFinite(conversationId)) {
+    return fail(res, 'VALIDATION_ERROR', 'conversationId required', 400);
+  }
+  const existing = await repo.listInstancesForConversation(tenantId, conversationId);
+  if (existing.length) {
+    return ok(res, { status: 'skipped', reason: 'instances_exist', count: existing.length });
+  }
+  const result = await handleChatwootEvent(tenantId, {
+    event: 'conversation_created',
+    conversation_id: conversationId,
+    priority: body.priority ?? 'medium',
+    channel: body.channel ?? 'web',
+    inbox_id: body.inboxId ?? body.inbox_id,
+  });
+  return ok(res, { status: 'created', ...result });
 });
 
 // Legacy file-store compatibility

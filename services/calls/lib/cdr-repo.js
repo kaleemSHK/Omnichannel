@@ -171,7 +171,10 @@ export async function appendCallEvent(tenantId, callSessionId, { eventType, acto
 }
 
 /** Historical CDR rows for agent UI (ended / missed sessions). */
-export async function listCdr(tenantId, { page = 1, limit = 20, from, to, agentId } = {}) {
+export async function listCdr(
+  tenantId,
+  { page = 1, limit = 20, from, to, agentId, transport, customerPhone, hasRecording } = {},
+) {
   const p = getPool();
   const params = [tenantId];
   // LEFT JOIN LATERAL pulls the latest recording (if any) for each session so the
@@ -239,6 +242,9 @@ export async function listCdr(tenantId, { page = 1, limit = 20, from, to, agentI
               )
             )
         )
+      )
+      AND NOT (
+        TRIM(COALESCE(cs.customer_phone, '')) ~ '^[0-9]{1,8}$'
       )`;
   if (from) {
     params.push(from);
@@ -251,6 +257,27 @@ export async function listCdr(tenantId, { page = 1, limit = 20, from, to, agentI
   if (agentId) {
     params.push(agentId);
     sql += ` AND (cs.assigned_agent_id = $${params.length} OR cs.agent_label = $${params.length})`;
+  }
+  if (transport) {
+    params.push(transport);
+    sql += ` AND cs.transport = $${params.length}`;
+  }
+  if (customerPhone) {
+    const digits = String(customerPhone).replace(/\D/g, '');
+    const last10 = digits.length >= 10 ? digits.slice(-10) : digits;
+    if (last10.length >= 7) {
+      params.push(last10);
+      sql += ` AND (
+        RIGHT(regexp_replace(COALESCE(cs.customer_phone, ''), '\\D', '', 'g'), 10) = $${params.length}
+        OR RIGHT(regexp_replace(COALESCE(cs.metadata->>'callerPhone', ''), '\\D', '', 'g'), 10) = $${params.length}
+      )`;
+    }
+  }
+  if (hasRecording === true || hasRecording === 'true' || hasRecording === '1') {
+    sql += ` AND (
+      (ro.storage_key IS NOT NULL AND ro.storage_key <> '')
+      OR (cs.metadata->>'recordingId') IS NOT NULL
+    )`;
   }
   const lim = Math.min(Math.max(parseInt(String(limit), 10) || 20, 1), 100);
   const off = Math.max((parseInt(String(page), 10) || 1) - 1, 0) * lim;
@@ -305,6 +332,7 @@ export async function listCdr(tenantId, { page = 1, limit = 20, from, to, agentI
       transport: s.transport,
       duration: Math.max(0, Math.floor(Number(s.durationMs || 0) / 1000)),
       outcome: s.outcome || s.status,
+      conversationId: s.conversationId ?? null,
       startedAt: s.startedAt,
       endedAt: s.endedAt ?? null,
       recordingId: playableId,

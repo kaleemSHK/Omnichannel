@@ -4,12 +4,14 @@
  */
 
 import { bnFetch, BlinkoneApiError } from './client';
-import type { CallSession, CDRRecord, ApiResponse } from '@/types';
+import type { CallSession, CDRRecord, ApiResponse, CDRFilters } from '@/types';
 
 const SVC = 'calls';
 
-export async function listActiveSessions(): Promise<CallSession[]> {
-  const res = await bnFetch<{ data: CallSession[] }>(SVC, '/v1/sessions');
+export async function listActiveSessions(transport?: 'pstn' | 'whatsapp' | 'webrtc'): Promise<CallSession[]> {
+  const params = new URLSearchParams({ status: 'ringing,connected' });
+  if (transport) params.set('transport', transport);
+  const res = await bnFetch<{ data: CallSession[] }>(SVC, `/v1/calls?${params}`);
   return res.data;
 }
 
@@ -24,7 +26,7 @@ export async function createSession(payload: {
   channel?: string;
   agentLabel: string;
   customerPhone: string;
-  transport?: 'pstn' | 'whatsapp';
+  transport?: 'pstn' | 'whatsapp' | 'webrtc';
   direction?: 'inbound' | 'outbound';
 }): Promise<CallSession> {
   const res = await bnFetch<{ data: CallSession }>(SVC, '/v1/sessions', {
@@ -182,19 +184,16 @@ export async function addCallNotes(
   }
 }
 
-export async function listCDR(filters: {
-  page?: number;
-  limit?: number;
-  from?: string;
-  to?: string;
-  agentId?: string;
-}): Promise<ApiResponse<CDRRecord[]>> {
+export async function listCDR(filters: CDRFilters = {}): Promise<ApiResponse<CDRRecord[]>> {
   const params = new URLSearchParams();
   if (filters.page)    params.set('page', String(filters.page));
   if (filters.limit)   params.set('limit', String(filters.limit));
   if (filters.from)    params.set('from', filters.from);
   if (filters.to)      params.set('to', filters.to);
   if (filters.agentId) params.set('agent_id', filters.agentId);
+  if (filters.transport) params.set('transport', filters.transport);
+  if (filters.customerPhone) params.set('customer_phone', filters.customerPhone);
+  if (filters.hasRecording) params.set('has_recording', '1');
   return bnFetch<ApiResponse<CDRRecord[]>>(SVC, `/v1/cdr?${params}`);
 }
 

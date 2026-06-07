@@ -16,16 +16,17 @@ import { DEMO_CDR } from '@/lib/demo/callingFixture';
 import { DEMO_CALLS } from '@/lib/demo/callsFixture';
 import type { CallSession, CDRFilters, CDRRecord } from '@/types';
 
-export function useActiveSessions() {
+export function useActiveSessions(transport?: 'pstn' | 'whatsapp' | 'webrtc') {
   const live = isLiveGatewayEnabled();
   return useQuery({
-    queryKey: ['activeSessions', isDemoDataEnabled(), live],
+    queryKey: ['activeSessions', transport, isDemoDataEnabled(), live],
     queryFn: async () => {
       if (isDemoDataEnabled() || !live) {
-        return DEMO_CALLS.filter(c => c.status === 'connected' || c.status === 'ringing');
+        const demo = DEMO_CALLS.filter(c => c.status === 'connected' || c.status === 'ringing');
+        return transport ? demo.filter(c => c.transport === transport) : demo;
       }
       try {
-        const data = await listActiveSessions();
+        const data = await listActiveSessions(transport);
         const maxRingMs = 3 * 60 * 1000;
         return data.filter(c => {
           if (c.status === 'connected') return true;
@@ -48,13 +49,17 @@ export function useCDR(filters?: CDRFilters) {
   const from = filters?.from ?? '';
   const to = filters?.to ?? '';
   const agentId = filters?.agentId ?? '';
+  const transport = filters?.transport ?? '';
   const live = isLiveGatewayEnabled();
   return useQuery({
-    queryKey: ['cdr', page, limit, from, to, agentId, isDemoDataEnabled(), live],
+    queryKey: ['cdr', page, limit, from, to, agentId, transport, isDemoDataEnabled(), live],
     queryFn: async () => {
-      if (isDemoDataEnabled() || !live) return DEMO_CDR.slice(0, limit * page);
+      if (isDemoDataEnabled() || !live) {
+        const demo = DEMO_CDR.slice(0, limit * page);
+        return transport ? demo.filter(r => r.transport === transport) : demo;
+      }
       try {
-        const res = await listCDR({ page, limit, from, to, agentId } as CDRFilters);
+        const res = await listCDR({ page, limit, from, to, agentId, transport: transport || undefined } as CDRFilters);
         return (res as { data?: CDRRecord[] }).data ?? [];
       } catch {
         return [];

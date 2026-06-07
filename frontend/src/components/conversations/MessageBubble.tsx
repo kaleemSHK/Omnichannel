@@ -1,6 +1,7 @@
 'use client';
 
 import { initials } from '@/lib/utils/conversations';
+import { resolveMessageSender } from '@/lib/utils/message-sender';
 import { MessageAttachments } from '@/components/conversations/MessageAttachments';
 import { parseMentionSegments } from '@/lib/utils/mentions';
 import { useLiveRelativeTime } from '@/hooks/useLiveRelativeTime';
@@ -33,7 +34,7 @@ export function MessageBubble({ message }: Props) {
     );
   }
 
-  const isOutbound = message.message_type === 1;
+  const isOutbound = resolveMessageSender(message) === 'agent';
   const isPrivateNote = message.content_type === 'private_note';
   const senderName = message.sender?.name ?? 'Agent';
 

@@ -305,4 +305,53 @@ export async function getWelcomeMessage(tenantId) {
   };
 }
 
+/** Delete a tenant-scoped flow (not the last remaining flow). */
+export async function deleteFlow(tenantId, flowId) {
+  const p = getPool();
+  if (!p) return { ok: false, code: 'NOT_CONFIGURED' };
+  if (!UUID_RE.test(String(flowId || ''))) return { ok: false, code: 'NOT_FOUND' };
+
+  const flow = await getFlow(tenantId, flowId);
+  if (!flow) return { ok: false, code: 'NOT_FOUND' };
+
+  const { rows: countRows } = await p.query(
+    'SELECT COUNT(*)::int AS c FROM ivr_flows WHERE tenant_id = $1',
+    [tenantId],
+  );
+  if (countRows[0]?.c <= 1) {
+    const err = new Error('Cannot delete the only flow for this tenant');
+    err.code = 'LAST_FLOW';
+    throw err;
+  }
+
+  const client = await p.connect();
+  try {
+    await client.query('BEGIN');
+    if (flow.isDefault) {
+      const { rows: nextDefault } = await client.query(
+        `SELECT id FROM ivr_flows
+         WHERE tenant_id = $1 AND id <> $2
+         ORDER BY is_default DESC, created_at ASC
+         LIMIT 1`,
+        [tenantId, flowId],
+      );
+      if (nextDefault[0]?.id) {
+        await client.query('UPDATE ivr_flows SET is_default = false WHERE tenant_id = $1', [tenantId]);
+        await client.query('UPDATE ivr_flows SET is_default = true WHERE id = $1', [nextDefault[0].id]);
+      }
+    }
+    const { rowCount } = await client.query(
+      'DELETE FROM ivr_flows WHERE tenant_id = $1 AND id = $2',
+      [tenantId, flowId],
+    );
+    await client.query('COMMIT');
+    return rowCount ? { ok: true } : { ok: false, code: 'NOT_FOUND' };
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
 export { DEFAULT_GRAPH };

@@ -6,7 +6,7 @@ function stubEmbedVector(text) {
   const words = String(text)
     .toLowerCase()
     .split(/[^\p{L}\p{N}]+/u)
-    .filter((w) => w.length > 2);
+    .filter((w) => w.length > 1);
   for (const w of words) {
     let h = 0;
     for (let i = 0; i < w.length; i++) h = ((h << 5) - h + w.charCodeAt(i)) | 0;

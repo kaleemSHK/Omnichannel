@@ -24,6 +24,8 @@ import {
 } from '@/components/ui/tooltip';
 import { useAuthStore } from '@/lib/store/auth';
 import { canAccessRoute } from '@/lib/rbac';
+import { canAccessTenantFeatureRoute } from '@/lib/features/access';
+import { useTenantFeatures } from '@/lib/hooks/useTenantFeatures';
 import { cn } from '@/lib/utils/cn';
 import { getTenantBranding } from '@/lib/api/branding';
 
@@ -45,6 +47,7 @@ export function IconSidebar() {
   const user  = useAuthStore(s => s.user);
   const role  = useAuthStore(s => s.user?.role);
   const tokens = useAuthStore(s => s.tokens);
+  const { features } = useTenantFeatures();
 
   const tenantId = user ? String(user.chatwootAccountId ?? user.tenantId ?? '1') : null;
 
@@ -61,7 +64,12 @@ export function IconSidebar() {
   const fullName = branding?.productName ?? branding?.companyName ?? 'BlinkOne';
   const monogram = fullName.charAt(0).toUpperCase();
 
-  const visibleNavItems = navItems.filter(item => canAccessRoute(role, item.href));
+  const bypassFeatures = role === 'platform_admin';
+  const visibleNavItems = navItems.filter(
+    item =>
+      canAccessRoute(role, item.href) &&
+      (bypassFeatures || canAccessTenantFeatureRoute(item.href, features)),
+  );
   const showPlatform = canAccessRoute(role, '/platform');
 
   return (

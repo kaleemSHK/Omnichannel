@@ -153,27 +153,38 @@ app.get('/v1/sessions/:id', auth, async (req, res) => {
 });
 
 app.post('/v1/sessions', auth, pstnFeature, async (req, res) => {
-  const { roomId, chatwootAccountId, channel = 'voice', agentLabel, customerPhone } = req.body ?? {};
+  const {
+    roomId,
+    chatwootAccountId,
+    channel = 'voice',
+    agentLabel,
+    customerPhone,
+    transport,
+    direction,
+  } = req.body ?? {};
   if (!roomId?.trim()) return fail(res, 'VALIDATION_ERROR', 'roomId required');
   if (!Number.isFinite(Number(chatwootAccountId))) return fail(res, 'VALIDATION_ERROR', 'chatwootAccountId required');
 
+  const agentId = req.headers['x-blinkone-user-id'];
+
   if (dbEnabled()) {
     try {
-      const session = await cdrRepo.insertCdr({
-        chatwootAccountId,
-        roomId,
+      const session = await cdrRepo.createCall({
+        chatwootAccountId: Number(chatwootAccountId),
+        roomId: roomId.trim(),
         channel,
         agentLabel,
         customerPhone,
+        transport: transport || 'pstn',
+        direction: direction || 'outbound',
         status: 'ringing',
-        startedAt: new Date().toISOString(),
-        disposition: 'ringing',
+        assignedAgentId: agentId ? String(agentId) : null,
       });
-      log.info({ sessionId: session.id }, 'session created');
+      log.info({ sessionId: session.id, transport: session.transport, direction: session.direction }, 'session created');
       return ok(res, session, 201);
     } catch (e) {
-      log.error({ err: e.message }, 'create session');
-      return fail(res, 'INTERNAL_ERROR', 'Failed', 500);
+      log.error({ err: e instanceof Error ? e.message : e, stack: e instanceof Error ? e.stack : undefined }, 'create session');
+      return fail(res, 'INTERNAL_ERROR', e instanceof Error ? e.message : 'Failed', 500);
     }
   }
 
@@ -217,6 +228,9 @@ app.get('/v1/cdr', auth, async (req, res) => {
       from: req.query.from,
       to: req.query.to,
       agentId: req.query.agent_id,
+      transport: req.query.transport,
+      customerPhone: req.query.customer_phone,
+      hasRecording: req.query.has_recording,
     });
     return ok(res, rows);
   } catch (e) {
@@ -412,6 +426,47 @@ app.post('/v1/internal/calls/acd-assign', auth, async (req, res) => {
     return ok(res, session ?? { callId, agentId }, 201);
   } catch (e) {
     log.error({ err: e.message }, 'acd-assign');
+    return fail(res, 'INTERNAL_ERROR', e.message, 500);
+  }
+});
+
+/** Twilio status callback / Kamailio sync — end CDR when PSTN leg completes */
+app.post('/v1/internal/calls/end', auth, async (req, res) => {
+  const tenantId = resolveTenantId(req);
+  if (!dbEnabled()) return fail(res, 'NOT_CONFIGURED', 'Postgres required', 501);
+  const { callId, status, metadata } = req.body ?? {};
+  if (!callId) return fail(res, 'VALIDATION_ERROR', 'callId required', 400);
+  try {
+    const session = await cdrRepo.getCallByRoomId(tenantId, String(callId), false);
+    if (!session) return ok(res, { ended: false, reason: 'not_found' });
+    if (session.status === 'ended' || session.status === 'missed') {
+      return ok(res, { ended: true, session, already: true });
+    }
+    const outcome =
+      String(status || '').toLowerCase() === 'no-answer' || String(status || '').toLowerCase() === 'busy'
+        ? String(status).toLowerCase()
+        : 'completed';
+    const updated = await cdrRepo.transitionCall(tenantId, session.id, {
+      status: 'ended',
+      outcome,
+      metadata: { ...(metadata ?? {}), twilioStatus: status },
+    });
+    callsActive.dec({ tenant: String(tenantId) });
+    callsTotal.inc({
+      tenant: String(tenantId),
+      direction: updated?.direction ?? 'outbound',
+      outcome,
+    });
+    notifyRecording(updated);
+    await broadcastCallEvent(updated?.chatwootAccountId ?? tenantId, {
+      type: 'ended',
+      callId: updated?.id,
+      conversationId: updated?.conversationId,
+    });
+    log.info({ callId, sessionId: updated?.id, status }, 'internal call end');
+    return ok(res, { ended: true, session: updated });
+  } catch (e) {
+    log.error({ err: e.message }, 'internal call end');
     return fail(res, 'INTERNAL_ERROR', e.message, 500);
   }
 });

@@ -1,10 +1,9 @@
 import { ActivityIndicator, View, Text, StyleSheet } from 'react-native';
-import { useRoute, useNavigation } from '@react-navigation/native';
+import { useRoute } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
-import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useCallQueue } from '@/hooks/useCallQueue';
 import { useDialOnAssign } from '@/hooks/useDialOnAssign';
-import { cancelCustomerCall } from '@/api/customer';
+import { endCustomerCallSession } from '@/lib/end-customer-call';
 import { useSip } from '@/providers/sip-context';
 import { useCallsStore } from '@/store/calls';
 import { hapticImpact } from '@/lib/haptics';
@@ -12,11 +11,9 @@ import { CallScreenLayout, CallTheme } from '@/components/calling/CallScreenLayo
 import type { CustomerStackParamList } from '@/navigation/types';
 
 type Route = RouteProp<CustomerStackParamList, 'CallQueue'>;
-type Nav = NativeStackNavigationProp<CustomerStackParamList>;
 
 export default function CustomerCallQueue() {
   const { params } = useRoute<Route>();
-  const navigation = useNavigation<Nav>();
   const { makeCall, hangup } = useSip();
   const sipRegistered = useCallsStore((s) => s.sipRegistered);
   const callId = params.callId;
@@ -28,6 +25,9 @@ export default function CustomerCallQueue() {
     callId,
     mode: 'customer',
     onAssigned: () => hapticImpact('medium'),
+    onEnded: () => {
+      void endCustomerCallSession({ callId, hangup });
+    },
   });
 
   const { dialError, connecting } = useDialOnAssign(callId, status, makeCall);
@@ -53,9 +53,7 @@ export default function CustomerCallQueue() {
       pulse={isAssigned || isQueued}
       avatarLabel="BS"
       onEndCall={() => {
-        hangup();
-        void cancelCustomerCall(callId).catch(() => {});
-        navigation.goBack();
+        void endCustomerCallSession({ callId, hangup });
       }}
       endLabel="Cancel call"
     >

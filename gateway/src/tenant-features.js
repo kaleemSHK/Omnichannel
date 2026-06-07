@@ -3,7 +3,7 @@ const TTL_MS = parseInt(process.env.FEATURE_CACHE_MS || '60000', 10);
 const TENANT_URL = (process.env.TENANT_URL || 'http://tenant:8802').replace(/\/$/, '');
 const TENANT_TOKEN = (process.env.TENANT_TOKEN || process.env.PLATFORM_TOKEN || '').trim();
 
-function normalizeFeatureEnabled(val) {
+export function normalizeFeatureEnabled(val) {
   if (val === false) return false;
   if (val === true) return true;
   if (val && typeof val === 'object' && 'enabled' in val) return val.enabled !== false;

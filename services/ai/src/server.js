@@ -189,6 +189,7 @@ app.post('/v1/rag/index', auth, ragFeature, async (req, res) => {
       source_type: source_type || 'plain_text',
       source_ref,
       content,
+      file_base64: req.body?.file_base64,
     });
     return ok(res, result, 202);
   } catch (e) {
@@ -205,6 +206,16 @@ app.post('/v1/rag/query', auth, ragFeature, async (req, res) => {
   }
 });
 
+app.delete('/v1/rag/documents/:documentId', auth, ragFeature, async (req, res) => {
+  if (!dbEnabled()) return fail(res, 'NOT_CONFIGURED', 'Postgres required', 501);
+  try {
+    return ok(res, await rag.deleteDocument(resolveTenantId(req), req.params.documentId));
+  } catch (e) {
+    if (e.code === 'NOT_FOUND') return fail(res, 'NOT_FOUND', e.message, 404);
+    return fail(res, 'RAG_ERROR', e.message, 500);
+  }
+});
+
 // Unified assist dispatcher — frontend calls POST /v1/assist with { action, ... }
 app.post('/v1/assist', auth, agentAssist, async (req, res) => {
   const tenantId = resolveTenantId(req);
@@ -213,18 +224,35 @@ app.post('/v1/assist', auth, agentAssist, async (req, res) => {
     if (action === 'suggestReply' || action === 'suggest') {
       const quotaCheck = await checkQuota(tenantId);
       if (!quotaCheck.ok) return fail(res, quotaCheck.code, quotaCheck.message, quotaCheck.code === 'LIMIT_EXCEEDED' ? 402 : 429);
-      const r = await assist.suggestReply(tenantId, { conversation_id: conversationId, messages, language, text, tone: 'professional' });
-      return ok(res, { data: r });
+      const r = await assist.suggestReply(tenantId, {
+        conversation_id: conversationId,
+        messages,
+        language,
+        text,
+        collection_id: req.body?.collectionId ?? req.body?.collection_id,
+        tone: 'professional',
+      });
+      return ok(res, r);
     }
     if (action === 'summarize') {
       const quotaCheck = await checkQuota(tenantId);
       if (!quotaCheck.ok) return fail(res, quotaCheck.code, quotaCheck.message, quotaCheck.code === 'LIMIT_EXCEEDED' ? 402 : 429);
-      const r = await assist.summarizeConversation(tenantId, { conversation_id: conversationId, text });
-      return ok(res, { data: r });
+      const convText =
+        text ||
+        (Array.isArray(messages) && messages.length
+          ? messages.map((m) => `${m.role ?? 'user'}: ${m.content ?? ''}`).join('\n')
+          : '');
+      const r = await assist.summarizeConversation(tenantId, { conversation_id: conversationId, text: convText });
+      return ok(res, {
+        summary: r.summary ?? '',
+        keyPoints: r.key_points ?? r.keyPoints ?? [],
+        suggested_labels: r.suggested_labels ?? [],
+        sentiment: r.sentiment ?? 'neutral',
+      });
     }
     if (action === 'classify') {
       const r = await assist.classifyTicket(tenantId, { message_sample: text });
-      return ok(res, { data: r });
+      return ok(res, r);
     }
     return fail(res, 'VALIDATION_ERROR', 'action must be suggestReply, summarize, or classify');
   } catch (e) {

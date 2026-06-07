@@ -57,15 +57,18 @@ app.get('/readyz', async (_req, res) => {
 });
 
 // ─── File-store fallback (no BLINKONE_DATABASE_URL) ───────────────────────────
-function fileListFlows() {
-  return fileStore.load().flows.map((f) => {
+function fileListFlows(tenantId) {
+  const tid = String(tenantId ?? 'default');
+  return fileStore.load().flows
+    .filter(f => String(f.tenantId ?? 'default') === tid)
+    .map((f) => {
     const ver = f.versions?.find((v) => v.version === f.activeVersion) ?? f.versions?.[0];
     return { ...f, graph: ver?.graph ?? f.graph, activeVersion: ver?.version ?? 1 };
   });
 }
 
-function fileGetFlow(id) {
-  return fileListFlows().find((x) => String(x.id) === String(id)) ?? null;
+function fileGetFlow(id, tenantId) {
+  return fileListFlows(tenantId).find((x) => String(x.id) === String(id)) ?? null;
 }
 
 // ─── Flows API ────────────────────────────────────────────────────────────────
@@ -79,7 +82,7 @@ app.get('/v1/flows', async (req, res) => {
       return fail(res, 'INTERNAL_ERROR', 'Failed to list flows', 500);
     }
   }
-  return ok(res, fileListFlows());
+  return ok(res, fileListFlows(tenantId));
 });
 
 app.get('/v1/flows/welcome', async (req, res) => {
@@ -88,7 +91,7 @@ app.get('/v1/flows/welcome', async (req, res) => {
     if (dbEnabled()) {
       return ok(res, await flowRepo.getWelcomeMessage(tenantId));
     }
-    const flows = fileListFlows();
+    const flows = fileListFlows(tenantId);
     const def = flows.find((f) => f.isDefault) ?? flows[0];
     const text = def?.graph?.nodes?.find((n) => n.id === def.graph?.entry)?.text;
     return ok(res, {
@@ -112,8 +115,43 @@ app.get('/v1/flows/:id', async (req, res) => {
       return fail(res, 'INTERNAL_ERROR', 'Failed to load flow', 500);
     }
   }
-  const f = fileGetFlow(req.params.id);
+  const f = fileGetFlow(req.params.id, tenantId);
   return f ? ok(res, f) : fail(res, 'NOT_FOUND', 'Flow not found', 404);
+});
+
+app.delete('/v1/flows/:id', auth, telephonyFeature, async (req, res) => {
+  const tenantId = resolveTenantId(req);
+  if (dbEnabled()) {
+    try {
+      const result = await flowRepo.deleteFlow(tenantId, req.params.id);
+      if (result.code === 'NOT_FOUND') return fail(res, 'NOT_FOUND', 'Flow not found', 404);
+      if (result.code === 'NOT_CONFIGURED') return fail(res, 'NOT_CONFIGURED', 'Database required', 501);
+      return ok(res, { deleted: true, id: req.params.id });
+    } catch (e) {
+      if (e.code === 'LAST_FLOW') return fail(res, 'CONFLICT', e.message, 409);
+      log.error({ err: e.message, id: req.params.id }, 'delete flow');
+      return fail(res, 'INTERNAL_ERROR', 'Failed to delete flow', 500);
+    }
+  }
+
+  try {
+    const deleted = await fileStore.withStore((s) => {
+      const tid = String(tenantId ?? 'default');
+      const idx = s.flows.findIndex(
+        (x) => String(x.id) === String(req.params.id) && String(x.tenantId ?? 'default') === tid,
+      );
+      if (idx < 0) throw Object.assign(new Error(), { code: 404 });
+      const tenantFlows = s.flows.filter((x) => String(x.tenantId ?? 'default') === tid);
+      if (tenantFlows.length <= 1) throw Object.assign(new Error(), { code: 409 });
+      s.flows.splice(idx, 1);
+      return true;
+    });
+    return deleted ? ok(res, { deleted: true, id: req.params.id }) : fail(res, 'NOT_FOUND', 'Flow not found', 404);
+  } catch (e) {
+    if (e.code === 404) return fail(res, 'NOT_FOUND', 'Flow not found', 404);
+    if (e.code === 409) return fail(res, 'CONFLICT', 'Cannot delete the only flow for this tenant', 409);
+    return fail(res, 'INTERNAL_ERROR', 'Failed to delete flow', 500);
+  }
 });
 
 app.post('/v1/flows', auth, telephonyFeature, async (req, res) => {
@@ -209,7 +247,7 @@ app.get('/v1/flows/:id/versions', async (req, res) => {
     if (versions === null) return fail(res, 'NOT_FOUND', 'Flow not found', 404);
     return ok(res, versions);
   }
-  const f = fileGetFlow(req.params.id);
+  const f = fileGetFlow(req.params.id, tenantId);
   if (!f) return fail(res, 'NOT_FOUND', 'Flow not found', 404);
   return ok(res, f.versions ?? []);
 });
@@ -223,7 +261,7 @@ app.get('/v1/flows/:id/versions/:version', async (req, res) => {
     const v = await flowRepo.getVersion(tenantId, req.params.id, verNum);
     return v ? ok(res, v) : fail(res, 'NOT_FOUND', 'Version not found', 404);
   }
-  const f = fileGetFlow(req.params.id);
+  const f = fileGetFlow(req.params.id, tenantId);
   const v = f?.versions?.find((x) => x.version === verNum);
   return v ? ok(res, v) : fail(res, 'NOT_FOUND', 'Version not found', 404);
 });

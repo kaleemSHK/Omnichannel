@@ -16,7 +16,30 @@ const BUILDER_NODE_TYPES = new Set([
   'enqueue',
   'hangup',
   'condition',
+  'schedule',
+  'webhook',
+  'set_variable',
+  'voicemail',
+  'sms',
+  'callback',
 ]);
+
+function fromRuntimeType(type: string): IVRNode['type'] {
+  switch (type) {
+    case 'enqueue':
+      return 'transfer';
+    case 'setvar':
+      return 'set_variable';
+    case 'timecheck':
+      return 'schedule';
+    case 'http':
+      return 'webhook';
+    case 'record':
+      return 'voicemail';
+    default:
+      return (BUILDER_NODE_TYPES.has(type) ? type : 'play') as IVRNode['type'];
+  }
+}
 
 interface RawGraphNode {
   id?: string;
@@ -25,8 +48,23 @@ interface RawGraphNode {
   label?: string;
   media?: string;
   next?: string;
+  routes?: Record<string, string>;
   options?: Array<{ digit?: string; key?: string; next?: string; label?: string }>;
+  branches?: Array<{ label?: string; next?: string }>;
   [k: string]: unknown;
+}
+
+function addEdgeFromNodes(
+  edges: IVREdge[],
+  ids: Set<string>,
+  src: string,
+  target: string | undefined,
+  label?: string,
+) {
+  if (!target || !ids.has(String(target))) return;
+  const edgeId = label ? `${src}-${target}-${label}` : `${src}-${target}`;
+  if (edges.some(e => e.id === edgeId)) return;
+  edges.push({ id: edgeId, source: src, target: String(target), label });
 }
 
 /**
@@ -42,15 +80,17 @@ function normalizeFlow(raw: unknown): IVRFlow {
       ...(r as unknown as IVRFlow),
       nodes: r.nodes as IVRNode[],
       edges: Array.isArray(r.edges) ? (r.edges as IVREdge[]) : [],
+      entry: typeof r.entry === 'string' ? r.entry : undefined,
     };
   }
 
-  const graph = (r.graph ?? {}) as { nodes?: RawGraphNode[] };
+  const graph = (r.graph ?? {}) as { entry?: string; nodes?: RawGraphNode[] };
   const rawNodes: RawGraphNode[] = Array.isArray(graph.nodes) ? graph.nodes : [];
+  const entry = typeof graph.entry === 'string' ? graph.entry : undefined;
 
   const nodes: IVRNode[] = rawNodes.map((n, i) => ({
     id: String(n.id ?? `node-${i}`),
-    type: (BUILDER_NODE_TYPES.has(String(n.type)) ? n.type : 'play') as IVRNode['type'],
+    type: fromRuntimeType(String(n.type ?? 'play')),
     label: String(n.text ?? n.label ?? n.id ?? n.type ?? 'Step'),
     config: { ...n },
     position: { x: 140 + (i % 3) * 240, y: 80 + Math.floor(i / 3) * 170 },
@@ -60,13 +100,22 @@ function normalizeFlow(raw: unknown): IVRFlow {
   const edges: IVREdge[] = [];
   for (const n of rawNodes) {
     const src = String(n.id ?? '');
-    if (n.next && ids.has(String(n.next))) {
-      edges.push({ id: `${src}-${n.next}`, source: src, target: String(n.next) });
-    }
+    addEdgeFromNodes(edges, ids, src, n.next ? String(n.next) : undefined);
     for (const o of Array.isArray(n.options) ? n.options : []) {
-      if (o?.next && ids.has(String(o.next))) {
-        const key = String(o.digit ?? o.key ?? o.label ?? '');
-        edges.push({ id: `${src}-${o.next}-${key}`, source: src, target: String(o.next), label: key });
+      addEdgeFromNodes(
+        edges,
+        ids,
+        src,
+        o?.next ? String(o.next) : undefined,
+        String(o.digit ?? o.key ?? o.label ?? ''),
+      );
+    }
+    for (const b of Array.isArray(n.branches) ? n.branches : []) {
+      addEdgeFromNodes(edges, ids, src, b?.next ? String(b.next) : undefined, b.label);
+    }
+    if (n.routes && typeof n.routes === 'object') {
+      for (const [digit, target] of Object.entries(n.routes)) {
+        addEdgeFromNodes(edges, ids, src, String(target), digit);
       }
     }
   }
@@ -77,6 +126,7 @@ function normalizeFlow(raw: unknown): IVRFlow {
     name: String(r.name ?? 'IVR flow'),
     description: (r.description as string | undefined) ?? undefined,
     version: Number(r.activeVersion ?? r.version ?? 1),
+    entry,
     nodes,
     edges,
     isActive: Boolean(r.isActive ?? r.activeVersionId),
@@ -141,4 +191,8 @@ export async function publishFlow(id: string, flow?: IVRFlow): Promise<IVRFlow> 
     body,
   });
   return normalizeFlow(res.data);
+}
+
+export async function deleteFlow(id: string): Promise<void> {
+  await bnFetch(SVC, `/v1/flows/${encodeURIComponent(id)}`, { method: 'DELETE' });
 }

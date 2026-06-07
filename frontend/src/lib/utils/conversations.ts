@@ -1,4 +1,4 @@
-import type { CWConversation } from '@/types';
+import type { ConversationPriority, CWConversation } from '@/types';
 
 /**
  * Chatwoot listConversations returns:
@@ -6,19 +6,64 @@ import type { CWConversation } from '@/types';
  * OR
  * { payload: CWConversation[] }
  */
+export function normalizeConversation(raw: unknown): CWConversation | null {
+  if (!raw || typeof raw !== 'object') return null;
+
+  let c = raw as Record<string, unknown>;
+  if (c.payload && typeof c.payload === 'object' && !Array.isArray(c.payload)) {
+    c = c.payload as Record<string, unknown>;
+  }
+
+  const id = typeof c.id === 'number' ? c.id : null;
+  if (id == null) return null;
+
+  const metaRaw =
+    c.meta && typeof c.meta === 'object'
+      ? { ...(c.meta as Record<string, unknown>) }
+      : {};
+
+  const rootAssignee = c.assignee as { id?: number; name?: string } | null | undefined;
+  if (rootAssignee?.id && !metaRaw.assignee) {
+    metaRaw.assignee = { id: rootAssignee.id, name: rootAssignee.name ?? 'Agent' };
+  }
+
+  const rootTeam = c.team as { id?: number; name?: string } | null | undefined;
+  if (rootTeam?.id && !metaRaw.team) {
+    metaRaw.team = { id: rootTeam.id, name: rootTeam.name ?? 'Team' };
+  }
+
+  const priorityRaw = c.priority;
+  const priority =
+    priorityRaw == null || priorityRaw === ''
+      ? null
+      : (String(priorityRaw) as ConversationPriority);
+
+  return {
+    ...(c as unknown as CWConversation),
+    id,
+    meta: metaRaw as CWConversation['meta'],
+    priority,
+    labels: Array.isArray(c.labels) ? (c.labels as string[]) : [],
+  };
+}
+
 export function parseConversationList(res: unknown): CWConversation[] {
   if (!res || typeof res !== 'object') return [];
   const r = res as Record<string, unknown>;
 
+  let items: unknown[] = [];
+
   if (r.data && typeof r.data === 'object') {
     const d = r.data as Record<string, unknown>;
-    if (Array.isArray(d.payload)) return d.payload as CWConversation[];
-    if (Array.isArray(d)) return d as CWConversation[];
+    if (Array.isArray(d.payload)) items = d.payload;
+    else if (Array.isArray(d)) items = d;
+  } else if (Array.isArray(r.payload)) {
+    items = r.payload;
   }
 
-  if (Array.isArray(r.payload)) return r.payload as CWConversation[];
-
-  return [];
+  return items
+    .map(item => normalizeConversation(item))
+    .filter((c): c is CWConversation => c != null);
 }
 
 export function extractConversationMeta(res: unknown): { next_page?: number } {

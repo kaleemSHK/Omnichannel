@@ -219,10 +219,22 @@ export function mountCustomerRoutes(app, { JWT_SECRET, log, U, TOKENS }) {
 
   app.post('/api/customer/conversations/:id/messages', customerAuth, express.json(), async (req, res) => {
     const accountId = req.customerAuth.account_id ?? req.customerAuth.tenant_id;
+    const conversationId = req.params.id;
     try {
-      const data = await cwApi(`/accounts/${accountId}/conversations/${req.params.id}/messages`, {
+      const conv = await cwApi(`/accounts/${accountId}/conversations/${conversationId}`);
+      const convContactId = conv?.meta?.sender?.id ?? conv?.contact_id ?? conv?.meta?.contact?.id;
+      const tokenContactId = req.customerAuth.contact_id;
+      if (convContactId != null && tokenContactId != null && Number(convContactId) !== Number(tokenContactId)) {
+        return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Conversation not owned by this customer' } });
+      }
+
+      const data = await cwApi(`/accounts/${accountId}/conversations/${conversationId}/messages`, {
         method: 'POST',
-        body: JSON.stringify({ content: req.body?.content ?? '', private: false }),
+        body: JSON.stringify({
+          content: req.body?.content ?? '',
+          private: false,
+          message_type: 'incoming',
+        }),
       });
       return res.json(data);
     } catch (e) {

@@ -37,6 +37,7 @@ import { SLAPoliciesSection } from '@/components/settings/SLAPoliciesSection';
 import { RecordingSection } from '@/components/settings/RecordingSection';
 import { ACWSection } from '@/components/settings/ACWSection';
 import { VoiceSection } from '@/components/settings/VoiceSection';
+import { TelephonySection } from '@/components/settings/TelephonySection';
 
 export default function SettingsPage() {
   const [view, setView] = useState<SettingsView>('profile');
@@ -77,6 +78,7 @@ export default function SettingsPage() {
     recording: <RecordingSection />,
     acw: <ACWSection />,
     voice: <VoiceSection />,
+    telephony: <TelephonySection />,
   };
 
   return (

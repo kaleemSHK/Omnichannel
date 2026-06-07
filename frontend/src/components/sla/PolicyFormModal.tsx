@@ -6,12 +6,15 @@
  */
 
 import { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
 import { Sheet } from '@/components/ui/Sheet';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useCreatePolicy, useUpdatePolicy } from '@/lib/hooks/useSla';
+import { listCalendars } from '@/lib/api/sla';
+import { isGatewayQueryEnabled } from '@/lib/demo/config';
 import type { SLAPolicy } from '@/types';
 
 interface Props {
@@ -23,11 +26,11 @@ interface Props {
 
 const TIER_OPTIONS: SLAPolicy['tier'][] = ['gold', 'silver', 'bronze', 'custom'];
 
-const TIER_DEFAULTS: Record<SLAPolicy['tier'], { firstResponseMinutes: number; resolutionHours: number; escalationHours: number }> = {
-  gold:   { firstResponseMinutes: 15, resolutionHours: 4,  escalationHours: 2 },
-  silver: { firstResponseMinutes: 30, resolutionHours: 8,  escalationHours: 4 },
-  bronze: { firstResponseMinutes: 60, resolutionHours: 24, escalationHours: 8 },
-  custom: { firstResponseMinutes: 60, resolutionHours: 24, escalationHours: 8 },
+const TIER_DEFAULTS: Record<SLAPolicy['tier'], { firstResponseMinutes: number; resolutionHours: number }> = {
+  gold:   { firstResponseMinutes: 15, resolutionHours: 4 },
+  silver: { firstResponseMinutes: 30, resolutionHours: 8 },
+  bronze: { firstResponseMinutes: 60, resolutionHours: 24 },
+  custom: { firstResponseMinutes: 60, resolutionHours: 24 },
 };
 
 const TIER_LABEL: Record<SLAPolicy['tier'], string> = {
@@ -39,7 +42,7 @@ interface FormState {
   tier: SLAPolicy['tier'];
   firstResponseMinutes: string;
   resolutionHours: string;
-  escalationHours: string;
+  calendarId: string;
 }
 
 function defaultState(existing?: SLAPolicy | null): FormState {
@@ -49,7 +52,7 @@ function defaultState(existing?: SLAPolicy | null): FormState {
       tier: existing.tier,
       firstResponseMinutes: String(existing.firstResponseMinutes),
       resolutionHours: String(existing.resolutionHours),
-      escalationHours: String(existing.escalationHours),
+      calendarId: existing.calendarId ?? '',
     };
   }
   return {
@@ -57,7 +60,7 @@ function defaultState(existing?: SLAPolicy | null): FormState {
     tier: 'silver',
     firstResponseMinutes: '30',
     resolutionHours: '8',
-    escalationHours: '4',
+    calendarId: '',
   };
 }
 
@@ -80,9 +83,20 @@ export function PolicyFormModal({ open, onClose, existing }: Props) {
       tier,
       firstResponseMinutes: String(d.firstResponseMinutes),
       resolutionHours: String(d.resolutionHours),
-      escalationHours: String(d.escalationHours),
     }));
   }
+
+  const { data: calendars = [] } = useQuery({
+    queryKey: ['sla-calendars'],
+    queryFn: listCalendars,
+    enabled: open && isGatewayQueryEnabled(),
+  });
+
+  useEffect(() => {
+    if (!existing && calendars.length && !form.calendarId) {
+      setForm(f => ({ ...f, calendarId: calendars[0].id }));
+    }
+  }, [calendars, existing, form.calendarId]);
 
   function handleSubmit() {
     const payload = {
@@ -90,7 +104,7 @@ export function PolicyFormModal({ open, onClose, existing }: Props) {
       tier: form.tier,
       firstResponseMinutes: Number(form.firstResponseMinutes),
       resolutionHours: Number(form.resolutionHours),
-      escalationHours: Number(form.escalationHours),
+      calendarId: form.calendarId || undefined,
     };
 
     if (!payload.name) return;
@@ -165,18 +179,24 @@ export function PolicyFormModal({ open, onClose, existing }: Props) {
           />
         </div>
 
-        {/* Escalation */}
+        {/* Business hours calendar */}
         <div className="space-y-1">
-          <Label htmlFor="escalation" className="text-xs">Escalate after (hours)</Label>
-          <Input
-            id="escalation"
-            type="number"
-            min={1}
-            value={form.escalationHours}
-            onChange={e => setForm(f => ({ ...f, escalationHours: e.target.value }))}
-          />
+          <Label htmlFor="calendar" className="text-xs">Business hours calendar</Label>
+          <select
+            id="calendar"
+            className="w-full border rounded-md px-3 py-2 text-sm bg-white"
+            value={form.calendarId}
+            onChange={e => setForm(f => ({ ...f, calendarId: e.target.value }))}
+          >
+            <option value="">24/7 (no calendar)</option>
+            {calendars.map(c => (
+              <option key={c.id} value={c.id}>
+                {c.name} ({c.timezone})
+              </option>
+            ))}
+          </select>
           <p className="text-[10px] text-muted-foreground">
-            SLA worker will notify the escalation service after this many hours without resolution.
+            Tier applies to priorities: Gold = urgent/high, Silver = medium, Bronze = low.
           </p>
         </div>
 

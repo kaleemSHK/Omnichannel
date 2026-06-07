@@ -1,19 +1,35 @@
 'use client';
 
-import { Copy, Pencil } from 'lucide-react';
+import { Copy, History, Pencil, Trash2 } from 'lucide-react';
 import { ActionsList } from '@/components/escalation/ActionsList';
 import { cn } from '@/lib/utils/cn';
-import type { EscalationRuleView } from '@/lib/utils/escalation';
+import { ESCALATION_TRIGGERS, type EscalationRuleView } from '@/lib/utils/escalation';
 
 interface Props {
   rule: EscalationRuleView;
   onToggle: (enabled: boolean) => void;
   onDuplicate: () => void;
   onEdit?: () => void;
+  onHistory?: () => void;
+  onDelete?: () => void;
 }
 
-export function RulesetCard({ rule, onToggle, onDuplicate, onEdit }: Props) {
+function triggerLabel(value: string) {
+  return ESCALATION_TRIGGERS.find(t => t.value === value)?.label ?? value;
+}
+
+function formatLastRun(iso: string | null | undefined) {
+  if (!iso) return null;
+  try {
+    return new Date(iso).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' });
+  } catch {
+    return iso;
+  }
+}
+
+export function RulesetCard({ rule, onToggle, onDuplicate, onEdit, onHistory, onDelete }: Props) {
   const active = rule.isActive && rule.rulesetEnabled;
+  const lastRun = formatLastRun(rule.lastTriggeredAt);
 
   return (
     <article
@@ -23,10 +39,17 @@ export function RulesetCard({ rule, onToggle, onDuplicate, onEdit }: Props) {
       )}
     >
       <div className="flex items-start justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <h3 className="font-medium text-gray-900">{rule.name}</h3>
+          <p className="text-xs text-gray-500 mt-0.5">
+            Trigger: {triggerLabel(rule.trigger)}
+            {typeof rule.runCount === 'number' && (
+              <> · {rule.runCount} run{rule.runCount === 1 ? '' : 's'}</>
+            )}
+            {lastRun && <> · Last fired {lastRun}</>}
+          </p>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
           <button
             type="button"
             role="switch"
@@ -54,7 +77,17 @@ export function RulesetCard({ rule, onToggle, onDuplicate, onEdit }: Props) {
             </span>
             {active ? 'Active' : 'Inactive'}
           </button>
-          {onEdit && (
+          {onHistory && !rule.id.includes('-placeholder') && (
+            <button
+              type="button"
+              onClick={onHistory}
+              className="text-xs text-gray-500 hover:text-gray-800 inline-flex items-center gap-1"
+            >
+              <History size={12} />
+              History
+            </button>
+          )}
+          {onEdit && !rule.id.includes('-placeholder') && (
             <button
               type="button"
               onClick={onEdit}
@@ -62,6 +95,16 @@ export function RulesetCard({ rule, onToggle, onDuplicate, onEdit }: Props) {
             >
               <Pencil size={12} />
               Edit
+            </button>
+          )}
+          {onDelete && !rule.id.includes('-placeholder') && (
+            <button
+              type="button"
+              onClick={onDelete}
+              className="text-xs text-gray-500 hover:text-red-600 inline-flex items-center gap-1"
+            >
+              <Trash2 size={12} />
+              Delete
             </button>
           )}
           <button

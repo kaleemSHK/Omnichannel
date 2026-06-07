@@ -1,6 +1,6 @@
 import { forwardUsageToBilling } from '../_shared/lib/billing-forward.js';
 import { setAgentState, getAgentState, dequeueCall } from './redis-state.js';
-import { getCallMeta } from './call-meta.js';
+import { getCallMeta, setCallMeta } from './call-meta.js';
 import * as queueRepo from './queue-repo.js';
 import { writeCdr } from './cdr-client.js';
 
@@ -62,6 +62,15 @@ export async function completeCall(tenantId, { callId, disposition, agentId }) {
       quantity: minutes,
       sourceService: 'routing',
       sourceEventId: `route-complete-${tenantId}-${callId}`,
+    });
+  }
+
+  if (meta && callId) {
+    await setCallMeta(tenantId, callId, {
+      ...meta,
+      completedAt: endedAt,
+      agentId: null,
+      assignedAt: null,
     });
   }
 

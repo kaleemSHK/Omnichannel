@@ -5,13 +5,29 @@ export function mapApiInstance(raw: Record<string, unknown>): SlaInstanceView {
   let uiStatus: SlaUiStatus = 'active';
   if (status === 'breached') uiStatus = 'breached';
   else if (status === 'warning_sent') uiStatus = 'at_risk';
+  else if (status === 'met') uiStatus = 'met';
 
   const dueAt = String(raw.dueAt ?? raw.due_at ?? '');
   const startedAt = String(raw.startedAt ?? raw.started_at ?? '');
-  const dueMs = dueAt ? new Date(dueAt).getTime() : Date.now();
-  const startMs = startedAt ? new Date(startedAt).getTime() : dueMs - 3_600_000;
-  const totalSeconds = Math.max(60, Math.floor((dueMs - startMs) / 1000));
-  const elapsedSeconds = Math.floor((Date.now() - startMs) / 1000);
+  const dueMs = dueAt ? new Date(dueAt).getTime() : NaN;
+  const startMs = startedAt ? new Date(startedAt).getTime() : NaN;
+  const totalSeconds =
+    Number.isFinite(dueMs) && Number.isFinite(startMs)
+      ? Math.max(60, Math.floor((dueMs - startMs) / 1000))
+      : 3600;
+  const elapsedSeconds = Number.isFinite(startMs)
+    ? Math.max(0, Math.floor((Date.now() - startMs) / 1000))
+    : 0;
+
+  const targetType = String(raw.targetType ?? raw.target_type ?? '');
+  const targetLabel =
+    targetType === 'first_response'
+      ? 'First response'
+      : targetType === 'next_response'
+        ? 'Next response'
+        : targetType === 'resolution'
+          ? 'Resolution'
+          : targetType;
 
   const policyName = String(raw.policyName ?? raw.policy_name ?? 'SLA');
   const tierGuess = policyName.toLowerCase().includes('gold')
@@ -33,7 +49,7 @@ export function mapApiInstance(raw: Record<string, unknown>): SlaInstanceView {
       name: String((raw.contact as { name?: string })?.name ?? `Conversation ${raw.conversationId}`),
       tier: tierGuess,
     },
-    subject: String(raw.subject ?? policyName),
+    subject: String(raw.subject ?? (targetLabel ? `${policyName} · ${targetLabel}` : policyName)),
     uiStatus,
     dueAt,
     startedAt,
@@ -59,13 +75,17 @@ export function statusChipClass(status: SlaUiStatus): string {
 }
 
 export function formatRemaining(inst: SlaInstanceView): string {
-  const left = (inst.totalSeconds ?? 0) - (inst.elapsedSeconds ?? 0);
-  const abs = Math.abs(left);
+  const dueMs = inst.dueAt ? new Date(inst.dueAt).getTime() : NaN;
+  if (!Number.isFinite(dueMs)) return '—';
+  const leftSec = Math.floor((dueMs - Date.now()) / 1000);
+  const abs = Math.abs(leftSec);
   const h = Math.floor(abs / 3600);
   const m = Math.floor((abs % 3600) / 60);
   const label = h > 0 ? `${h}h ${m}m` : `${m}m`;
-  if (inst.uiStatus === 'breached') return `−${label}`;
+  if (inst.uiStatus === 'breached' || leftSec < 0) return `−${label}`;
   if (inst.uiStatus === 'met') return '—';
+  // Sanity cap — bad legacy rows (e.g. missing calendar during backfill)
+  if (leftSec > 365 * 24 * 3600) return '—';
   return `${label} left`;
 }
 

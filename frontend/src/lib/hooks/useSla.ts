@@ -13,6 +13,7 @@ import {
   type SlaBreachStat,
 } from '@/lib/api/sla';
 import { isDemoDataEnabled, isGatewayQueryEnabled } from '@/lib/demo/config';
+import { useTenantAccountId } from '@/lib/hooks/useTenantAccountId';
 import {
   demoDashboard,
   DEMO_POLICIES,
@@ -29,13 +30,13 @@ export type SlaFilter = 'dashboard' | 'breached' | 'at_risk' | 'active' | 'met';
 
 export function useSlaDashboard() {
   const gwEnabled = isGatewayQueryEnabled();
+  const tenantId = String(useTenantAccountId() || '');
   return useQuery({
-    queryKey: ['sla-dashboard', isDemoDataEnabled()],
+    queryKey: ['sla-dashboard', tenantId, isDemoDataEnabled()],
     queryFn: async () => {
       if (isDemoDataEnabled()) return demoDashboard();
-      try {
-        const raw = await getSlaDashboard();
-        const data = raw as {
+      const raw = await getSlaDashboard();
+      const data = raw as {
           breached?: unknown[];
           atRisk?: unknown[];
           active?: unknown[];
@@ -62,26 +63,11 @@ export function useSlaDashboard() {
             atRiskCount: data.stats?.atRiskCount ?? atRisk.length,
             activeCount: data.stats?.activeCount ?? active.length,
             metToday: data.stats?.metToday ?? met.length,
-            compliancePct: data.stats?.compliancePct ?? 0,
-          },
-        };
-      } catch {
-        return {
-          breached: [],
-          atRisk: [],
-          active: [],
-          met: [],
-          stats: {
-            breachedCount: 0,
-            atRiskCount: 0,
-            activeCount: 0,
-            metToday: 0,
-            compliancePct: 0,
-          },
-        };
-      }
+          compliancePct: data.stats?.compliancePct ?? 0,
+        },
+      };
     },
-    enabled: gwEnabled,
+    enabled: gwEnabled && Boolean(tenantId),
     refetchInterval: gwEnabled ? 30_000 : false,
   });
 }
@@ -130,18 +116,15 @@ export function useSlaForConversation(conversationId?: number): SlaInstanceView 
 
 export function useSlaPolicies() {
   const gwEnabled = isGatewayQueryEnabled();
+  const tenantId = String(useTenantAccountId() || '');
   return useQuery({
-    queryKey: ['sla-policies', isDemoDataEnabled()],
+    queryKey: ['sla-policies', tenantId, isDemoDataEnabled()],
     queryFn: async () => {
       if (isDemoDataEnabled()) return DEMO_POLICIES;
-      try {
-        const policies = await listPolicies();
-        return policies.map(p => normalizePolicy(p));
-      } catch {
-        return [];
-      }
+      const policies = await listPolicies();
+      return policies.map(p => normalizePolicy(p));
     },
-    enabled: gwEnabled,
+    enabled: gwEnabled && Boolean(tenantId),
   });
 }
 
@@ -220,8 +203,9 @@ export function useDeletePolicy() {
 
 export function useSlaBreachStats(since: number, until: number): { data: SlaBreachStat[]; isLoading: boolean } {
   const gwEnabled = isGatewayQueryEnabled();
+  const tenantId = String(useTenantAccountId() || '');
   const q = useQuery<SlaBreachStat[]>({
-    queryKey: ['sla-breach-stats', since, until, isDemoDataEnabled()],
+    queryKey: ['sla-breach-stats', tenantId, since, until, isDemoDataEnabled()],
     queryFn: async (): Promise<SlaBreachStat[]> => {
       if (isDemoDataEnabled()) return DEMO_SLA_BREACH_STATS;
       try {
@@ -230,7 +214,7 @@ export function useSlaBreachStats(since: number, until: number): { data: SlaBrea
         return DEMO_SLA_BREACH_STATS;
       }
     },
-    enabled: gwEnabled,
+    enabled: gwEnabled && Boolean(tenantId),
     staleTime: 5 * 60_000,
   });
   return { data: q.data ?? [], isLoading: q.isLoading };

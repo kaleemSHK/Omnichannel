@@ -34,6 +34,8 @@ import {
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store/auth';
 import { can, canPermission } from '@/lib/rbac';
+import { isSettingsViewEnabled } from '@/lib/features/access';
+import { useTenantFeatures } from '@/lib/hooks/useTenantFeatures';
 
 const NAV_ITEMS = [
   { id: 'account', label: 'Account Settings', icon: Building2, group: 'Account' },
@@ -62,6 +64,7 @@ const NAV_ITEMS = [
   { id: 'recording',     label: 'Recording',          icon: Mic,         group: 'Voice & Calling' },
   { id: 'acw',           label: 'After Call Work',    icon: Clock,       group: 'Voice & Calling' },
   { id: 'voice',         label: 'Voice & Language',   icon: Volume2,     group: 'Voice & Calling' },
+  { id: 'telephony',     label: 'PSTN & Twilio',      icon: PhoneCall,   group: 'Voice & Calling' },
   { id: 'mfa',           label: 'Two-Factor Auth',    icon: ShieldCheck, group: 'Security' },
   { id: 'totp', label: 'Authenticator App', icon: ShieldCheck, group: 'Security' },
   { id: 'branding', label: 'Branding', icon: Palette, group: 'Platform' },
@@ -82,6 +85,8 @@ interface Props {
 
 export function SettingsNav({ active, onChange }: Props) {
   const role = useAuthStore(s => s.user?.role);
+  const { features } = useTenantFeatures();
+  const bypassFeatures = role === 'platform_admin';
 
   const visible = NAV_ITEMS.filter(item => {
     if (item.id === 'account') return can(role, 'manageTeam');
@@ -110,7 +115,9 @@ export function SettingsNav({ active, onChange }: Props) {
     if (item.id === 'recording') return can(role, 'manageTeam');
     if (item.id === 'acw') return can(role, 'manageTeam');
     if (item.id === 'voice') return can(role, 'manageTeam');
+    if (item.id === 'telephony') return can(role, 'manageTeam');
     if (item.id === 'mfa') return true; // every user manages their own MFA
+    if (!bypassFeatures && !isSettingsViewEnabled(item.id, features)) return false;
     return true;
   });
 

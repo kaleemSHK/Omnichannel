@@ -4,6 +4,7 @@
 
 import { cwFetch } from './client';
 import { CHATWOOT_URL } from '@/lib/env';
+import { parseContactDetail } from '@/lib/utils/contacts';
 import type { CWContact, ApiResponse } from '@/types';
 import { useAuthStore } from '@/lib/store/auth';
 
@@ -30,7 +31,8 @@ export async function searchContacts(
 }
 
 export async function getContact(id: number): Promise<CWContact> {
-  return cwFetch<CWContact>(`/accounts/${accountId()}/contacts/${id}`);
+  const res = await cwFetch<unknown>(`/accounts/${accountId()}/contacts/${id}`);
+  return parseContactDetail(res);
 }
 
 export async function listContacts(page = 1): Promise<ApiResponse<CWContact[]>> {
@@ -46,20 +48,22 @@ export async function createContact(data: {
   company_name?: string;
   custom_attributes?: Record<string, string>;
 }): Promise<CWContact> {
-  return cwFetch<CWContact>(`/accounts/${accountId()}/contacts`, {
+  const res = await cwFetch<unknown>(`/accounts/${accountId()}/contacts`, {
     method: 'POST',
     body: JSON.stringify(data),
   });
+  return parseContactDetail(res);
 }
 
 export async function updateContact(
   id: number,
   data: ContactWritePayload & Partial<CWContact>,
 ): Promise<CWContact> {
-  return cwFetch<CWContact>(`/accounts/${accountId()}/contacts/${id}`, {
+  const res = await cwFetch<unknown>(`/accounts/${accountId()}/contacts/${id}`, {
     method: 'PATCH',
     body: JSON.stringify(data),
   });
+  return parseContactDetail(res);
 }
 
 export async function deleteContact(id: number): Promise<void> {

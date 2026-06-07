@@ -35,4 +35,10 @@ describe('WorkingTime', () => {
     const due = addBusinessMinutes(start, 30, cal);
     assert.ok(new Date(due) > new Date('2026-05-18T23:59:59Z'));
   });
+
+  it('falls back to wall-clock when no business hours configured', () => {
+    const start = '2026-05-18T09:00:00.000Z';
+    const due = addBusinessMinutes(start, 60, {});
+    assert.equal(new Date(due).getTime() - new Date(start).getTime(), 60 * 60_000);
+  });
 });

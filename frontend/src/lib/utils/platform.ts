@@ -5,7 +5,20 @@ export type PlatformFeatureKey =
   | keyof TenantFeatures
   | 'aiAssist'
   | 'ivr'
-  | 'billing';
+  | 'billing'
+  | 'escalation';
+
+/** DB `tenant_features.feature_key` → UI toggle key */
+const BACKEND_FEATURE_ALIASES: Record<string, PlatformFeatureKey> = {
+  escalation: 'escalation',
+  sla: 'sla',
+  rag: 'rag',
+  voice_bot: 'voiceBot',
+  agent_assist: 'aiAssist',
+  telephony: 'ivr',
+  'calling.pstn': 'pstn',
+  'calling.whatsapp': 'whatsappCalling',
+};
 
 export const PLATFORM_FEATURE_FLAGS: { key: PlatformFeatureKey; label: string }[] = [
   { key: 'pstn', label: 'PSTN calling' },
@@ -13,6 +26,7 @@ export const PLATFORM_FEATURE_FLAGS: { key: PlatformFeatureKey; label: string }[
   { key: 'aiAssist', label: 'AI assist' },
   { key: 'ivr', label: 'IVR builder' },
   { key: 'sla', label: 'SLA' },
+  { key: 'escalation', label: 'Escalation rules' },
   { key: 'voiceBot', label: 'Voice bot' },
   { key: 'rag', label: 'RAG knowledge base' },
   { key: 'billing', label: 'Billing module' },
@@ -59,6 +73,7 @@ export function defaultFeatures(partial?: Record<string, unknown>): Record<Platf
     rag: false,
     voiceBot: false,
     sla: false,
+    escalation: false,
     outboundDialer: false,
     aiAssist: false,
     ivr: false,
@@ -67,6 +82,9 @@ export function defaultFeatures(partial?: Record<string, unknown>): Record<Platf
   if (!partial) return base;
   for (const def of PLATFORM_FEATURE_FLAGS) {
     if (partial[def.key] != null) base[def.key] = featureEnabled(partial[def.key]);
+  }
+  for (const [backendKey, uiKey] of Object.entries(BACKEND_FEATURE_ALIASES)) {
+    if (partial[backendKey] != null) base[uiKey] = featureEnabled(partial[backendKey]);
   }
   if (partial.telephony != null) base.ivr = featureEnabled(partial.telephony);
   if (partial.rag != null && partial.aiAssist == null) base.aiAssist = featureEnabled(partial.rag);
@@ -80,10 +98,15 @@ export function featuresToApiPatch(
   key: PlatformFeatureKey,
   value: boolean,
 ): Partial<TenantFeatures> & Record<string, boolean> {
-  if (key === 'aiAssist') return { rag: value };
-  if (key === 'ivr') return { telephony: value, outboundDialer: value };
+  if (key === 'aiAssist') return { agent_assist: value, rag: value };
+  if (key === 'ivr') return { telephony: value };
   if (key === 'billing') return { outboundDialer: value };
-  return { [key]: value } as Partial<TenantFeatures>;
+  if (key === 'voiceBot') return { voice_bot: value };
+  if (key === 'pstn') return { 'calling.pstn': value };
+  if (key === 'whatsappCalling') return { 'calling.whatsapp': value };
+  if (key === 'escalation') return { escalation: value };
+  if (key === 'sla') return { sla: value };
+  return { [key]: value } as Partial<TenantFeatures> & Record<string, boolean>;
 }
 
 export function tenantInitials(name: string): string {

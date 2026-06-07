@@ -6,6 +6,7 @@ import { useCallsStore } from '@/store/calls';
 import { useSip } from '@/providers/sip-context';
 import { hapticImpact, hapticSelection } from '@/lib/haptics';
 import { setSpeakerphoneOn } from '@/lib/audio';
+import { endCustomerCallSession } from '@/lib/end-customer-call';
 import { CallScreenLayout, CallTheme } from '@/components/calling/CallScreenLayout';
 
 function formatSec(sec: number): string {
@@ -53,6 +54,11 @@ export default function CallActiveScreen() {
 
   async function handleEndCall() {
     hapticImpact('heavy');
+    const queueId = useCallsStore.getState().customerQueueCallId;
+    if (queueId) {
+      await endCustomerCallSession({ callId: queueId, hangup });
+      return;
+    }
     hangup();
     useCallsStore.getState().setCustomerQueueCallId(null);
     if (navigation.canGoBack()) navigation.goBack();

@@ -1,11 +1,11 @@
+import { requireTenantId, resolveTenantIdFromReq } from '../_shared/lib/tenant-id.js';
+
 export function resolveTenantId(req) {
-  const header = req.headers['x-blinkone-tenant-id'];
-  if (typeof header === 'string' && header.trim()) return header.trim();
-  const q = req.query?.tenant_id ?? req.query?.tenantId;
-  if (typeof q === 'string' && q.trim()) return q.trim();
-  const body = req.body?.tenantId ?? req.body?.tenant_id;
-  if (body != null && body !== '') return String(body);
-  return (process.env.TICKETS_DEFAULT_TENANT || 'default').trim();
+  try {
+    return requireTenantId(req, { allowQuery: true, allowBody: true });
+  } catch {
+    return resolveTenantIdFromReq(req, { allowQuery: true, allowBody: true }) || 'default';
+  }
 }
 
 export function resolveAccountId(req) {

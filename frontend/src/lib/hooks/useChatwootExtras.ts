@@ -144,6 +144,7 @@ export function useConversationLabels(conversationId: number, currentLabels: str
         };
       });
       qc.invalidateQueries({ queryKey: ['conversations'] });
+      qc.invalidateQueries({ queryKey: ['conversation', conversationId] });
     },
   });
 }
@@ -186,6 +187,7 @@ export function useAssignTeam(conversationId: number, currentAssigneeId?: number
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['conversations'] });
+      qc.invalidateQueries({ queryKey: ['conversation', conversationId] });
     },
   });
 }
