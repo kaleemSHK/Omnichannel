@@ -51,28 +51,35 @@ async function pauseCampaign(id: string): Promise<Campaign> {
   return res.data;
 }
 
+import { useTenantId } from '@/lib/hooks/useTenantScope';
+
 export function CampaignPanel() {
+  const tenantId = useTenantId();
   const qc = useQueryClient();
   const [form, setForm] = useState({ name: '', type: 'sms' as Campaign['type'], messageTemplate: '' });
   const [showForm, setShowForm] = useState(false);
 
-  const { data: campaigns = [], isLoading } = useQuery({ queryKey: ['campaigns'], queryFn: listCampaigns });
+  const { data: campaigns = [], isLoading } = useQuery({
+    queryKey: ['campaigns', tenantId],
+    queryFn: listCampaigns,
+  });
 
   const create = useMutation({
     mutationFn: () => createCampaign(form),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['campaigns'] }); setShowForm(false); setForm({ name: '', type: 'sms', messageTemplate: '' }); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['campaigns', tenantId] }); setShowForm(false); setForm({ name: '', type: 'sms', messageTemplate: '' }); },
     onError: () => toast.error('Failed to create campaign. Please try again.'),
   });
 
   const start = useMutation({
     mutationFn: startCampaign,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['campaigns'] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['campaigns', tenantId] }),
     onError: () => toast.error('Failed to start campaign.'),
   });
 
   const pause = useMutation({
     mutationFn: pauseCampaign,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['campaigns'] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['campaigns', tenantId] }),
     onError: () => toast.error('Failed to pause campaign.'),
   });
 

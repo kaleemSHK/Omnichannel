@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils/cn';
 import { ChannelConfigFields } from './ChannelConfigFields';
 import { WorkingHoursFields } from './WorkingHoursFields';
 import { InboxAgentsPanel } from './InboxAgentsPanel';
+import { WhatsAppIntegrationPanel } from './WhatsAppIntegrationPanel';
 import { CHANNEL_META } from './InboxCard';
 import {
   useInboxDetail,
@@ -22,7 +23,7 @@ import {
 import type { CWInbox } from '@/types';
 import type { ChannelType, WorkingHoursDay } from '@/lib/api/inboxes';
 
-type TabId = 'settings' | 'agents' | 'hours';
+type TabId = 'settings' | 'integration' | 'agents' | 'hours';
 
 interface Props {
   inbox: CWInbox | null;
@@ -99,8 +100,11 @@ export function InboxEditDrawer({ inbox, onClose }: Props) {
     saveHours({ inboxId: inbox!.id, hours });
   }
 
+  const isWhatsApp = channelType === 'Channel::Whatsapp';
+
   const tabs: { id: TabId; label: string }[] = [
     { id: 'settings', label: 'Settings' },
+    ...(isWhatsApp ? [{ id: 'integration' as const, label: 'Integration' }] : []),
     { id: 'agents', label: 'Agents' },
     { id: 'hours', label: 'Working hours' },
   ];
@@ -228,6 +232,10 @@ export function InboxEditDrawer({ inbox, onClose }: Props) {
             </>
           )}
         </div>
+      )}
+
+      {tab === 'integration' && isWhatsApp && (
+        <WhatsAppIntegrationPanel inboxId={inbox.id} />
       )}
 
       {tab === 'agents' && <InboxAgentsPanel inboxId={inbox.id} />}

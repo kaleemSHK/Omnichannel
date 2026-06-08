@@ -14,11 +14,13 @@ import {
   updateTelephonyConfig,
   type TelephonyConfig,
 } from '@/lib/api/telephony-config';
+import { useTenantId } from '@/lib/hooks/useTenantScope';
 
 export function TelephonySection() {
+  const tenantId = useTenantId();
   const qc = useQueryClient();
   const { data, isLoading } = useQuery({
-    queryKey: ['telephony-config'],
+    queryKey: ['telephony-config', tenantId],
     queryFn: getTelephonyConfig,
   });
   const [form, setForm] = useState<TelephonyConfig | null>(null);
@@ -30,7 +32,7 @@ export function TelephonySection() {
   const save = useMutation({
     mutationFn: () => updateTelephonyConfig(form ?? {}),
     onSuccess: next => {
-      qc.setQueryData(['telephony-config'], next);
+      qc.setQueryData(['telephony-config', tenantId], next);
       toast.success('PSTN / Twilio settings saved');
     },
     onError: (e: Error) => toast.error(e.message || 'Save failed'),

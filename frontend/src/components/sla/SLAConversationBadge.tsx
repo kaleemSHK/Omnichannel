@@ -6,7 +6,7 @@
  * Used inside AgentAssistPanel.
  */
 
-import { useSlaForConversation } from '@/lib/hooks/useSla';
+import { useConversationSla } from '@/lib/hooks/useSla';
 import { formatRemaining, formatDeadline, statusChipClass } from '@/lib/utils/sla';
 import { uiStatusLabel } from '@/lib/hooks/useSla';
 import { CountdownBar } from '@/components/sla/CountdownBar';
@@ -17,7 +17,11 @@ interface Props {
 }
 
 export function SLAConversationBadge({ conversationId }: Props) {
-  const inst = useSlaForConversation(conversationId);
+  const { data: inst, isLoading } = useConversationSla(conversationId);
+
+  if (isLoading) {
+    return <p className="text-xs text-muted-foreground">Loading SLA…</p>;
+  }
 
   if (!inst) {
     return (

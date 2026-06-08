@@ -1,5 +1,6 @@
 import { cwFetch } from './client';
 import { useAuthStore } from '@/lib/store/auth';
+import { CHATWOOT_URL } from '@/lib/env';
 
 /** Extended inbox — superset of CWInbox (add fields without touching types/index.ts) */
 export interface InboxDetail {
@@ -13,12 +14,16 @@ export interface InboxDetail {
   auto_assignment?: boolean;
   csat_survey_enabled?: boolean;
   email?: string;
+  forward_to_email?: string;
   phone_number?: string;
   widget_color?: string;
   welcome_title?: string;
   welcome_tagline?: string;
+  website_url?: string;
+  website_token?: string;
   sip_extension?: string;
   whatsapp_api_key?: string;
+  webhook_url?: string;
 }
 
 export type ChannelType =
@@ -27,7 +32,11 @@ export type ChannelType =
   | 'Channel::WebWidget'
   | 'Channel::TwilioSms'
   | 'Channel::Voice'
-  | 'Channel::Api';
+  | 'Channel::Api'
+  | 'Channel::Telegram'
+  | 'Channel::Line'
+  | 'Channel::FacebookPage'
+  | 'Channel::Instagram';
 
 export interface InboxMember {
   id: number;
@@ -71,8 +80,34 @@ const CHANNEL_TYPE_TO_CHATWOOT: Record<ChannelType, string> = {
   'Channel::Api': 'api',
   'Channel::Whatsapp': 'whatsapp',
   'Channel::TwilioSms': 'twilio_sms',
-  // BlinkOne telephony — no native CW voice channel; API inbox works for programmatic voice events.
+  'Channel::Telegram': 'telegram',
+  'Channel::Line': 'line',
   'Channel::Voice': 'api',
+  'Channel::FacebookPage': 'facebook',
+  'Channel::Instagram': 'instagram',
+};
+
+const CHATWOOT_TO_CHANNEL_TYPE: Record<string, ChannelType> = {
+  web_widget: 'Channel::WebWidget',
+  email: 'Channel::Email',
+  api: 'Channel::Api',
+  whatsapp: 'Channel::Whatsapp',
+  twilio_sms: 'Channel::TwilioSms',
+  sms: 'Channel::TwilioSms',
+  telegram: 'Channel::Telegram',
+  line: 'Channel::Line',
+  facebook: 'Channel::FacebookPage',
+  'Channel::FacebookPage': 'Channel::FacebookPage',
+  instagram: 'Channel::Instagram',
+  'Channel::Instagram': 'Channel::Instagram',
+  'Channel::WebWidget': 'Channel::WebWidget',
+  'Channel::Email': 'Channel::Email',
+  'Channel::Api': 'Channel::Api',
+  'Channel::Whatsapp': 'Channel::Whatsapp',
+  'Channel::TwilioSms': 'Channel::TwilioSms',
+  'Channel::Telegram': 'Channel::Telegram',
+  'Channel::Line': 'Channel::Line',
+  'Channel::Voice': 'Channel::Voice',
 };
 
 function defaultWebsiteUrl(): string {
@@ -101,6 +136,21 @@ export function buildChatwootCreateInboxBody(data: CreateInboxPayload): Record<s
       break;
     case 'Channel::Email':
       channel.email = fields.email;
+      if (fields.forward_to_email) channel.forward_to_email = fields.forward_to_email;
+      if (fields.imap_enabled === 'true' || fields.imap_enabled === true) {
+        channel.imap_enabled = true;
+        channel.imap_address = fields.imap_address;
+        channel.imap_port = Number(fields.imap_port || 993);
+        channel.imap_email = fields.imap_email ?? fields.email;
+        channel.imap_password = fields.imap_password;
+      }
+      if (fields.smtp_enabled === 'true' || fields.smtp_enabled === true) {
+        channel.smtp_enabled = true;
+        channel.smtp_address = fields.smtp_address;
+        channel.smtp_port = Number(fields.smtp_port || 587);
+        channel.smtp_email = fields.smtp_email ?? fields.email;
+        channel.smtp_password = fields.smtp_password;
+      }
       break;
     case 'Channel::Api':
       if (fields.webhook_url) channel.webhook_url = fields.webhook_url;
@@ -119,10 +169,18 @@ export function buildChatwootCreateInboxBody(data: CreateInboxPayload): Record<s
       break;
     case 'Channel::Whatsapp':
       if (fields.phone_number) channel.phone_number = fields.phone_number;
-      if (fields.provider) channel.provider = fields.provider;
+      channel.provider = fields.provider || 'whatsapp_cloud';
       if (fields.whatsapp_api_key) {
         channel.provider_config = { api_key: fields.whatsapp_api_key };
       }
+      break;
+    case 'Channel::Telegram':
+      channel.bot_token = fields.bot_token;
+      break;
+    case 'Channel::Line':
+      channel.line_channel_id = fields.line_channel_id;
+      channel.line_channel_secret = fields.line_channel_secret;
+      channel.line_channel_token = fields.line_channel_token;
       break;
     default:
       break;
@@ -157,6 +215,14 @@ export function validateCreateInboxPayload(data: CreateInboxPayload): string | n
     case 'Channel::Email':
       if (!fields.email) return 'Email address is required';
       return null;
+    case 'Channel::Telegram':
+      if (!fields.bot_token) return 'Telegram bot token is required';
+      return null;
+    case 'Channel::Line':
+      if (!fields.line_channel_id || !fields.line_channel_secret || !fields.line_channel_token) {
+        return 'Line channel ID, secret, and token are required';
+      }
+      return null;
     case 'Channel::TwilioSms':
       if (!fields.phone_number) return 'Twilio phone number is required (E.164, e.g. +96891234567)';
       if (!fields.account_sid) return 'Twilio Account SID is required';
@@ -168,24 +234,53 @@ export function validateCreateInboxPayload(data: CreateInboxPayload): string | n
 }
 
 function mapInboxDetail(raw: Record<string, unknown>): InboxDetail {
+  const channel = (raw.channel as Record<string, unknown> | undefined) ?? {};
+  const cwType = String(raw.channel_type ?? channel.type ?? 'api');
+  const channelType = CHATWOOT_TO_CHANNEL_TYPE[cwType] ?? 'Channel::Api';
+
   return {
     id: Number(raw.id),
     name: String(raw.name ?? ''),
-    channel_type: String(raw.channel_type ?? 'Channel::Api') as ChannelType,
-    avatar_url: raw.avatar_url as string | undefined,
+    channel_type: channelType,
+    avatar_url: (raw.avatar_url ?? channel.avatar_url) as string | undefined,
     working_hours_enabled: Boolean(raw.working_hours_enabled),
     greeting_message: raw.greeting_message as string | undefined,
-    away_message: raw.away_message as string | undefined,
-    auto_assignment: raw.auto_assignment as boolean | undefined,
+    away_message: (raw.away_message ?? raw.out_of_office_message) as string | undefined,
+    auto_assignment: (raw.auto_assignment ?? raw.enable_auto_assignment) as boolean | undefined,
     csat_survey_enabled: raw.csat_survey_enabled as boolean | undefined,
-    email: raw.email as string | undefined,
-    phone_number: raw.phone_number as string | undefined,
-    widget_color: raw.widget_color as string | undefined,
-    welcome_title: raw.welcome_title as string | undefined,
-    welcome_tagline: raw.welcome_tagline as string | undefined,
+    email: (raw.email ?? channel.email) as string | undefined,
+    forward_to_email: channel.forward_to_email as string | undefined,
+    phone_number: (raw.phone_number ?? channel.phone_number) as string | undefined,
+    widget_color: channel.widget_color as string | undefined,
+    welcome_title: channel.welcome_title as string | undefined,
+    welcome_tagline: channel.welcome_tagline as string | undefined,
+    website_url: channel.website_url as string | undefined,
+    website_token: channel.website_token as string | undefined,
+    webhook_url: channel.webhook_url as string | undefined,
     sip_extension: raw.sip_extension as string | undefined,
     whatsapp_api_key: raw.whatsapp_api_key as string | undefined,
   };
+}
+
+/** Chatwoot web widget embed snippet (same as Chatwoot dashboard). */
+export function buildWidgetEmbedScript(websiteToken: string, baseUrl?: string): string {
+  const base = (baseUrl ?? CHATWOOT_URL).replace(/\/$/, '');
+  return `<script>
+  (function(d,t) {
+    var BASE_URL="${base}";
+    var g=d.createElement(t),s=d.getElementsByTagName(t)[0];
+    g.src=BASE_URL+"/packs/js/sdk.js";
+    g.defer = true;
+    g.async = true;
+    s.parentNode.insertBefore(g,s);
+    g.onload=function(){
+      window.chatwootSDK.run({
+        websiteToken: '${websiteToken}',
+        baseUrl: BASE_URL
+      })
+    }
+  })(document,"script");
+</script>`;
 }
 
 export async function getInbox(id: number): Promise<InboxDetail> {

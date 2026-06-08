@@ -269,6 +269,7 @@ export function dryRunContext(values: {
   callStatus: string;
   aiSentiment: string;
   assignedAgent: string;
+  priority: string;
 }): Record<string, unknown> {
   return {
     event_type: 'dry_run',
@@ -279,6 +280,9 @@ export function dryRunContext(values: {
       call_status: values.callStatus,
       ai_sentiment: values.aiSentiment,
       assigned_agent: values.assignedAgent,
+    },
+    event: {
+      priority: values.priority,
     },
     agent: { id: values.assignedAgent },
   };

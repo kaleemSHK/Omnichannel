@@ -9,6 +9,7 @@ import { resolveHost } from '../lib/resolve-host.js';
 import { startAcmeWorker } from '../lib/acme.js';
 import { mountRbacRoutes } from '../lib/rbac-routes.js';
 import { ensureRbacCatalog, seedTenantRoles } from '../lib/rbac-repo.js';
+import { ensureTenantServiceToken } from '../lib/chatwoot-service-token.js';
 import { randomUUID } from 'node:crypto';
 
 const log = createLogger('tenant');
@@ -167,6 +168,30 @@ app.post('/v1/tenants/:id/domains', ...platform, async (req, res) => {
 app.get('/v1/tenants/:id/usage', auth, async (req, res) => {
   if (!dbEnabled()) return fail(res, 'NOT_CONFIGURED', 'Postgres required', 501);
   return ok(res, await repo.getUsageSnapshot(req.params.id));
+});
+
+/** Internal: sidecars fetch tenant-scoped Chatwoot automation token (not per-agent). */
+app.get('/v1/internal/chatwoot-service-token', auth, async (req, res) => {
+  if (!dbEnabled()) return fail(res, 'NOT_CONFIGURED', 'Postgres required', 501);
+  const tenantId = String(req.query.tenant_id ?? req.headers['x-blinkone-tenant-id'] ?? '').trim();
+  if (!tenantId) return fail(res, 'VALIDATION_ERROR', 'tenant_id required', 400);
+  const forceRefresh = req.query.refresh === '1' || req.query.force === '1';
+  try {
+    const result = await ensureTenantServiceToken(tenantId, { forceRefresh });
+    return ok(res, {
+      tenantId,
+      accessToken: result.accessToken,
+      chatwootUserId: result.chatwootUserId,
+      serviceEmail: result.serviceEmail,
+      refreshed: result.refreshed,
+    });
+  } catch (e) {
+    if (e.code === 'NOT_FOUND') return fail(res, 'NOT_FOUND', e.message, 404);
+    if (e.code === 'NOT_CONFIGURED') return fail(res, 'NOT_CONFIGURED', e.message, 501);
+    if (e.code === 'SERVICE_AUTH_FAILED') return fail(res, 'SERVICE_AUTH_FAILED', e.message, 502);
+    log.error({ err: e.message, tenantId }, 'chatwoot-service-token');
+    return fail(res, 'INTERNAL', e.message, 500);
+  }
 });
 
 mountRbacRoutes(app, auth);

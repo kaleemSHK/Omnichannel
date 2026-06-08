@@ -83,6 +83,11 @@ export async function syncConversationFromWebhook(tenantId, type, body) {
   const assignee = getAssignedAgent(conv);
   const inboxType = mapInboxType(conv);
   const priority = conv.priority ?? null;
+  const prev = await pool.query(
+    'SELECT priority FROM escalation_conversation_watch WHERE tenant_id = $1 AND conversation_id = $2',
+    [tenantId, conversationId],
+  );
+  const previousPriority = prev.rows[0]?.priority ?? null;
   const msg = body.message ?? {};
   const isNew = type === 'conversation.created' || type === 'conversation_created';
   const isReopened = type === 'conversation.reopened' || type === 'conversation_reopened';
@@ -147,6 +152,28 @@ export async function syncConversationFromWebhook(tenantId, type, body) {
       isReopened,
     ],
   );
+
+  const priorityChanged = priority != null
+    && String(previousPriority ?? '') !== String(priority)
+    && (type.includes('updated') || type.includes('status'));
+  if (priorityChanged) {
+    await processEvent(tenantId, {
+      event_type: 'conversation.priority_changed_to',
+      conversation_id: conversationId,
+      account_id: tenantId,
+      conversation: {
+        id: conversationId,
+        priority,
+        inbox_type: inboxType,
+        assigned_agent: assignee,
+        sla_tier: conv.sla_tier ?? body.sla_tier ?? '',
+        sla_status: conv.sla_status ?? body.sla_status ?? '',
+        call_status: conv.call_status ?? body.call_status ?? '',
+        missed_count: conv.missed_count ?? body.missed_count ?? 0,
+      },
+      event: { priority },
+    });
+  }
 
   return { synced: true, conversationId };
 }

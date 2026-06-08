@@ -32,6 +32,7 @@ const store = createStore(process.env.DATA_DIR || './data', () => ({
   tenantBrandAssets: {},
   seq: { nextTenantId: 2 },
   telephonyConfig: {},
+  tenantSettings: {},
 }));
 
 const BRAND_UPLOADS = process.env.BLINKONE_BRAND_UPLOADS_DIR
@@ -445,6 +446,12 @@ app.get('/v1/storage/stats', auth, (_req, res) => {
 
 // ─── PSTN / Twilio telephony config (Settings → PSTN) ────────────────────────
 
+function tenantBucket(storeData, tenantId) {
+  storeData.tenantSettings = storeData.tenantSettings ?? {};
+  storeData.tenantSettings[tenantId] = storeData.tenantSettings[tenantId] ?? {};
+  return storeData.tenantSettings[tenantId];
+}
+
 function defaultTelephonyConfig() {
   const base = (process.env.FRONTEND_URL || 'https://app.blinksone.com').replace(/\/$/, '');
   return {
@@ -459,12 +466,55 @@ function defaultTelephonyConfig() {
   };
 }
 
-app.get('/v1/telephony-config', auth, (_req, res) => {
+function defaultRecordingConfig() {
+  return {
+    enabledChannels: { pstn: true, whatsapp: false, webrtc: true },
+    announcementEnabled: true,
+    announcementText: 'This call may be recorded for quality and training purposes.',
+    retentionDays: 90,
+    storageBackend: 'local',
+    storageBucket: '',
+    pciAutoPause: true,
+    pciResumeOnHangup: true,
+    encryptAtRest: true,
+    accessRestriction: 'supervisors_only',
+  };
+}
+
+function defaultVoiceConfig() {
+  return {
+    ttsProvider: 'google',
+    ttsLanguage: 'ar-OM',
+    ttsVoice: 'ar-OM-Wavenet-A',
+    ttsSpeed: 1.0,
+    sttProvider: 'google',
+    sttLanguage: 'ar-OM',
+    sttHotwords: '',
+    aiNluProvider: 'openai',
+    aiNluModel: 'gpt-4o',
+    nluConfidenceThreshold: 0.75,
+    holdMusicEnabled: true,
+    holdMusicUrl: '',
+    mohVolume: 70,
+    defaultOutboundCallerId: '',
+    dtmfTimeout: 5,
+  };
+}
+
+function mergeTenantConfig(storeData, tenantId, key, defaults) {
+  const bucket = tenantBucket(storeData, tenantId);
+  const legacy = key === 'telephonyConfig' ? (storeData.telephonyConfig ?? {}) : {};
+  return { ...defaults(), ...legacy, ...(bucket[key] ?? {}) };
+}
+
+app.get('/v1/telephony-config', auth, (req, res) => {
+  const tenantId = resolveTenantId(req);
   const s = store.load();
-  ok(res, { ...defaultTelephonyConfig(), ...(s.telephonyConfig ?? {}) });
+  ok(res, mergeTenantConfig(s, tenantId, 'telephonyConfig', defaultTelephonyConfig));
 });
 
 app.patch('/v1/telephony-config', auth, async (req, res) => {
+  const tenantId = resolveTenantId(req);
   const allowed = [
     'twilioTrunkHost',
     'outboundCallerId',
@@ -483,10 +533,158 @@ app.patch('/v1/telephony-config', auth, async (req, res) => {
     return fail(res, 'VALIDATION_ERROR', 'No telephony fields to update');
   }
   const next = await store.withStore(s => {
-    s.telephonyConfig = { ...(s.telephonyConfig ?? {}), ...patch };
-    return { ...defaultTelephonyConfig(), ...s.telephonyConfig };
+    const bucket = tenantBucket(s, tenantId);
+    bucket.telephonyConfig = { ...(bucket.telephonyConfig ?? {}), ...patch };
+    return mergeTenantConfig(s, tenantId, 'telephonyConfig', defaultTelephonyConfig);
   });
   ok(res, next);
+});
+
+app.get('/v1/recording-config', auth, (req, res) => {
+  const tenantId = resolveTenantId(req);
+  ok(res, mergeTenantConfig(store.load(), tenantId, 'recordingConfig', defaultRecordingConfig));
+});
+
+app.patch('/v1/recording-config', auth, async (req, res) => {
+  const tenantId = resolveTenantId(req);
+  const body = req.body ?? {};
+  if (!Object.keys(body).length) {
+    return fail(res, 'VALIDATION_ERROR', 'No recording fields to update');
+  }
+  const next = await store.withStore(s => {
+    const bucket = tenantBucket(s, tenantId);
+    bucket.recordingConfig = { ...(bucket.recordingConfig ?? {}), ...body };
+    return mergeTenantConfig(s, tenantId, 'recordingConfig', defaultRecordingConfig);
+  });
+  ok(res, next);
+});
+
+app.get('/v1/voice-config', auth, (req, res) => {
+  const tenantId = resolveTenantId(req);
+  ok(res, mergeTenantConfig(store.load(), tenantId, 'voiceConfig', defaultVoiceConfig));
+});
+
+app.patch('/v1/voice-config', auth, async (req, res) => {
+  const tenantId = resolveTenantId(req);
+  const body = req.body ?? {};
+  if (!Object.keys(body).length) {
+    return fail(res, 'VALIDATION_ERROR', 'No voice fields to update');
+  }
+  const next = await store.withStore(s => {
+    const bucket = tenantBucket(s, tenantId);
+    bucket.voiceConfig = { ...(bucket.voiceConfig ?? {}), ...body };
+    return mergeTenantConfig(s, tenantId, 'voiceConfig', defaultVoiceConfig);
+  });
+  ok(res, next);
+});
+
+// ─── WhatsApp Cloud API integration (Settings / Inbox) ───────────────────────
+
+const SECRET_MASK = '••••••••';
+
+function defaultWhatsappConfig() {
+  const base = (process.env.FRONTEND_URL || 'https://app.blinksone.com').replace(/\/$/, '');
+  const phone = (process.env.WHATSAPP_BUSINESS_PHONE || '').trim();
+  return {
+    metaAppId: (process.env.FB_APP_ID || process.env.WHATSAPP_META_APP_ID || '').trim(),
+    metaAppSecret: (process.env.META_APP_SECRET || process.env.FB_APP_SECRET || '').trim(),
+    metaVerifyToken: (process.env.META_VERIFY_TOKEN || process.env.FB_VERIFY_TOKEN || 'blinkone_wh_2026').trim(),
+    phoneNumberId: (process.env.WHATSAPP_PHONE_NUMBER_ID || '').trim(),
+    accessToken: (process.env.WHATSAPP_ACCESS_TOKEN || '').trim(),
+    businessPhone: phone || '+15556712440',
+    chatwootInboxId: (process.env.WHATSAPP_INBOX_ID || '').trim(),
+    messagingEnabled: process.env.WHATSAPP_MESSAGING_ENABLED !== '0',
+    callingEnabled: process.env.WHATSAPP_CALLING_ENABLED === '1',
+    allowUnsignedWebhook: process.env.WHATSAPP_ALLOW_UNSIGNED_WEBHOOK === '1',
+    webhookUrl: `${base}/api/whatsapp-calls/v1/webhooks/meta`,
+    chatwootWebhookUrl: phone
+      ? `${base}/webhooks/whatsapp/${encodeURIComponent(phone)}`
+      : `${base}/webhooks/whatsapp/{business_phone}`,
+  };
+}
+
+function isMaskedSecret(value) {
+  if (value == null || value === '') return true;
+  if (value === SECRET_MASK) return true;
+  return /^[•*]+$/.test(String(value));
+}
+
+function publicWhatsappConfig(config) {
+  return {
+    ...config,
+    metaAppSecret: config.metaAppSecret ? SECRET_MASK : '',
+    accessToken: config.accessToken ? SECRET_MASK : '',
+    hasMetaAppSecret: Boolean(config.metaAppSecret),
+    hasAccessToken: Boolean(config.accessToken),
+  };
+}
+
+async function reloadWhatsappRuntime(tenantId) {
+  const url = (process.env.WHATSAPP_CALLS_UPSTREAM || 'http://whatsapp-calls:8803').replace(/\/$/, '');
+  const token = (process.env.WHATSAPP_CALLS_TOKEN || process.env.CALLS_TOKEN || TOKEN).trim();
+  if (!token) return;
+  try {
+    await fetch(`${url}/v1/admin/reload-config`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        'x-blinkone-tenant-id': tenantId,
+      },
+    });
+  } catch (e) {
+    log.warn({ err: e.message, tenantId }, 'whatsapp reload notify failed');
+  }
+}
+
+app.get('/v1/whatsapp-config', auth, (req, res) => {
+  const tenantId = resolveTenantId(req);
+  const cfg = mergeTenantConfig(store.load(), tenantId, 'whatsappConfig', defaultWhatsappConfig);
+  ok(res, publicWhatsappConfig(cfg));
+});
+
+app.get('/v1/internal/whatsapp-config', auth, (req, res) => {
+  const tenantId = resolveTenantId(req);
+  const cfg = mergeTenantConfig(store.load(), tenantId, 'whatsappConfig', defaultWhatsappConfig);
+  ok(res, cfg);
+});
+
+app.patch('/v1/whatsapp-config', auth, async (req, res) => {
+  const tenantId = resolveTenantId(req);
+  const allowed = [
+    'metaAppId',
+    'metaAppSecret',
+    'metaVerifyToken',
+    'phoneNumberId',
+    'accessToken',
+    'businessPhone',
+    'chatwootInboxId',
+    'messagingEnabled',
+    'callingEnabled',
+    'allowUnsignedWebhook',
+  ];
+  const patch = {};
+  for (const key of allowed) {
+    if (req.body?.[key] === undefined) continue;
+    if ((key === 'metaAppSecret' || key === 'accessToken') && isMaskedSecret(req.body[key])) continue;
+    patch[key] = req.body[key];
+  }
+  if (!Object.keys(patch).length) {
+    return fail(res, 'VALIDATION_ERROR', 'No WhatsApp fields to update');
+  }
+  const next = await store.withStore(s => {
+    const bucket = tenantBucket(s, tenantId);
+    bucket.whatsappConfig = { ...(bucket.whatsappConfig ?? {}), ...patch };
+    const merged = mergeTenantConfig(s, tenantId, 'whatsappConfig', defaultWhatsappConfig);
+    if (merged.businessPhone) {
+      const base = (process.env.FRONTEND_URL || 'https://app.blinksone.com').replace(/\/$/, '');
+      merged.chatwootWebhookUrl = `${base}/webhooks/whatsapp/${encodeURIComponent(merged.businessPhone)}`;
+      bucket.whatsappConfig = { ...bucket.whatsappConfig, chatwootWebhookUrl: merged.chatwootWebhookUrl };
+    }
+    return merged;
+  });
+  await reloadWhatsappRuntime(tenantId);
+  ok(res, publicWhatsappConfig(next));
 });
 
 // ─── Service health (P1) ──────────────────────────────────────────────────────

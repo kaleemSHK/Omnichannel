@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { SectionHeader } from './shared/SectionHeader';
 import { Button } from '@/components/ui/button';
@@ -15,44 +16,11 @@ import {
   SelectValue,
 } from '@/components/ui/select-radix';
 import { Mic2, Languages, Bot, Phone, Volume2 } from 'lucide-react';
+import { getVoiceConfig, updateVoiceConfig, type VoiceConfig } from '@/lib/api/platform-settings';
+import { useTenantId } from '@/lib/hooks/useTenantScope';
+import { Skeleton } from '@/components/ui/skeleton';
 
-// ─── Types ─────────────────────────────────────────────────────────────────────
-
-interface VoiceConfig {
-  ttsProvider: 'google' | 'azure' | 'elevenlabs' | 'openai';
-  ttsLanguage: string;
-  ttsVoice: string;
-  ttsSpeed: number;
-  sttProvider: 'google' | 'azure' | 'whisper' | 'deepgram';
-  sttLanguage: string;
-  sttHotwords: string;
-  aiNluProvider: 'openai' | 'azure' | 'gemini';
-  aiNluModel: string;
-  nluConfidenceThreshold: number;
-  holdMusicEnabled: boolean;
-  holdMusicUrl: string;
-  mohVolume: number;
-  defaultOutboundCallerId: string;
-  dtmfTimeout: number;
-}
-
-const DEFAULTS: VoiceConfig = {
-  ttsProvider: 'google',
-  ttsLanguage: 'ar-OM',
-  ttsVoice: 'ar-OM-Wavenet-A',
-  ttsSpeed: 1.0,
-  sttProvider: 'google',
-  sttLanguage: 'ar-OM',
-  sttHotwords: '',
-  aiNluProvider: 'openai',
-  aiNluModel: 'gpt-4o',
-  nluConfidenceThreshold: 0.75,
-  holdMusicEnabled: true,
-  holdMusicUrl: '',
-  mohVolume: 70,
-  defaultOutboundCallerId: '',
-  dtmfTimeout: 5,
-};
+// ─── Card wrapper ──────────────────────────────────────────────────────────────
 
 const TTS_VOICES: Record<string, string[]> = {
   'ar-OM': ['ar-OM-Wavenet-A', 'ar-OM-Wavenet-B', 'ar-OM-Standard-A'],
@@ -111,21 +79,43 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 // ─── Main section ──────────────────────────────────────────────────────────────
 
 export function VoiceSection() {
-  const [cfg, setCfg] = useState<VoiceConfig>(DEFAULTS);
-  const [saving, setSaving] = useState(false);
+  const tenantId = useTenantId();
+  const qc = useQueryClient();
+  const { data, isLoading } = useQuery({
+    queryKey: ['voice-config', tenantId],
+    queryFn: getVoiceConfig,
+  });
+  const [cfg, setCfg] = useState<VoiceConfig | null>(null);
+
+  useEffect(() => {
+    if (data) setCfg(data);
+  }, [data]);
+
+  const saveMutation = useMutation({
+    mutationFn: () => updateVoiceConfig(cfg ?? {}),
+    onSuccess: next => {
+      qc.setQueryData(['voice-config', tenantId], next);
+      setCfg(next);
+      toast.success('Voice & language settings saved');
+    },
+    onError: (e: Error) => toast.error(e.message || 'Save failed'),
+  });
 
   function set<K extends keyof VoiceConfig>(k: K, v: VoiceConfig[K]) {
-    setCfg(p => ({ ...p, [k]: v }));
+    setCfg(p => (p ? { ...p, [k]: v } : p));
+  }
+
+  if (isLoading || !cfg) {
+    return (
+      <div className="space-y-3 max-w-2xl">
+        {[1, 2, 3].map(i => (
+          <Skeleton key={i} className="h-24 rounded-xl" />
+        ))}
+      </div>
+    );
   }
 
   const voices = TTS_VOICES[cfg.ttsLanguage] ?? [];
-
-  async function save() {
-    setSaving(true);
-    await new Promise(r => setTimeout(r, 600));
-    setSaving(false);
-    toast.success('Voice & language settings saved');
-  }
 
   return (
     <div className="space-y-5 max-w-2xl">
@@ -319,11 +309,11 @@ export function VoiceSection() {
 
       <div className="flex justify-end">
         <Button
-          disabled={saving}
-          onClick={save}
+          disabled={saveMutation.isPending}
+          onClick={() => saveMutation.mutate()}
           className="bg-brand-primary hover:bg-brand-primary/90"
         >
-          {saving ? 'Saving…' : 'Save voice settings'}
+          {saveMutation.isPending ? 'Saving…' : 'Save voice settings'}
         </Button>
       </div>
     </div>

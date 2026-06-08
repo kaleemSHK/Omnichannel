@@ -9,13 +9,20 @@
  */
 
 import { createLogger } from './logger.js';
+import { getRuntimeConfig } from './runtime-config.js';
 
 const log = createLogger('whatsapp-bridge');
 
 const CW_URL = (process.env.CHATWOOT_BASE_URL || 'http://chatwoot:3000').replace(/\/$/, '');
+const CW_PUBLIC_URL = (process.env.CHATWOOT_PUBLIC_URL || process.env.FRONTEND_URL || 'https://app.blinksone.com').replace(/\/$/, '');
 const CW_TOKEN = (process.env.CHATWOOT_API_ACCESS_TOKEN || '').trim();
 const CW_ACCOUNT = (process.env.CHATWOOT_ACCOUNT_ID || '1').trim();
-const WA_INBOX_ID = (process.env.WHATSAPP_INBOX_ID || '').trim();
+
+function publicAttachmentUrl(url) {
+  if (!url) return '';
+  if (/^https?:\/\//i.test(url)) return url;
+  return url.startsWith('/') ? `${CW_PUBLIC_URL}${url}` : `${CW_PUBLIC_URL}/${url}`;
+}
 
 function cwHeaders() {
   return {
@@ -68,9 +75,11 @@ async function findOrCreateContact(phone, name) {
  * @returns {Promise<number>} conversationId
  */
 async function findOrCreateConversation(contactId) {
-  if (!WA_INBOX_ID) {
+  const cfg = await getRuntimeConfig();
+  const inboxId = (cfg.chatwootInboxId || '').trim();
+  if (!inboxId) {
     throw new Error(
-      'WHATSAPP_INBOX_ID is not set. Create a WhatsApp inbox in Chatwoot and set this env var.',
+      'WhatsApp inbox ID is not configured. Set it in Settings → Inboxes → WhatsApp → Integration.',
     );
   }
 
@@ -82,7 +91,7 @@ async function findOrCreateConversation(contactId) {
   if (listRes.ok) {
     const { payload } = await listRes.json();
     const openWa = payload?.find(
-      (c) => c.status === 'open' && String(c.inbox_id) === String(WA_INBOX_ID),
+      (c) => c.status === 'open' && String(c.inbox_id) === String(inboxId),
     );
     if (openWa) return openWa.id;
   }
@@ -94,7 +103,7 @@ async function findOrCreateConversation(contactId) {
       method: 'POST',
       headers: cwHeaders(),
       body: JSON.stringify({
-        inbox_id: Number(WA_INBOX_ID),
+        inbox_id: Number(inboxId),
         contact_id: contactId,
         status: 'open',
         channel: 'Channel::Whatsapp',
@@ -110,29 +119,79 @@ async function findOrCreateConversation(contactId) {
 }
 
 /**
- * Post an incoming WhatsApp message as an agent message into a Chatwoot conversation.
- * @param {number} conversationId
- * @param {string} content — message text
- * @param {object} [meta]
+ * Build a Meta Cloud API message object from a normalized webhook event.
  */
-async function postMessage(conversationId, content, meta = {}) {
-  const body = {
-    content,
-    message_type: 'incoming',
-    content_type: 'text',
-    private: false,
-    ...meta,
+function buildWaMessage(evt) {
+  const base = {
+    from: evt.from,
+    id: evt.messageId || `wamid.blinkone.${Date.now()}`,
+    timestamp: String(evt.timestamp || Math.floor(Date.now() / 1000)),
+    type: evt.type,
   };
-  const res = await fetch(
-    `${CW_URL}/api/v1/accounts/${CW_ACCOUNT}/conversations/${conversationId}/messages`,
-    {
-      method: 'POST',
-      headers: cwHeaders(),
-      body: JSON.stringify(body),
-    },
-  );
+  switch (evt.type) {
+    case 'text':
+      return { ...base, text: evt.text };
+    case 'image':
+      return { ...base, image: evt.image };
+    case 'video':
+      return { ...base, video: evt.video };
+    case 'audio':
+      return { ...base, audio: evt.audio };
+    case 'document':
+      return { ...base, document: evt.document };
+    case 'location':
+      return { ...base, location: evt.location };
+    case 'sticker':
+      return { ...base, sticker: evt.sticker };
+    case 'reaction':
+      return { ...base, reaction: evt.reaction };
+    case 'interactive':
+      return { ...base, interactive: evt.interactive };
+    default:
+      return { ...base, type: 'text', text: { body: `[${evt.type} message]` } };
+  }
+}
+
+/**
+ * Forward incoming WhatsApp traffic to Chatwoot's native webhook handler.
+ * WhatsApp inboxes reject incoming messages via the REST messages API (422).
+ */
+async function forwardToChatwootWebhook(evt) {
+  const cfg = await getRuntimeConfig();
+  const businessPhone = (cfg.businessPhone || '+15556712440').trim();
+  const phoneNumberId = (cfg.phoneNumberId || '').trim();
+  const displayPhone = businessPhone.replace(/^\+/, '');
+  const payload = {
+    object: 'whatsapp_business_account',
+    entry: [{
+      id: '0',
+      changes: [{
+        value: {
+          messaging_product: 'whatsapp',
+          metadata: {
+            display_phone_number: displayPhone,
+            phone_number_id: evt.phoneNumberId || phoneNumberId,
+          },
+          contacts: [{
+            profile: { name: evt.profileName || evt.from },
+            wa_id: evt.from,
+          }],
+          messages: [buildWaMessage(evt)],
+        },
+        field: 'messages',
+      }],
+    }],
+  };
+
+  const url = `${CW_URL}/webhooks/whatsapp/${encodeURIComponent(businessPhone)}`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
   if (!res.ok) {
-    log.warn({ status: res.status, conversationId }, 'chatwoot message post failed');
+    const text = await res.text().catch(() => '');
+    throw new Error(`Chatwoot WhatsApp webhook ${res.status}: ${text}`);
   }
 }
 
@@ -144,62 +203,12 @@ async function postMessage(conversationId, content, meta = {}) {
  * @returns {Promise<{ contactId: number, conversationId: number }>}
  */
 export async function bridgeToChat(msg) {
-  if (!CW_TOKEN) {
-    log.warn('CHATWOOT_API_ACCESS_TOKEN not set — bridge disabled');
-    return null;
-  }
-
-  const phone = msg.from.startsWith('+') ? msg.from : `+${msg.from}`;
-  const name = msg.profileName || phone;
-
   try {
-    const contactId = await findOrCreateContact(phone, name);
-    const conversationId = await findOrCreateConversation(contactId);
-
-    // Post message content into the conversation
-    let content = '';
-    switch (msg.type) {
-      case 'text':
-        content = msg.text?.body ?? '';
-        break;
-      case 'image':
-        content = `[Image]${msg.image?.caption ? `: ${msg.image.caption}` : ''}`;
-        break;
-      case 'video':
-        content = `[Video]${msg.video?.caption ? `: ${msg.video.caption}` : ''}`;
-        break;
-      case 'audio':
-        content = '[Voice Message]';
-        break;
-      case 'document':
-        content = `[Document: ${msg.document?.filename ?? 'file'}]${msg.document?.caption ? ` — ${msg.document.caption}` : ''}`;
-        break;
-      case 'location':
-        content = `[Location: ${msg.location?.latitude ?? ''}, ${msg.location?.longitude ?? ''}]`;
-        break;
-      case 'sticker':
-        content = '[Sticker]';
-        break;
-      case 'reaction':
-        content = `[Reaction: ${msg.reaction?.emoji ?? ''} to message ${msg.reaction?.message_id ?? ''}]`;
-        break;
-      case 'interactive':
-        content = msg.interactive?.button_reply?.title
-          ?? msg.interactive?.list_reply?.title
-          ?? '[Interactive response]';
-        break;
-      default:
-        content = `[${msg.type} message]`;
-    }
-
-    if (content) {
-      await postMessage(conversationId, content);
-    }
-
-    log.info({ contactId, conversationId, msgType: msg.type }, 'wa→chatwoot bridged');
-    return { contactId, conversationId };
+    await forwardToChatwootWebhook(msg);
+    log.info({ from: msg.from?.slice(-4), msgType: msg.type }, 'wa→chatwoot bridged');
+    return { ok: true };
   } catch (err) {
-    log.error({ err: err.message, phone }, 'bridge failed');
+    log.error({ err: err.message, phone: msg.from }, 'bridge failed');
     throw err;
   }
 }
@@ -218,7 +227,9 @@ export async function handleChatwootOutbound(event) {
 
   // Only handle outbound (agent-sent) messages in WhatsApp channel conversations
   if (msg.message_type !== 'outgoing') return;
-  if (String(conv.inbox_id) !== String(WA_INBOX_ID)) return;
+  const cfg = await getRuntimeConfig();
+  const inboxId = (cfg.chatwootInboxId || '').trim();
+  if (!inboxId || String(conv.inbox_id) !== String(inboxId)) return;
 
   const phone = conv?.meta?.sender?.phone_number;
   if (!phone) return;
@@ -231,11 +242,14 @@ export async function handleChatwootOutbound(event) {
       if (text) await sendText(to, text);
     } else if (msg.attachments?.length) {
       for (const att of msg.attachments) {
-        const mediaType = att.file_type?.startsWith('image') ? 'image'
-          : att.file_type?.startsWith('video') ? 'video'
-          : att.file_type?.startsWith('audio') ? 'audio'
+        const ft = String(att.file_type || '').toLowerCase();
+        const mediaType = ft.includes('image') ? 'image'
+          : ft.includes('video') ? 'video'
+          : ft.includes('audio') ? 'audio'
           : 'document';
-        await sendMedia(to, mediaType, att.data_url, msg.content, att.file_name);
+        const mediaUrl = publicAttachmentUrl(att.data_url);
+        if (!mediaUrl) continue;
+        await sendMedia(to, mediaType, mediaUrl, msg.content, att.file_name);
       }
     }
     log.info({ to, convId: conv.id }, 'chatwoot→wa sent');

@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
   getSlaDashboard,
+  getConversationSla,
   listPolicies,
   createPolicy,
   updatePolicy,
@@ -98,16 +99,47 @@ export function useSlaBreachAlerts() {
   }, [data]);
 }
 
+/** Per-conversation SLA — direct API (reliable in conversation sidebar). */
+export function useConversationSla(conversationId?: number) {
+  const gwEnabled = isGatewayQueryEnabled();
+  const tenantId = String(useTenantAccountId() || '');
+  return useQuery({
+    queryKey: ['conversation-sla', tenantId, conversationId, isDemoDataEnabled()],
+    queryFn: async (): Promise<SlaInstanceView | null> => {
+      if (!conversationId) return null;
+      if (isDemoDataEnabled()) {
+        const dash = demoDashboard();
+        const id = String(conversationId);
+        return (
+          dash.breached.find(i => i.conversationId === id) ??
+          dash.atRisk.find(i => i.conversationId === id) ??
+          dash.active.find(i => i.conversationId === id) ??
+          null
+        );
+      }
+      const rows = await getConversationSla(String(conversationId));
+      const pick = (s: string) => rows.find(r => String(r.status) === s);
+      const active = pick('active') ?? pick('warning_sent') ?? pick('breached') ?? rows[0];
+      return active ? mapApiInstance(active as unknown as Record<string, unknown>) : null;
+    },
+    enabled: gwEnabled && Boolean(tenantId) && Boolean(conversationId),
+    staleTime: 15_000,
+    refetchInterval: gwEnabled ? 30_000 : false,
+  });
+}
+
 // ─── Per-conversation SLA lookup (from cached dashboard) ─────────────────────
 
 export function useSlaForConversation(conversationId?: number): SlaInstanceView | null {
-  const { data } = useSlaDashboard();
-  if (!data || !conversationId) return null;
+  const { data: direct } = useConversationSla(conversationId);
+  const { data: dashboard } = useSlaDashboard();
+  if (direct) return direct;
+  if (!dashboard || !conversationId) return null;
   const id = String(conversationId);
   return (
-    data.breached.find(i => i.conversationId === id) ??
-    data.atRisk.find(i => i.conversationId === id) ??
-    data.active.find(i => i.conversationId === id) ??
+    dashboard.breached.find(i => i.conversationId === id) ??
+    dashboard.atRisk.find(i => i.conversationId === id) ??
+    dashboard.active.find(i => i.conversationId === id) ??
     null
   );
 }

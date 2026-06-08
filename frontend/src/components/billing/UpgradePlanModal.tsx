@@ -3,7 +3,7 @@
 import { Loader2 } from 'lucide-react';
 import { Dialog } from '@/components/ui/Dialog';
 import { formatOmr } from '@/lib/utils/billing';
-import { useBillingPlans } from '@/lib/hooks/useBilling';
+import { useAssignBillingPlan, useBillingPlans } from '@/lib/hooks/useBilling';
 
 interface Props {
   open: boolean;
@@ -12,6 +12,7 @@ interface Props {
 
 export function UpgradePlanModal({ open, onClose }: Props) {
   const { data: plans = [], isLoading } = useBillingPlans();
+  const assign = useAssignBillingPlan();
 
   return (
     <Dialog open={open} onClose={onClose} title="Manage plan" className="max-w-md">
@@ -19,6 +20,8 @@ export function UpgradePlanModal({ open, onClose }: Props) {
         <div className="flex justify-center py-8 text-gray-400">
           <Loader2 className="animate-spin" size={24} />
         </div>
+      ) : plans.length === 0 ? (
+        <p className="text-sm text-muted-foreground py-6 text-center">No plans available.</p>
       ) : (
         <ul className="space-y-3">
           {plans.map(plan => (
@@ -40,17 +43,20 @@ export function UpgradePlanModal({ open, onClose }: Props) {
               </div>
               <button
                 type="button"
-                className="mt-3 w-full py-1.5 text-sm border border-[#0B5FFF] text-[#0B5FFF] rounded-md hover:bg-blue-50"
-                onClick={onClose}
+                disabled={assign.isPending}
+                className="mt-3 w-full py-1.5 text-sm border border-[#0B5FFF] text-[#0B5FFF] rounded-md hover:bg-blue-50 disabled:opacity-50"
+                onClick={() => {
+                  assign.mutate(plan.id, { onSuccess: onClose });
+                }}
               >
-                Select {plan.name}
+                {assign.isPending ? 'Applying…' : `Select ${plan.name}`}
               </button>
             </li>
           ))}
         </ul>
       )}
       <p className="text-xs text-gray-400 mt-4">
-        Plan changes are applied via the billing portal. Contact support for enterprise contracts.
+        Plans include 5% VAT on invoices (OMR). Enterprise contracts — contact LABBIK support.
       </p>
     </Dialog>
   );

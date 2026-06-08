@@ -11,7 +11,10 @@ const gatewayUpstream =
 const nextConfig = {
   output: 'standalone',
   async redirects() {
-    return [{ source: '/', destination: '/login', permanent: false }];
+    return [
+      { source: '/', destination: '/login', permanent: false },
+      { source: '/favicon.ico', destination: '/icon.svg', permanent: false },
+    ];
   },
   async rewrites() {
     return [

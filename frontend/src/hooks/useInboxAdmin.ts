@@ -10,14 +10,20 @@ import {
   DEMO_WORKING_HOURS,
 } from '@/lib/demo/inboxAdminFixture';
 import { isDemoDataEnabled } from '@/lib/demo/config';
+import { tenantScopeFromStore } from '@/lib/hooks/useTenantScope';
 
 async function demoDelay(ms = 300): Promise<void> {
   await new Promise(resolve => setTimeout(resolve, ms));
 }
 
+function scopedKey(base: string, ...parts: (string | number)[]) {
+  const { accountId } = tenantScopeFromStore();
+  return [base, accountId, ...parts];
+}
+
 export function useInboxDetail(inboxId: number | null) {
   return useQuery({
-    queryKey: ['inbox', inboxId],
+    queryKey: scopedKey('inbox', inboxId ?? 0),
     enabled: inboxId !== null,
     queryFn: async () => {
       if (isDemoDataEnabled()) return DEMO_INBOX_DETAILS[inboxId!] ?? null;
@@ -28,7 +34,7 @@ export function useInboxDetail(inboxId: number | null) {
 
 export function useAllAgents() {
   return useQuery({
-    queryKey: ['agents', 'all'],
+    queryKey: scopedKey('inbox-agents'),
     queryFn: async () => {
       if (isDemoDataEnabled()) return DEMO_ALL_AGENTS;
       return InboxAPI.listAllAgents();
@@ -38,7 +44,7 @@ export function useAllAgents() {
 
 export function useInboxMembers(inboxId: number | null) {
   return useQuery({
-    queryKey: ['inbox-members', inboxId],
+    queryKey: scopedKey('inbox-members', inboxId ?? 0),
     enabled: inboxId !== null,
     queryFn: async () => {
       if (isDemoDataEnabled()) return DEMO_INBOX_MEMBERS[inboxId!] ?? [];
@@ -49,7 +55,7 @@ export function useInboxMembers(inboxId: number | null) {
 
 export function useInboxWorkingHours(inboxId: number | null) {
   return useQuery({
-    queryKey: ['inbox-hours', inboxId],
+    queryKey: scopedKey('inbox-hours', inboxId ?? 0),
     enabled: inboxId !== null,
     queryFn: async () => {
       if (isDemoDataEnabled()) return DEMO_WORKING_HOURS[inboxId!] ?? [];
@@ -74,7 +80,8 @@ export function useCreateInbox() {
       return InboxAPI.createInbox(data);
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['inboxes'] });
+      const { accountId } = tenantScopeFromStore();
+      qc.invalidateQueries({ queryKey: ['inboxes', accountId] });
       toast.success('Inbox created successfully');
     },
     onError: (e: Error) => toast.error(`Failed to create inbox: ${e.message}`),
@@ -94,8 +101,9 @@ export function useUpdateInbox() {
       return InboxAPI.updateInbox(id, data);
     },
     onSuccess: (_, vars) => {
-      qc.invalidateQueries({ queryKey: ['inboxes'] });
-      qc.invalidateQueries({ queryKey: ['inbox', vars.id] });
+      const { accountId } = tenantScopeFromStore();
+      qc.invalidateQueries({ queryKey: ['inboxes', accountId] });
+      qc.invalidateQueries({ queryKey: ['inbox', accountId, vars.id] });
       toast.success('Inbox updated');
     },
     onError: (e: Error) => toast.error(`Failed to update inbox: ${e.message}`),
@@ -113,7 +121,8 @@ export function useDeleteInbox() {
       return InboxAPI.deleteInbox(id);
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['inboxes'] });
+      const { accountId } = tenantScopeFromStore();
+      qc.invalidateQueries({ queryKey: ['inboxes', accountId] });
       toast.success('Inbox deleted');
     },
     onError: (e: Error) => toast.error(`Failed to delete inbox: ${e.message}`),
@@ -132,7 +141,8 @@ export function useUpdateInboxMembers() {
       return InboxAPI.updateInboxMembers(inboxId, userIds);
     },
     onSuccess: (_, vars) => {
-      qc.invalidateQueries({ queryKey: ['inbox-members', vars.inboxId] });
+      const { accountId } = tenantScopeFromStore();
+      qc.invalidateQueries({ queryKey: ['inbox-members', accountId, vars.inboxId] });
       toast.success('Agents updated');
     },
     onError: (e: Error) => toast.error(`Failed to update agents: ${e.message}`),
@@ -157,7 +167,8 @@ export function useUpdateWorkingHours() {
       return InboxAPI.updateInboxWorkingHours(inboxId, hours);
     },
     onSuccess: (_, vars) => {
-      qc.invalidateQueries({ queryKey: ['inbox-hours', vars.inboxId] });
+      const { accountId } = tenantScopeFromStore();
+      qc.invalidateQueries({ queryKey: ['inbox-hours', accountId, vars.inboxId] });
       toast.success('Working hours saved');
     },
     onError: (e: Error) => toast.error(`Failed to save hours: ${e.message}`),

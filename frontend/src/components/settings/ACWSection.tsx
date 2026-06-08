@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { getAcwConfig, updateAcwConfig } from '@/lib/api/routing';
+import { useTenantId } from '@/lib/hooks/useTenantScope';
 import { SectionHeader } from './shared/SectionHeader';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -20,8 +21,9 @@ function fmtSec(s: number) {
 }
 
 export function ACWSection() {
+  const tenantId = useTenantId();
   const { data, isLoading } = useQuery({
-    queryKey: ['acw-config'],
+    queryKey: ['acw-config', tenantId],
     queryFn: async () => {
       try { return await getAcwConfig(); }
       catch { return { durationSeconds: 60 }; }

@@ -9,6 +9,24 @@
  *   https://developers.facebook.com/docs/whatsapp/cloud-api/webhooks
  */
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import { runtimeConfig } from './runtime-config.js';
+
+function isPlaceholderSecret(value) {
+  const v = (value || '').trim().toLowerCase();
+  if (!v) return true;
+  return (
+    v.includes('your_')
+    || v.includes('placeholder')
+    || v.includes('change_me')
+    || v.includes('changeme')
+    || v === 'secret'
+  );
+}
+
+function allowUnsignedWebhooks() {
+  const cfg = runtimeConfig();
+  return Boolean(cfg.allowUnsignedWebhook || process.env.WHATSAPP_ALLOW_UNSIGNED_WEBHOOK === '1');
+}
 
 // ─── Verification ──────────────────────────────────────────────────────────────
 
@@ -17,10 +35,12 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
  * Returns { ok: true, challenge } or { ok: false }.
  */
 export function verifyWebhook(req) {
+  const cfg = runtimeConfig();
   const mode = req.query['hub.mode'];
   const token = req.query['hub.verify_token'];
   const challenge = req.query['hub.challenge'];
-  if (mode === 'subscribe' && token === (process.env.META_VERIFY_TOKEN || '').trim()) {
+  const expected = (cfg.metaVerifyToken || process.env.META_VERIFY_TOKEN || '').trim();
+  if (mode === 'subscribe' && token === expected) {
     return { ok: true, challenge };
   }
   return { ok: false };
@@ -33,10 +53,14 @@ export function verifyWebhook(req) {
  * @param {string} signature — value of X-Hub-Signature-256 header
  */
 export function verifySignature(rawBody, signature) {
-  const secret = (process.env.META_APP_SECRET || '').trim();
-  if (!secret) {
-    // Fail CLOSED in production: an unsigned webhook must not be trusted.
-    // Only allow the unverified path in non-production to ease local testing.
+  const cfg = runtimeConfig();
+  const secret = (cfg.metaAppSecret || process.env.META_APP_SECRET || process.env.FB_APP_SECRET || '').trim();
+
+  if (allowUnsignedWebhooks()) {
+    return true;
+  }
+
+  if (!secret || isPlaceholderSecret(secret)) {
     if (process.env.NODE_ENV === 'production') {
       console.error('[whatsapp] META_APP_SECRET not set in production — rejecting unsigned webhook');
       return false;

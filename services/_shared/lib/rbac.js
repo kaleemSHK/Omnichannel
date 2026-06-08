@@ -83,6 +83,7 @@ export function requireRbac(permission) {
 /** Integration service: map path + method → permission */
 export function integrationPermission(method, path) {
   const p = path.split('?')[0];
+  if (p.startsWith('/webhooks/')) return null;
   if (p.startsWith('/v1/sso')) {
     if (p === '/v1/sso/login' || p === '/v1/sso/callback') return null;
     return method === 'GET' || method === 'HEAD' ? 'settings.view' : 'settings.edit';

@@ -140,6 +140,12 @@ export function ConversationList({ selectedId, onSelect, onNewConversation }: Pr
     return [...set].sort();
   }, [allConversations]);
 
+  const inboxNameById = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const inbox of inboxes) map.set(inbox.id, inbox.name);
+    return map;
+  }, [inboxes]);
+
   // Tab counts from loaded data
   const counts = useMemo(() => {
     const c = { open: 0, pending: 0, resolved: 0, all: 0 };
@@ -373,6 +379,7 @@ export function ConversationList({ selectedId, onSelect, onNewConversation }: Pr
           <ConversationListItem
             key={conv.id}
             conversation={conv}
+            inboxName={inboxNameById.get(conv.inbox_id)}
             selected={selectedId === conv.id}
             onClick={() => onSelect(conv)}
           />

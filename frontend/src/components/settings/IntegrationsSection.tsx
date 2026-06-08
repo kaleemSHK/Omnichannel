@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { listIntegrationApps } from '@/lib/api/settings';
 import { isDemoDataEnabled } from '@/lib/demo/config';
+import { useTenantAccountId } from '@/lib/hooks/useTenantAccountId';
 import { SectionHeader } from './shared/SectionHeader';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -102,10 +103,11 @@ const APPS: IntegrationApp[] = [
 const BASE_WEBHOOK = 'https://gateway.blinkone.ai/hooks';
 
 export function IntegrationsSection() {
+  const accountId = useTenantAccountId();
   const [configureApp, setConfigureApp] = useState<IntegrationApp | null>(null);
 
   const { data: appData } = useQuery({
-    queryKey: ['integration-apps'],
+    queryKey: ['integration-apps', accountId],
     queryFn: async () => {
       if (isDemoDataEnabled()) {
         return {

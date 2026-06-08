@@ -4,18 +4,22 @@
  * https://developers.facebook.com/docs/whatsapp/cloud-api/messages
  */
 
+import { getRuntimeConfig } from './runtime-config.js';
+
 const GRAPH_BASE = 'https://graph.facebook.com/v19.0';
 
-function phoneNumberId() {
-  return (process.env.WHATSAPP_PHONE_NUMBER_ID || '').trim();
+async function phoneNumberId() {
+  const cfg = await getRuntimeConfig();
+  return (cfg.phoneNumberId || '').trim();
 }
 
-function accessToken() {
-  return (process.env.WHATSAPP_ACCESS_TOKEN || '').trim();
+async function accessToken() {
+  const cfg = await getRuntimeConfig();
+  return (cfg.accessToken || '').trim();
 }
 
-function authHeader() {
-  return { Authorization: `Bearer ${accessToken()}` };
+async function authHeader() {
+  return { Authorization: `Bearer ${await accessToken()}` };
 }
 
 /**
@@ -24,13 +28,14 @@ function authHeader() {
  * @returns {{ messageId: string }}
  */
 export async function sendRaw(payload) {
-  const pid = phoneNumberId();
-  if (!pid || !accessToken()) {
-    throw new Error('WHATSAPP_PHONE_NUMBER_ID and WHATSAPP_ACCESS_TOKEN must be set');
+  const pid = await phoneNumberId();
+  const token = await accessToken();
+  if (!pid || !token) {
+    throw new Error('WhatsApp phone number ID and access token must be configured');
   }
   const res = await fetch(`${GRAPH_BASE}/${pid}/messages`, {
     method: 'POST',
-    headers: { ...authHeader(), 'Content-Type': 'application/json' },
+    headers: { ...(await authHeader()), 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
   if (!res.ok) {
@@ -107,11 +112,12 @@ export async function sendMedia(to, mediaType, mediaUrl, caption, filename) {
  * @param {string} messageId — the wamid of the received message
  */
 export async function markRead(messageId) {
-  const pid = phoneNumberId();
-  if (!pid || !accessToken()) return;
+  const pid = await phoneNumberId();
+  const token = await accessToken();
+  if (!pid || !token) return;
   await fetch(`${GRAPH_BASE}/${pid}/messages`, {
     method: 'POST',
-    headers: { ...authHeader(), 'Content-Type': 'application/json' },
+    headers: { ...(await authHeader()), 'Content-Type': 'application/json' },
     body: JSON.stringify({
       messaging_product: 'whatsapp',
       status: 'read',
@@ -127,15 +133,14 @@ export async function markRead(messageId) {
  * @returns {{ buffer: Buffer, mimeType: string, filename: string }}
  */
 export async function downloadMedia(mediaId) {
+  const headers = await authHeader();
   // Step 1: Get the media URL
-  const res = await fetch(`${GRAPH_BASE}/${mediaId}`, {
-    headers: authHeader(),
-  });
+  const res = await fetch(`${GRAPH_BASE}/${mediaId}`, { headers });
   if (!res.ok) throw new Error(`Media URL lookup ${res.status}`);
   const { url, mime_type: mimeType } = await res.json();
 
   // Step 2: Download the actual file
-  const mediaRes = await fetch(url, { headers: authHeader() });
+  const mediaRes = await fetch(url, { headers });
   if (!mediaRes.ok) throw new Error(`Media download ${mediaRes.status}`);
   const buffer = Buffer.from(await mediaRes.arrayBuffer());
 

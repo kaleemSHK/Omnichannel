@@ -78,6 +78,10 @@ services:
       REDIS_URL:              redis://redis:6379
       SECRET_KEY_BASE:        ${SECRET_KEY_BASE}
       FRONTEND_URL:           ${FRONTEND_URL:-http://localhost}
+      FB_APP_ID:              ${FB_APP_ID:-}
+      FB_APP_SECRET:          ${FB_APP_SECRET:-}
+      FB_VERIFY_TOKEN:        ${FB_VERIFY_TOKEN:-blinkone_fb_verify}
+      IG_VERIFY_TOKEN:        ${IG_VERIFY_TOKEN:-blinkone_ig_verify}
       ENABLE_ACCOUNT_SIGNUP:  "false"
       ACTION_CABLE_ALLOWED_REQUEST_ORIGINS: ${FRONTEND_URL:-http://localhost},http://127.0.0.1
       # Shared secret the calls service signs broadcast posts with (X-Blinkone-Internal-Token).
@@ -121,6 +125,10 @@ services:
       REDIS_URL:        redis://redis:6379
       SECRET_KEY_BASE:  ${SECRET_KEY_BASE}
       FRONTEND_URL:     ${FRONTEND_URL:-http://localhost}
+      FB_APP_ID:        ${FB_APP_ID:-}
+      FB_APP_SECRET:    ${FB_APP_SECRET:-}
+      FB_VERIFY_TOKEN:  ${FB_VERIFY_TOKEN:-blinkone_fb_verify}
+      IG_VERIFY_TOKEN:  ${IG_VERIFY_TOKEN:-blinkone_ig_verify}
     entrypoint: docker/entrypoints/rails.sh
     command: ["bundle", "exec", "sidekiq", "-C", "config/sidekiq.yml"]
     volumes:
@@ -188,6 +196,19 @@ services:
       PORT:     "8790"
       DATA_DIR: /data
       TOKEN:    ${PLATFORM_TOKEN}
+      WHATSAPP_CALLS_UPSTREAM: http://whatsapp-calls:8803
+      WHATSAPP_CALLS_TOKEN: ${WHATSAPP_CALLS_TOKEN:-${CALLS_TOKEN}}
+      FRONTEND_URL: ${FRONTEND_URL:-https://app.blinksone.com}
+      FB_APP_ID: ${FB_APP_ID:-}
+      FB_APP_SECRET: ${FB_APP_SECRET:-}
+      META_VERIFY_TOKEN: ${META_VERIFY_TOKEN:-}
+      WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID:-}
+      WHATSAPP_ACCESS_TOKEN: ${WHATSAPP_ACCESS_TOKEN:-}
+      WHATSAPP_BUSINESS_PHONE: ${WHATSAPP_BUSINESS_PHONE:-}
+      WHATSAPP_INBOX_ID: ${WHATSAPP_INBOX_ID:-}
+      WHATSAPP_MESSAGING_ENABLED: ${WHATSAPP_MESSAGING_ENABLED:-1}
+      WHATSAPP_CALLING_ENABLED: ${WHATSAPP_CALLING_ENABLED:-0}
+      WHATSAPP_ALLOW_UNSIGNED_WEBHOOK: ${WHATSAPP_ALLOW_UNSIGNED_WEBHOOK:-0}
       JWT_SECRET: ${JWT_SECRET}
       PLATFORM_ADMIN_EMAILS: ${PLATFORM_ADMIN_EMAILS:-admin@blinksone.com,admin@blinkone.ai,admin@labbik.om}
       BLINKONE_BRANDING_CONFIG: /config/blinkone/branding.yml
@@ -494,6 +515,7 @@ services:
       ESCALATION_UNASSIGNED_MINUTES: ${ESCALATION_UNASSIGNED_MINUTES:-15}
       ESCALATION_NO_RESPONSE_MINUTES: ${ESCALATION_NO_RESPONSE_MINUTES:-8}
       ESCALATION_CONVERSATION_TIMER: ${ESCALATION_CONVERSATION_TIMER:-1}
+      CHATWOOT_URL:              http://chatwoot:3000
     volumes: [escalation_data:/data]
     depends_on:
       postgres_app: { condition: service_healthy }
@@ -555,8 +577,25 @@ services:
     environment:
       PORT:                      "8803"
       TOKEN:                     ${WHATSAPP_CALLS_TOKEN:-${CALLS_TOKEN}}
+      PLATFORM_URL:              http://platform:8790
+      PLATFORM_TOKEN:            ${PLATFORM_TOKEN}
+      BLINKONE_TENANT_ID:        ${CHATWOOT_ACCOUNT_ID:-1}
       WHATSAPP_CALLING_ENABLED:  ${WHATSAPP_CALLING_ENABLED:-0}
+      WHATSAPP_MESSAGING_ENABLED: ${WHATSAPP_MESSAGING_ENABLED:-1}
+      WHATSAPP_PHONE_NUMBER_ID:  ${WHATSAPP_PHONE_NUMBER_ID:-}
+      WHATSAPP_BUSINESS_PHONE:   ${WHATSAPP_BUSINESS_PHONE:-+15556712440}
+      WHATSAPP_ACCESS_TOKEN:     ${WHATSAPP_ACCESS_TOKEN:-}
+      WHATSAPP_INBOX_ID:         ${WHATSAPP_INBOX_ID:-}
       META_VERIFY_TOKEN:         ${META_VERIFY_TOKEN:-blinkone-meta-verify}
+      META_APP_SECRET:           ${META_APP_SECRET:-}
+      WHATSAPP_ALLOW_UNSIGNED_WEBHOOK: ${WHATSAPP_ALLOW_UNSIGNED_WEBHOOK:-0}
+      CHATWOOT_BASE_URL:         http://chatwoot:3000
+      CHATWOOT_PUBLIC_URL:       ${FRONTEND_URL:-https://app.blinksone.com}
+      CHATWOOT_API_ACCESS_TOKEN: ${CHATWOOT_API_ACCESS_TOKEN:-${CUSTOMER_CHATWOOT_TOKEN}}
+      CHATWOOT_ACCOUNT_ID:       ${CHATWOOT_ACCOUNT_ID:-1}
+      BLINKONE_API_URL:          ${BLINKONE_API_URL:-https://app.blinksone.com}
+    depends_on:
+      chatwoot: { condition: service_started }
     networks: [blinkone]
     expose: ["8803"]
 

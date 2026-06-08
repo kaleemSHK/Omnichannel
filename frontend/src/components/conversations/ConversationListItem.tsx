@@ -8,6 +8,8 @@ import {
   Globe,
   AtSign,
   Send,
+  Facebook,
+  Instagram,
 } from 'lucide-react';
 import {
   conversationContactName,
@@ -36,6 +38,8 @@ const CHANNEL_CONFIG: Record<string, ChannelConfig> = {
   'Channel::Telegram': { icon: Send,          label: 'Telegram',  cls: 'bg-blue-100 text-blue-600' },
   'Channel::Sms':      { icon: Smartphone,    label: 'SMS',       cls: 'bg-orange-100 text-orange-700' },
   'Channel::Api':      { icon: Globe,         label: 'API',       cls: 'bg-purple-100 text-purple-700' },
+  'Channel::FacebookPage': { icon: Facebook,  label: 'Messenger', cls: 'bg-blue-100 text-blue-700' },
+  'Channel::Instagram':{ icon: Instagram,     label: 'Instagram', cls: 'bg-pink-100 text-pink-700' },
 };
 
 const DEFAULT_CHANNEL: ChannelConfig = {
@@ -86,9 +90,10 @@ interface Props {
   conversation: CWConversation;
   selected: boolean;
   onClick: () => void;
+  inboxName?: string;
 }
 
-export function ConversationListItem({ conversation, selected, onClick }: Props) {
+export function ConversationListItem({ conversation, selected, onClick, inboxName }: Props) {
   const name     = conversationContactName(conversation);
   const snippet  = conversationSnippet(conversation);
   const lastActive = relativeTime(conversation.last_activity_at);
@@ -143,9 +148,17 @@ export function ConversationListItem({ conversation, selected, onClick }: Props)
           </span>
         </div>
 
-        {/* Row 2: channel badge + assignee + unread badge */}
-        <div className="flex items-center gap-1.5 mb-1">
+        {/* Row 2: channel + inbox + assignee + unread badge */}
+        <div className="flex items-center gap-1.5 mb-1 min-w-0">
           <ChannelBadge channel={conversation.channel} />
+          {inboxName && (
+            <span
+              className="text-[9px] bg-slate-100 text-slate-600 rounded-full px-1.5 py-0.5 font-medium truncate max-w-[88px] shrink-0"
+              title={`Inbox: ${inboxName}`}
+            >
+              {inboxName}
+            </span>
+          )}
           {assignee && (
             <span
               className="text-[9px] bg-gray-100 text-gray-600 rounded-full px-1.5 py-0.5 font-medium truncate max-w-[60px]"

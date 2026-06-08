@@ -5,6 +5,7 @@ import { assignBillingPlan } from './billing-client.js';
 import { DEFAULT_FEATURES, seedTenantDefaults } from './seed-defaults.js';
 import { seedTenantRoles, assignTenantOwnerRbac } from './rbac-repo.js';
 import * as repo from './repo.js';
+import { ensureTenantServiceToken } from './chatwoot-service-token.js';
 
 function slugify(name) {
   return name
@@ -95,6 +96,13 @@ export async function provisionTenant(body) {
 
   const seedResults = await seedTenantDefaults(tenantId, { name: name.trim(), features });
 
+  let serviceToken = null;
+  try {
+    serviceToken = await ensureTenantServiceToken(tenantId);
+  } catch (e) {
+    console.warn('[provision] automation token setup failed:', e.message);
+  }
+
   const frontendBase = (process.env.FRONTEND_URL || 'http://localhost').replace(/\/$/, '');
   const onboardingUrl = `${frontendBase}/app/accounts/${account.id}/settings`;
 
@@ -104,6 +112,7 @@ export async function provisionTenant(body) {
     chatwootStub: account.stub === true,
     ownerUserId: account.ownerUserId ?? null,
     ownerTempPassword: account.ownerTempPassword ?? null,
+    automationServiceEmail: serviceToken?.serviceEmail ?? null,
     onboardingUrl,
     seedResults,
     inviteToken: randomUUID(),

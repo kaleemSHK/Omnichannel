@@ -1,9 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-cd /opt/blinkone
-echo "=== SLA policies ==="
-docker exec blinkone-postgres_app-1 psql -U app -d blinkone_app -c "SELECT name, is_default FROM sla_policies WHERE tenant_id='1';"
-echo "=== SLA instances ==="
-docker exec blinkone-postgres_app-1 psql -U app -d blinkone_app -c "SELECT count(*) FROM sla_instances WHERE tenant_id='1';"
-echo "=== SLA worker log ==="
-docker logs blinkone-sla-1 2>&1 | tail -5
+docker exec blinkone-postgres_app-1 psql -U app -d blinkone_app -c "SELECT count(*) AS policies FROM sla_policies;"
+docker exec blinkone-postgres_app-1 psql -U app -d blinkone_app -c "SELECT count(*) AS instances FROM sla_instances;"
+docker exec blinkone-postgres_app-1 psql -U app -d blinkone_app -c "SELECT id, tenant_id, name, is_default, enabled FROM sla_policies;"
+docker exec blinkone-postgres_app-1 psql -U app -d blinkone_app -c "SELECT p.name, t.target_type, t.threshold_minutes FROM sla_targets t JOIN sla_policies p ON p.id=t.policy_id WHERE p.tenant_id='1' ORDER BY p.name, t.target_type;"

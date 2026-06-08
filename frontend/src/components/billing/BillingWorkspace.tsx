@@ -6,6 +6,7 @@ import { CreditCard, Loader2, Lock, Package, PieChart, Receipt } from 'lucide-re
 import { useAuthStore } from '@/lib/store/auth';
 import { can } from '@/lib/rbac';
 import { PlanBanner } from '@/components/billing/PlanBanner';
+import { NoPlanBanner } from '@/components/billing/NoPlanBanner';
 import { UsageGaugeFromData } from '@/components/billing/UsageGauge';
 import { InvoiceTable } from '@/components/billing/InvoiceTable';
 import { AddOnCard } from '@/components/billing/AddOnCard';
@@ -16,6 +17,7 @@ import {
   useBillingDemoMode,
   useBillingHistory,
   useBillingInvoices,
+  useBillingPaymentMethods,
   useBillingSubscription,
   useBillingUsage,
 } from '@/lib/hooks/useBilling';
@@ -49,10 +51,11 @@ export function BillingWorkspace() {
     );
   }
 
-  const { data: plan, isLoading: planLoading } = useBillingSubscription();
+  const { data: plan, isLoading: planLoading, isError: planError } = useBillingSubscription();
   const { data: gauges = [], isLoading: usageLoading } = useBillingUsage();
   const { data: invoices = [], isLoading: invLoading } = useBillingInvoices();
   const { data: history = [] } = useBillingHistory();
+  const { data: paymentMethods = [] } = useBillingPaymentMethods();
   const { data: addons = [] } = useBillingAddons();
   const demoMode = useBillingDemoMode();
 
@@ -73,7 +76,7 @@ export function BillingWorkspace() {
     router.push(q);
   };
 
-  const loading = planLoading || usageLoading;
+  const loading = planLoading || (usageLoading && tab === 'overview');
 
   return (
     <div className="flex h-full min-h-[calc(100vh-3rem)] bg-surface-tertiary">
@@ -96,27 +99,42 @@ export function BillingWorkspace() {
 
       <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6">
         {demoMode && <DemoBanner label="Billing demo data (LABBIK Telecom sample tenant)" />}
+        {planError && tab === 'overview' && (
+          <div className="bn-card p-4 text-sm text-amber-800 bg-amber-50 border border-amber-200">
+            Billing service unavailable. Ensure billing sidecar is running and PostgreSQL is configured.
+          </div>
+        )}
         {loading && tab === 'overview' ? (
           <div className="flex justify-center py-16 text-gray-400">
             <Loader2 className="animate-spin" size={28} />
           </div>
         ) : (
           <>
-            {tab === 'overview' && plan && (
+            {tab === 'overview' && (
               <>
-                <PlanBanner plan={plan} onManagePlan={() => setUpgradeOpen(true)} />
+                {plan ? (
+                  <PlanBanner plan={plan} onManagePlan={() => setUpgradeOpen(true)} />
+                ) : (
+                  <NoPlanBanner onChoosePlan={() => setUpgradeOpen(true)} />
+                )}
                 <section>
                   <h2 className="text-sm font-semibold text-gray-900 mb-3">Usage this cycle</h2>
-                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-                    {gauges.map(g => (
-                      <UsageGaugeFromData key={g.key} data={g} />
-                    ))}
-                  </div>
+                  {gauges.length === 0 ? (
+                    <p className="text-xs text-muted-foreground bn-card p-4">No usage recorded yet this billing period.</p>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                      {gauges.map(g => (
+                        <UsageGaugeFromData key={g.key} data={g} />
+                      ))}
+                    </div>
+                  )}
                 </section>
                 <section className="bn-card p-4">
                   <h2 className="text-sm font-semibold text-gray-900 mb-3">Recent invoices</h2>
                   {invLoading ? (
                     <Loader2 className="animate-spin text-gray-400 mx-auto" size={20} />
+                  ) : invoices.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">No invoices yet. Invoices generate at period end (OMR + 5% VAT).</p>
                   ) : (
                     <InvoiceTable invoices={invoices.slice(0, 5)} />
                   )}
@@ -158,19 +176,37 @@ export function BillingWorkspace() {
             {tab === 'payment' && (
               <section className="bn-card p-4 max-w-lg">
                 <h2 className="text-sm font-semibold text-gray-900 mb-3">Payment methods</h2>
-                <div className="border border-gray-200 rounded-lg p-4 flex items-center gap-3">
-                  <CreditCard className="text-gray-400" size={24} />
-                  <div>
-                    <p className="text-sm font-medium text-gray-900">Visa ···· 4242</p>
-                    <p className="text-xs text-gray-500">Expires 09/2027 · Default</p>
-                  </div>
-                  <button
-                    type="button"
-                    className="ms-auto text-sm text-[#0B5FFF] hover:underline"
-                  >
-                    Update
-                  </button>
-                </div>
+                {paymentMethods.length === 0 ? (
+                  <p className="text-xs text-muted-foreground mb-3">
+                    No payment method on file. Add a card to pay invoices (OMR).
+                  </p>
+                ) : (
+                  paymentMethods.map(pm => (
+                    <div
+                      key={pm.id}
+                      className="border border-gray-200 rounded-lg p-4 flex items-center gap-3 mb-2"
+                    >
+                      <CreditCard className="text-gray-400" size={24} />
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">
+                          {pm.type === 'card' ? 'Card' : pm.type} ···· {pm.last4 ?? '****'}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          {pm.expMonth && pm.expYear
+                            ? `Expires ${String(pm.expMonth).padStart(2, '0')}/${pm.expYear}`
+                            : 'On file'}
+                          {pm.isDefault ? ' · Default' : ''}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        className="ms-auto text-sm text-[#0B5FFF] hover:underline"
+                      >
+                        Update
+                      </button>
+                    </div>
+                  ))
+                )}
                 <button
                   type="button"
                   className="mt-3 text-sm text-[#0B5FFF] hover:underline"

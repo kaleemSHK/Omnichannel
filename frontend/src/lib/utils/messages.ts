@@ -13,6 +13,9 @@ export function resolveAttachmentUrl(url: string | undefined): string {
 
 function normalizeFileType(raw: unknown): string {
   const t = String(raw ?? 'file').toLowerCase();
+  if (t.startsWith('audio') || t === 'audio' || t === 'voice') return 'audio';
+  if (t.startsWith('video') || t === 'video') return 'video';
+  if (t.startsWith('image') || t === 'image') return 'image';
   if (t === 'document') return 'file';
   return t;
 }

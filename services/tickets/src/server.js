@@ -342,7 +342,7 @@ app.get('/v1/tickets/by-conversation/:conversationId', auth, async (req, res) =>
   if (dbEnabled()) {
     try {
       const t = await ticketRepo.getTicketByConversationId(accountId, conversationId);
-      return t ? ok(res, t) : fail(res, 'NOT_FOUND', 'No ticket linked to this conversation', 404);
+      return t ? ok(res, t) : ok(res, null);
     } catch (e) {
       log.error({ err: e.message }, 'by-conversation');
       return fail(res, 'INTERNAL_ERROR', 'Failed', 500);
@@ -354,7 +354,7 @@ app.get('/v1/tickets/by-conversation/:conversationId', auth, async (req, res) =>
   const t = s.tickets.find(
     (x) => x.chatwootAccountId === accountId && Number(x.chatwootConversationId) === conversationId,
   );
-  return t ? ok(res, mapTicket(t, s)) : fail(res, 'NOT_FOUND', 'No ticket linked to this conversation', 404);
+  return t ? ok(res, mapTicket(t, s)) : ok(res, null);
 });
 
 /**

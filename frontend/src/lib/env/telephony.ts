@@ -14,10 +14,21 @@ export function isValidWebSocketUrl(url: string): boolean {
 }
 
 export function getConfiguredWsUrl(): string {
-  return (
-    process.env.NEXT_PUBLIC_WS_URL ??
-    `${(process.env.NEXT_PUBLIC_CHATWOOT_URL ?? 'http://127.0.0.1:3000').replace(/^http/, 'ws')}/cable`
-  );
+  const fallback = `${(process.env.NEXT_PUBLIC_CHATWOOT_URL ?? 'http://127.0.0.1:3000').replace(/^http/, 'ws')}/cable`;
+  let url = process.env.NEXT_PUBLIC_WS_URL ?? fallback;
+
+  // app.blinksone.com is Cloudflare-proxied — ActionCable must use grey-cloud ws host.
+  if (typeof window !== 'undefined') {
+    const host = window.location.hostname;
+    if (
+      host === 'app.blinksone.com'
+      && /app\.blinksone\.com\/cable/i.test(url)
+    ) {
+      url = 'wss://ws.blinksone.com/cable';
+    }
+  }
+
+  return url;
 }
 
 export function isActionCableReady(): boolean {

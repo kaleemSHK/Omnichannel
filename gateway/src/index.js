@@ -777,6 +777,26 @@ app.post('/api/webhooks/chatwoot', (req, res) => {
     fanout(`${U.sla}/v1/events`, slaPayload({ event: 'conversation_created' }), TOKENS.sla, { feature: 'sla' });
   }
 
+  const escSyncEvents = new Set([
+    'conversation_created',
+    'conversation_updated',
+    'conversation_status_changed',
+    'message_created',
+  ]);
+  const escTypeMap = {
+    conversation_created: 'conversation.created',
+    conversation_updated: 'conversation.updated',
+    conversation_status_changed: 'conversation.status_changed',
+    message_created: 'message.created',
+  };
+  if (U.escalation && TOKENS.escalation && escSyncEvents.has(event)) {
+    fanout(
+      `${U.escalation}/v1/conversations/sync`,
+      { type: escTypeMap[event] || event, ...body },
+      TOKENS.escalation,
+    );
+  }
+
   if (event === 'message_created') {
     fanout(`${U.sla}/v1/events`, slaPayload({ event: 'message_created' }), TOKENS.sla, { feature: 'sla' });
     // T01: mirror inbound customer messages to linked ticket timeline
@@ -789,6 +809,16 @@ app.post('/api/webhooks/chatwoot', (req, res) => {
         chatwootAccountId: isId(accountId) ? accountId : 0,
         conversationId: isId(convId) ? convId : null,
       }, TOKENS.ticket);
+    }
+    // WhatsApp outbound — agent replies with text / voice / video → Meta Cloud API
+    if (U.whatsappCalls) {
+      const ch = String(body.conversation?.channel ?? '');
+      const isWa = /whatsapp/i.test(ch);
+      const mt = body.message?.message_type;
+      const isOutgoing = mt === 1 || mt === 'outgoing';
+      if (isWa && isOutgoing && !body.message?.private) {
+        fanout(`${U.whatsappCalls}/v1/webhooks/chatwoot`, body, TOKENS.whatsappCalls);
+      }
     }
   }
 

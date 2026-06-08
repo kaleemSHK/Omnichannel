@@ -131,7 +131,7 @@ export function normalizeSubscription(raw: unknown, monthlyPrice = 432): Billing
     id: String(r.planId ?? r.plan_id ?? 'pro'),
     name: planName,
     badgeClass: planBadgeClass(planName),
-    monthlyPrice: Number(r.monthlyAmount ?? r.base_price_omr ?? r.basePriceOmr ?? monthlyPrice),
+    monthlyPrice: Number(r.basePriceOmr ?? r.base_price_omr ?? r.monthlyAmount ?? monthlyPrice),
     currency: String(r.currency ?? 'OMR'),
     renewalDate,
     daysUntilRenewal: daysUntil(renewalDate),

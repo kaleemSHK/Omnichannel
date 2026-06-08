@@ -1,6 +1,6 @@
 'use client';
 
-import { MessageSquare, Phone, Mail, Globe, Zap, Bot, Pencil, Trash2 } from 'lucide-react';
+import { MessageSquare, Phone, Mail, Globe, Zap, Bot, Pencil, Trash2, Send, MessageCircle, Facebook, Instagram } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils/cn';
@@ -13,6 +13,10 @@ export const CHANNEL_META: Record<string, { label: string; Icon: React.ElementTy
   'Channel::TwilioSms': { label: 'SMS', Icon: Phone, color: 'bg-amber-50 text-amber-600' },
   'Channel::Voice': { label: 'Voice / SIP', Icon: Zap, color: 'bg-rose-50 text-rose-600' },
   'Channel::Api': { label: 'API', Icon: Bot, color: 'bg-gray-50 text-gray-600' },
+  'Channel::Telegram': { label: 'Telegram', Icon: Send, color: 'bg-sky-50 text-sky-600' },
+  'Channel::Line': { label: 'Line', Icon: MessageCircle, color: 'bg-green-50 text-green-700' },
+  'Channel::FacebookPage': { label: 'Messenger', Icon: Facebook, color: 'bg-blue-50 text-blue-700' },
+  'Channel::Instagram': { label: 'Instagram', Icon: Instagram, color: 'bg-pink-50 text-pink-600' },
 };
 
 interface InboxCardProps {

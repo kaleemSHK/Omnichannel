@@ -25,6 +25,7 @@ import {
   type ConnectorUpsertPayload,
 } from '@/lib/api/connectors';
 import { isDemoDataEnabled } from '@/lib/demo/config';
+import { useTenantId } from '@/lib/hooks/useTenantScope';
 
 // ─── Demo data ──────────────────────────────────────────────────────────────
 
@@ -127,6 +128,7 @@ const STATUS_BADGE: Record<ConnectorRecord['status'], { label: string; className
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export function CRMConnectorsPanel() {
+  const tenantId = useTenantId();
   const qc = useQueryClient();
   const [addOpen, setAddOpen] = useState(false);
   const [selectedType, setSelectedType] = useState<ConnectorType>('salesforce');
@@ -136,7 +138,7 @@ export function CRMConnectorsPanel() {
 
   // ─── List query ────────────────────────────────────────────────────────────
   const { data: connectors = [], isLoading } = useQuery({
-    queryKey: ['crm-connectors'],
+    queryKey: ['crm-connectors', tenantId],
     queryFn: () => {
       if (isDemoDataEnabled()) return DEMO_CONNECTORS;
       return listConnectors();
@@ -149,7 +151,7 @@ export function CRMConnectorsPanel() {
     mutationFn: (payload: ConnectorUpsertPayload) => upsertConnector(payload),
     onSuccess: () => {
       toast.success('Connector saved');
-      void qc.invalidateQueries({ queryKey: ['crm-connectors'] });
+      void qc.invalidateQueries({ queryKey: ['crm-connectors', tenantId] });
       setAddOpen(false);
       setFormValues({});
       setConnectorName('');
@@ -162,7 +164,7 @@ export function CRMConnectorsPanel() {
     mutationFn: (id: string) => deleteConnector(id),
     onSuccess: () => {
       toast.success('Connector removed');
-      void qc.invalidateQueries({ queryKey: ['crm-connectors'] });
+      void qc.invalidateQueries({ queryKey: ['crm-connectors', tenantId] });
     },
     onError: (e: Error) => toast.error(`Delete failed: ${e.message}`),
   });

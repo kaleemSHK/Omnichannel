@@ -12,17 +12,19 @@ import {
   type TicketField,
 } from '@/lib/api/ticketFields';
 import { isGatewayQueryEnabled } from '@/lib/demo/config';
+import { useTenantId } from '@/lib/hooks/useTenantScope';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
 const FIELD_TYPES = ['text', 'number', 'boolean', 'select', 'date'] as const;
 
 export function TicketFieldsSettings() {
+  const tenantId = useTenantId();
   const qc = useQueryClient();
   const gatewayReady = isGatewayQueryEnabled();
 
   const { data: fields = [], isLoading, error: loadError, refetch } = useQuery({
-    queryKey: ['ticket-fields'],
+    queryKey: ['ticket-fields', tenantId],
     queryFn: listTicketFields,
     enabled: gatewayReady,
     retry: 1,
@@ -58,7 +60,7 @@ export function TicketFieldsSettings() {
       return createTicketField({ ...form, sort_order: fields.length });
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['ticket-fields'] });
+      qc.invalidateQueries({ queryKey: ['ticket-fields', tenantId] });
       setForm({ field_key: '', label: '', field_type: 'text', required: false });
       setError('');
     },
@@ -73,7 +75,7 @@ export function TicketFieldsSettings() {
 
   const remove = useMutation({
     mutationFn: deleteTicketField,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['ticket-fields'] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['ticket-fields', tenantId] }),
     onError: (e: Error) => setError(e.message),
   });
 

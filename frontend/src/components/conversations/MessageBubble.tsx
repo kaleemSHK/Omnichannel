@@ -75,7 +75,7 @@ export function MessageBubble({ message }: Props) {
             </p>
           ) : null}
           {message.attachments && message.attachments.length > 0 && (
-            <MessageAttachments attachments={message.attachments} />
+            <MessageAttachments attachments={message.attachments} isOutbound={isOutbound} />
           )}
         </div>
         <p className="text-xs text-muted-foreground mt-1 px-1">

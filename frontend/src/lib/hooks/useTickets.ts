@@ -158,6 +158,7 @@ export function useTicketByConversation(conversationId: number | null) {
     },
     enabled: Boolean(conversationId) && gwEnabled,
     staleTime: 30_000,
+    retry: false,
   });
 }
 

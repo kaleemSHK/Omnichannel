@@ -12,6 +12,7 @@ import { useState, useCallback } from 'react';
 import { useAllAgentsWithSkills, useAgentSkills, useQueueSkillWeights } from '@/lib/hooks/useSkills';
 import { useQuery } from '@tanstack/react-query';
 import { listQueues } from '@/lib/api/routing';
+import { useTenantId } from '@/lib/hooks/useTenantScope';
 import { SectionHeader } from './shared/SectionHeader';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -312,9 +313,10 @@ function QueueWeightsPanel({ queue }: { queue: Queue }) {
 // ─── Main section ─────────────────────────────────────────────────────────────
 
 export function SkillsManagerSection() {
+  const tenantId = useTenantId();
   const agentsQuery = useAllAgentsWithSkills();
   const queuesQuery = useQuery<Queue[]>({
-    queryKey: ['queues'],
+    queryKey: ['queues', tenantId],
     queryFn: listQueues,
     staleTime: 30_000,
   });

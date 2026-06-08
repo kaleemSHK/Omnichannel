@@ -6,14 +6,23 @@ import { verifyWebhook, verifySignature, parseWebhookEvents } from '../lib/meta-
 import { storeOffer, setAnswer, getSession } from '../lib/sdp-relay.js';
 import { bridgeToChat, handleChatwootOutbound } from '../lib/chatwoot-bridge.js';
 import { sendText, sendTemplate, sendMedia, markRead } from '../lib/messaging.js';
+import { initRuntimeConfig, refreshRuntimeConfig, getRuntimeConfig } from '../lib/runtime-config.js';
 
 const log = createLogger('whatsapp-calls');
 const PORT = parseInt(process.env.PORT || '8803', 10);
 const TOKEN = (process.env.TOKEN || '').trim();
-const CALLING_ENABLED = process.env.WHATSAPP_CALLING_ENABLED === '1';
-const MESSAGING_ENABLED = process.env.WHATSAPP_MESSAGING_ENABLED !== '0'; // default on
 
 const auth = bearerAuth(TOKEN);
+
+async function messagingEnabled() {
+  const cfg = await getRuntimeConfig();
+  return cfg.messagingEnabled !== false;
+}
+
+async function callingEnabled() {
+  const cfg = await getRuntimeConfig();
+  return Boolean(cfg.callingEnabled);
+}
 const app = express();
 app.disable('x-powered-by');
 app.use(requestId);
@@ -91,9 +100,12 @@ async function handleIncomingMessage(evt) {
   log.info({ from: evt.from?.slice(-4).padStart(evt.from?.length ?? 4, '*'), msgType: evt.messageType }, 'wa message received');
 
   // Bridge to Chatwoot (creates contact + conversation + posts message)
-  if (MESSAGING_ENABLED) {
+  if (await messagingEnabled()) {
     await bridgeToChat({
       from: evt.from,
+      messageId: evt.messageId,
+      timestamp: evt.timestamp,
+      phoneNumberId: evt.phoneNumberId,
       type: evt.messageType,
       profileName: evt.profileName,
       text: evt.text,
@@ -151,7 +163,7 @@ app.post(
 
 /** POST /v1/messages/text */
 app.post('/v1/messages/text', auth, express.json({ limit: '256kb' }), async (req, res) => {
-  if (!MESSAGING_ENABLED) return fail(res, 'DISABLED', 'WhatsApp messaging not enabled', 503);
+  if (!(await messagingEnabled())) return fail(res, 'DISABLED', 'WhatsApp messaging not enabled', 503);
   const { to, body } = req.body ?? {};
   if (!to?.trim() || !body?.trim()) {
     return fail(res, 'VALIDATION_ERROR', 'to and body required', 400);
@@ -167,7 +179,7 @@ app.post('/v1/messages/text', auth, express.json({ limit: '256kb' }), async (req
 
 /** POST /v1/messages/template */
 app.post('/v1/messages/template', auth, express.json({ limit: '256kb' }), async (req, res) => {
-  if (!MESSAGING_ENABLED) return fail(res, 'DISABLED', 'WhatsApp messaging not enabled', 503);
+  if (!(await messagingEnabled())) return fail(res, 'DISABLED', 'WhatsApp messaging not enabled', 503);
   const { to, templateName, languageCode, components } = req.body ?? {};
   if (!to?.trim() || !templateName?.trim()) {
     return fail(res, 'VALIDATION_ERROR', 'to and templateName required', 400);
@@ -187,7 +199,7 @@ app.post('/v1/messages/template', auth, express.json({ limit: '256kb' }), async 
 
 /** POST /v1/messages/media */
 app.post('/v1/messages/media', auth, express.json({ limit: '256kb' }), async (req, res) => {
-  if (!MESSAGING_ENABLED) return fail(res, 'DISABLED', 'WhatsApp messaging not enabled', 503);
+  if (!(await messagingEnabled())) return fail(res, 'DISABLED', 'WhatsApp messaging not enabled', 503);
   const { to, mediaType, mediaUrl, caption, filename } = req.body ?? {};
   const validTypes = ['image', 'video', 'audio', 'document'];
   if (!to?.trim() || !mediaType || !mediaUrl?.trim()) {
@@ -206,8 +218,8 @@ app.post('/v1/messages/media', auth, express.json({ limit: '256kb' }), async (re
 
 // ─── WhatsApp Calling — SDP relay ──────────────────────────────────────────
 
-app.post('/v1/calls/:id/sdp', auth, express.json({ limit: '512kb' }), (req, res) => {
-  if (!CALLING_ENABLED) return fail(res, 'DISABLED', 'WhatsApp calling not enabled', 503);
+app.post('/v1/calls/:id/sdp', auth, express.json({ limit: '512kb' }), async (req, res) => {
+  if (!(await callingEnabled())) return fail(res, 'DISABLED', 'WhatsApp calling not enabled', 503);
   const { offer, answer } = req.body ?? {};
   if (offer) storeOffer(req.params.id, offer);
   if (answer) setAnswer(req.params.id, answer);
@@ -216,23 +228,38 @@ app.post('/v1/calls/:id/sdp', auth, express.json({ limit: '512kb' }), (req, res)
 
 // ─── Configuration status ────────────────────────────────────────────────────
 
-app.get('/v1/config', auth, (_req, res) => {
+app.get('/v1/config', auth, async (_req, res) => {
+  const cfg = await getRuntimeConfig();
   ok(res, {
-    messagingEnabled: MESSAGING_ENABLED,
-    callingEnabled: CALLING_ENABLED,
-    phoneNumberIdConfigured: Boolean(process.env.WHATSAPP_PHONE_NUMBER_ID),
-    accessTokenConfigured: Boolean(process.env.WHATSAPP_ACCESS_TOKEN),
-    appSecretConfigured: Boolean(process.env.META_APP_SECRET),
-    inboxIdConfigured: Boolean(process.env.WHATSAPP_INBOX_ID),
+    messagingEnabled: cfg.messagingEnabled !== false,
+    callingEnabled: Boolean(cfg.callingEnabled),
+    phoneNumberIdConfigured: Boolean(cfg.phoneNumberId),
+    accessTokenConfigured: Boolean(cfg.accessToken),
+    appSecretConfigured: Boolean(cfg.metaAppSecret),
+    inboxIdConfigured: Boolean(cfg.chatwootInboxId),
     chatwootConfigured: Boolean(process.env.CHATWOOT_API_ACCESS_TOKEN),
-    verifyToken: process.env.META_VERIFY_TOKEN ? '***configured***' : '(not set)',
-    webhookUrl: `${process.env.BLINKONE_API_URL ?? 'https://yourserver.com'}/api/whatsapp/v1/webhooks/meta`,
+    verifyToken: cfg.metaVerifyToken ? '***configured***' : '(not set)',
+    webhookUrl: cfg.webhookUrl,
+    chatwootWebhookUrl: cfg.chatwootWebhookUrl,
   });
+});
+
+app.post('/v1/admin/reload-config', auth, async (_req, res) => {
+  const cfg = await refreshRuntimeConfig();
+  ok(res, { reloaded: true, inboxId: cfg.chatwootInboxId || null });
 });
 
 app.use(errorHandler(log));
 
-const server = app.listen(PORT, '0.0.0.0', () =>
-  log.info({ port: PORT, messaging: MESSAGING_ENABLED, calling: CALLING_ENABLED }, 'whatsapp started'),
-);
+const server = app.listen(PORT, '0.0.0.0', async () => {
+  await initRuntimeConfig();
+  const cfg = await getRuntimeConfig();
+  log.info(
+    { port: PORT, messaging: cfg.messagingEnabled !== false, calling: Boolean(cfg.callingEnabled) },
+    'whatsapp started',
+  );
+  setInterval(() => {
+    refreshRuntimeConfig().catch(err => log.warn({ err: err.message }, 'config refresh failed'));
+  }, 30_000);
+});
 gracefulShutdown(server, log);

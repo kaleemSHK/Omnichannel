@@ -9,6 +9,7 @@ import {
   saveAgentScriptConfig,
   type AgentScriptConfig,
 } from '@/lib/api/ai';
+import { useTenantId } from '@/lib/hooks/useTenantScope';
 import { SectionHeader } from '@/components/settings/shared/SectionHeader';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -19,9 +20,10 @@ import { Skeleton } from '@/components/ui/skeleton';
 type StepRow = { id: string; label: string; description: string };
 
 export function AgentScriptsSection() {
+  const tenantId = useTenantId();
   const qc = useQueryClient();
   const { data, isLoading } = useQuery({
-    queryKey: ['agent-scripts'],
+    queryKey: ['agent-scripts', tenantId],
     queryFn: getAgentScriptConfig,
   });
 
@@ -47,7 +49,7 @@ export function AgentScriptsSection() {
         })),
       }),
     onSuccess: saved => {
-      qc.setQueryData(['agent-scripts'], saved);
+      qc.setQueryData(['agent-scripts', tenantId], saved);
       toast.success('Agent script saved');
       setHydrated(false);
     },

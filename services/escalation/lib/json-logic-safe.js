@@ -98,8 +98,17 @@ function evalNode(node, data) {
   }
 }
 
-export function simulateRule(rule, event) {
-  const data = { event, conversation: event.conversation ?? {}, customer: event.customer ?? {}, agent: event.agent ?? {} };
+export function simulateRule(rule, eventPayload) {
+  const eventCtx =
+    eventPayload?.event && typeof eventPayload.event === 'object' && !Array.isArray(eventPayload.event)
+      ? eventPayload.event
+      : {};
+  const data = {
+    event: eventCtx,
+    conversation: eventPayload?.conversation ?? {},
+    customer: eventPayload?.customer ?? {},
+    agent: eventPayload?.agent ?? {},
+  };
   const conditionsPassed = applyLogic(rule.conditions ?? true, data);
   const actions = conditionsPassed ? (rule.actions ?? []) : [];
   return { conditionsPassed, actions, dryRun: true };

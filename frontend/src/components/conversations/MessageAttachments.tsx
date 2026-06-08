@@ -2,35 +2,37 @@
 
 import { useEffect, useState } from 'react';
 import { Download, FileIcon } from 'lucide-react';
+import { WhatsAppVoiceMessage } from '@/components/conversations/WhatsAppVoiceMessage';
 import { formatFileSize } from '@/lib/utils/attachments';
 import type { CWAttachment } from '@/types';
 
 interface Props {
   attachments: CWAttachment[];
+  isOutbound?: boolean;
 }
 
-export function MessageAttachments({ attachments }: Props) {
+export function MessageAttachments({ attachments, isOutbound = false }: Props) {
   return (
     <div className="mt-2 space-y-2">
       {attachments.map(att => (
-        <AttachmentItem key={att.id} attachment={att} />
+        <AttachmentItem key={att.id} attachment={att} isOutbound={isOutbound} />
       ))}
     </div>
   );
 }
 
-function AttachmentItem({ attachment }: { attachment: CWAttachment }) {
+function AttachmentItem({
+  attachment,
+  isOutbound = false,
+}: {
+  attachment: CWAttachment;
+  isOutbound?: boolean;
+}) {
   const type = attachment.file_type?.toLowerCase() ?? 'file';
   const url = attachment.data_url;
 
-  if (type === 'audio') {
-    return (
-      <audio controls preload="metadata" src={url} className="w-full max-w-xs h-9">
-        <a href={url} target="_blank" rel="noreferrer" className="text-xs text-brand-primary underline">
-          Play audio
-        </a>
-      </audio>
-    );
+  if (type === 'audio' || type.startsWith('audio')) {
+    return <WhatsAppVoiceMessage src={url} isOutbound={isOutbound} />;
   }
 
   if (type === 'image') {
@@ -45,9 +47,15 @@ function AttachmentItem({ attachment }: { attachment: CWAttachment }) {
     );
   }
 
-  if (type === 'video') {
+  if (type === 'video' || type.startsWith('video')) {
     return (
-      <video controls preload="metadata" src={url} className="rounded-md max-h-48 max-w-full">
+      <video
+        controls
+        preload="metadata"
+        src={url}
+        className="rounded-xl max-h-56 max-w-full bg-black/5"
+        playsInline
+      >
         <a href={url} target="_blank" rel="noreferrer" className="text-xs text-brand-primary underline">
           Play video
         </a>

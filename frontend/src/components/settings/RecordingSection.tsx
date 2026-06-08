@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { SectionHeader } from './shared/SectionHeader';
 import { Button } from '@/components/ui/button';
@@ -16,38 +17,13 @@ import {
 } from '@/components/ui/select-radix';
 import { Mic, ShieldCheck, HardDrive, Volume2, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
-
-// ─── Types ─────────────────────────────────────────────────────────────────────
-
-interface RecordingConfig {
-  enabledChannels: {
-    pstn: boolean;
-    whatsapp: boolean;
-    webrtc: boolean;
-  };
-  announcementEnabled: boolean;
-  announcementText: string;
-  retentionDays: number;
-  storageBackend: 'local' | 's3' | 'azure' | 'gcs';
-  storageBucket: string;
-  pciAutoPause: boolean;
-  pciResumeOnHangup: boolean;
-  encryptAtRest: boolean;
-  accessRestriction: 'all_agents' | 'supervisors_only' | 'admins_only';
-}
-
-const DEFAULTS: RecordingConfig = {
-  enabledChannels: { pstn: true, whatsapp: false, webrtc: true },
-  announcementEnabled: true,
-  announcementText: 'This call may be recorded for quality and training purposes.',
-  retentionDays: 90,
-  storageBackend: 'local',
-  storageBucket: '',
-  pciAutoPause: true,
-  pciResumeOnHangup: true,
-  encryptAtRest: true,
-  accessRestriction: 'supervisors_only',
-};
+import {
+  getRecordingConfig,
+  updateRecordingConfig,
+  type RecordingConfig,
+} from '@/lib/api/platform-settings';
+import { useTenantId } from '@/lib/hooks/useTenantScope';
+import { Skeleton } from '@/components/ui/skeleton';
 
 // ─── Section card ──────────────────────────────────────────────────────────────
 
@@ -101,18 +77,40 @@ function ToggleRow({
 // ─── Main section ──────────────────────────────────────────────────────────────
 
 export function RecordingSection() {
-  const [cfg, setCfg] = useState<RecordingConfig>(DEFAULTS);
-  const [saving, setSaving] = useState(false);
+  const tenantId = useTenantId();
+  const qc = useQueryClient();
+  const { data, isLoading } = useQuery({
+    queryKey: ['recording-config', tenantId],
+    queryFn: getRecordingConfig,
+  });
+  const [cfg, setCfg] = useState<RecordingConfig | null>(null);
+
+  useEffect(() => {
+    if (data) setCfg(data);
+  }, [data]);
+
+  const saveMutation = useMutation({
+    mutationFn: () => updateRecordingConfig(cfg ?? {}),
+    onSuccess: next => {
+      qc.setQueryData(['recording-config', tenantId], next);
+      setCfg(next);
+      toast.success('Recording settings saved');
+    },
+    onError: (e: Error) => toast.error(e.message || 'Save failed'),
+  });
 
   function set<K extends keyof RecordingConfig>(k: K, v: RecordingConfig[K]) {
-    setCfg(p => ({ ...p, [k]: v }));
+    setCfg(p => (p ? { ...p, [k]: v } : p));
   }
 
-  async function save() {
-    setSaving(true);
-    await new Promise(r => setTimeout(r, 600));
-    setSaving(false);
-    toast.success('Recording settings saved');
+  if (isLoading || !cfg) {
+    return (
+      <div className="space-y-3 max-w-2xl">
+        {[1, 2, 3].map(i => (
+          <Skeleton key={i} className="h-24 rounded-xl" />
+        ))}
+      </div>
+    );
   }
 
   const anyCloudStorage = cfg.storageBackend !== 'local';
@@ -275,11 +273,11 @@ export function RecordingSection() {
 
       <div className="flex justify-end">
         <Button
-          disabled={saving}
-          onClick={save}
+          disabled={saveMutation.isPending}
+          onClick={() => saveMutation.mutate()}
           className="bg-brand-primary hover:bg-brand-primary/90"
         >
-          {saving ? 'Saving…' : 'Save recording settings'}
+          {saveMutation.isPending ? 'Saving…' : 'Save recording settings'}
         </Button>
       </div>
     </div>

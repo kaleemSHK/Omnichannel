@@ -109,8 +109,16 @@ app.post('/v1/tenants/:tenantId/subscription/cancel', auth, async (req, res) => 
 
 app.get('/v1/tenants/:tenantId/subscription', auth, async (req, res) => {
   if (!dbEnabled()) return fail(res, 'NOT_CONFIGURED', 'Postgres required', 501);
-  const sub = await repo.getActiveSubscription(req.params.tenantId);
-  if (!sub) return fail(res, 'NOT_FOUND', 'No subscription', 404);
+  const tenantId = req.params.tenantId;
+  let sub = await repo.getActiveSubscription(tenantId);
+  if (!sub && (req.query.bootstrap === '1' || req.query.bootstrap === 'true')) {
+    try {
+      sub = await repo.ensureDefaultSubscription(tenantId);
+    } catch (e) {
+      log.warn({ tenantId, err: e.message }, 'subscription bootstrap failed');
+    }
+  }
+  if (!sub) return ok(res, { subscription: null, tenantId });
   return ok(res, sub);
 });
 
@@ -158,7 +166,17 @@ app.post('/v1/usage/events', async (req, res) => {
 
 app.get('/v1/tenants/:tenantId/usage', auth, async (req, res) => {
   if (!dbEnabled()) return fail(res, 'NOT_CONFIGURED', 'Postgres required', 501);
-  return ok(res, await repo.getTenantUsage(req.params.tenantId));
+  const tenantId = req.params.tenantId;
+  if (req.query.period === 'historical') {
+    const months = Math.min(24, Math.max(1, parseInt(String(req.query.months || '6'), 10) || 6));
+    return ok(res, { history: await repo.getUsageHistory(tenantId, months) });
+  }
+  return ok(res, await repo.getTenantUsage(tenantId));
+});
+
+app.get('/v1/tenants/:tenantId/payment-methods', auth, async (req, res) => {
+  if (!dbEnabled()) return fail(res, 'NOT_CONFIGURED', 'Postgres required', 501);
+  return ok(res, await repo.listPaymentMethods(req.params.tenantId));
 });
 
 app.get('/v1/tenants/:tenantId/usage/limits', auth, async (req, res) => {

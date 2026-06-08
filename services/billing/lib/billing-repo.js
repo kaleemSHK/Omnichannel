@@ -232,6 +232,7 @@ function mapSub(s, plan) {
     cancelAtPeriodEnd: s.cancel_at_period_end,
     currency: s.currency || CURRENCY,
     vatRate: Number(s.vat_rate ?? 0.05),
+    basePriceOmr: Number(s.base_price_omr ?? plan.base_price_omr ?? 0),
     included: {
       agents: plan.included_agents,
       minutes: plan.included_minutes,
@@ -391,8 +392,8 @@ export async function listInvoices(tenantId) {
   const { rows } = await tenantQuery(
     getPool(),
     tenantId,
-    'SELECT * FROM billing_invoices ORDER BY period_start DESC LIMIT 100',
-    [],
+    'SELECT * FROM billing_invoices WHERE tenant_id = $1 ORDER BY period_start DESC LIMIT 100',
+    [tenantId],
   );
   return rows.map((r) => mapInvoice(r));
 }
@@ -411,6 +412,67 @@ export async function markInvoicePaid(invoiceId, { method = 'manual', amountOmr,
     [invoiceId, method, providerRef || null, amountOmr ?? inv.total_omr],
   );
   return mapInvoice({ ...inv, status: 'paid' });
+}
+
+export async function ensureDefaultSubscription(tenantId, defaultPlanId = 'starter') {
+  const existing = await getActiveSubscription(tenantId);
+  if (existing) return existing;
+  return assignSubscription(tenantId, { planId: defaultPlanId, trialDays: 14 });
+}
+
+export async function getUsageHistory(tenantId, months = 6) {
+  const since = new Date();
+  since.setUTCDate(1);
+  since.setUTCMonth(since.getUTCMonth() - (months - 1));
+
+  const { rows } = await tenantQuery(
+    getPool(),
+    tenantId,
+    `SELECT date_trunc('month', date)::date AS month_start, dimension, SUM(total_quantity)::float AS total
+     FROM billing_usage_aggregates_daily
+     WHERE tenant_id = $1 AND date >= $2::date
+     GROUP BY 1, dimension
+     ORDER BY 1 ASC`,
+    [tenantId, since.toISOString().slice(0, 10)],
+  );
+
+  const byMonth = new Map();
+  for (const r of rows) {
+    const key = new Date(r.month_start).toISOString().slice(0, 7);
+    if (!byMonth.has(key)) {
+      byMonth.set(key, { month: key, agents: 0, pstn: 0, whatsapp: 0, ai: 0, storage: 0, sms: 0 });
+    }
+    const pt = byMonth.get(key);
+    const dim = String(r.dimension);
+    const total = Number(r.total) || 0;
+    if (dim === 'agent') pt.agents = total;
+    else if (dim === 'minute') pt.pstn = total;
+    else if (dim === 'message') pt.whatsapp = total;
+    else if (dim === 'ai_token') pt.ai = total;
+    else if (dim === 'storage') pt.storage = total;
+    else if (dim === 'sms') pt.sms = total;
+  }
+
+  return [...byMonth.values()];
+}
+
+export async function listPaymentMethods(tenantId) {
+  const { rows } = await tenantQuery(
+    getPool(),
+    tenantId,
+    `SELECT id, type, last4, is_default AS "isDefault", created_at AS "createdAt"
+     FROM billing_payment_methods
+     WHERE tenant_id = $1
+     ORDER BY is_default DESC, created_at DESC`,
+    [tenantId],
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    type: r.type,
+    last4: r.last4,
+    isDefault: r.isDefault,
+    createdAt: r.createdAt,
+  }));
 }
 
 export async function platformOverview() {
